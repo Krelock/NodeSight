@@ -1,0 +1,5 @@
+<Bindings>
+    <Binding name="NODESIGHT_SYMBOLS" header="NODESIGHT" category="ADDONS">
+        NodeSight_ToggleSymbols()
+    </Binding>
+</Bindings>
