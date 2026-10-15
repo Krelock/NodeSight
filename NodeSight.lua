@@ -1,3 +1,9 @@
+-- AI has done an awful job at commenting on the code. I'm going to try and fix
+-- it up within the next few updates and put most of my mods on GitHub. I did
+-- not expect so many people to be going through this and to be so interested!
+-- Thank you to everyone trying my addons. I appreciate you all, this has made
+-- my year.
+--
 -- NodeSight: the herbs and ore on your minimap as their own pictures, an arrow
 -- to the nearest one, and twinkling sparkles around the herb or ore nearest to
 -- you. Out of the box only the minimap pictures are on.
@@ -32,11 +38,12 @@
 --
 -- Settings (Options > AddOns > NodeSight, with the pages Symbols, Sparkles and
 -- Beta under it): sparkles on herbs, on ore and on other objects, their color,
--- area, height and number; the minimap scan, the arrow, the minimap symbols,
--- their shape and size, red for the ones above your skill, a sound for
--- something new, the scan detail, the size of the game's own dots, Find Herbs
--- and Find Minerals in turn as you move, rare beasts (Beta) and sparkles on
--- far away herbs and ore (Beta). Always on: what a herb or ore above your
+-- area, height and number; the minimap scan and whether it goes on in combat,
+-- the arrow, the minimap symbols, their shape and size, rings of their own for
+-- tin and iron, red for the ones above your skill, a sound for something new,
+-- the scan detail, the size of the game's own dots, Find Herbs and Find
+-- Minerals in turn as you move, rare beasts (Beta) and sparkles on far away
+-- herbs and ore (Beta). Always on: what a herb or ore above your
 -- skill needs, in the minimap's tooltip, and a gray symbol on one in a cave.
 --
 -- Blizzard reuses its nameplate frames between units, so each plate is set up
@@ -72,6 +79,7 @@ local defaults = {
     arrow = false, -- an arrow to the nearest herb or ore found by the minimap scan
     mapIcons = true, -- the herb's or ore's map symbol on the minimap where the scan found one
     shape = 3, -- the symbols' shape: 1 square, 2 round, 3 round with the game's gold border
+    oreRings = false, -- tin's and iron's symbols get rings of their own (green and rust) in place of the gold one (see oreRing)
     iconSize = 11, -- the symbols' width and height
     hard = true, -- a symbol is red when the herb or ore needs more skill than you have
     sound = false, -- a sound when a herb, ore, chest or rare beast shows up that wasn't there before (see FinishScan)
@@ -79,6 +87,7 @@ local defaults = {
     scanDetail = 2, -- the minimap scan: 3 full, 2 lighter (fewer points, less often), 1 lightest (see DETAIL)
     switchFinders = false, -- Find Herbs and Find Minerals turned on in turn as you move (see Switch)
     switchYards = 15, -- how far you go between two of those switches (10 at the least: see the slider)
+    combatScan = true, -- the minimap scan goes on in a fight (off: none in a fight, the symbols found before it stay)
     rares = true, -- a rare symbol of the game's on rare beasts while Track Beasts is on (Beta: see RARES)
     rareIcon = 2, -- which symbol that is (see ICONS.rares; 2 is the game's elite rare icon)
     worldMark = false, -- Beta: sparkles on far herbs and ore, on the game's own marker in the world (see world)
@@ -134,14 +143,17 @@ end
 -- "herbs", "ore" or "others", for the object whose interact icon this is.
 -- Blizzard hides the icon when the object stops being the soft interact
 -- target, and leaves its texture as it was, so a hidden icon is "others".
--- A mailbox (the game's mail cursor) and what is only used (its gear: chairs,
--- doors, levers) are "plain": no setting has that name, so they never sparkle.
--- A quest's object has a cursor of its own ("questinteract") and is "others".
+-- A guild vault (the game's buy cursor, the bag a merchant has: in game its
+-- texture is "Cursor Crosshair_UnableBuy_64"), a mailbox (the mail cursor) and
+-- what is only used (the gear: chairs, doors, levers) are "plain": no setting
+-- has that name, so they never sparkle. A quest's object has a cursor of its
+-- own ("questinteract") and is "others".
 local function Kind(icon)
     if not icon:IsShown() then return "others" end
     local texture, atlas = icon:GetTexture(), icon:GetAtlas()
     if HasName(texture, "herb") or HasName(atlas, "herb") then return "herbs" end
     if HasName(texture, "mine", "mining") or HasName(atlas, "mine", "mining") then return "ore" end
+    if HasName(texture, "buy") or HasName(atlas, "buy") then return "plain" end
     if HasName(texture, "mail") or HasName(atlas, "mail") then return "plain" end
     if HasName(texture, "questinteract") or HasName(atlas, "questinteract") then return "others" end
     if HasName(texture, "interact") or HasName(atlas, "interact") then return "plain" end
@@ -481,7 +493,7 @@ end
 -- on, and in screen pixels) with what its tooltip would say there
 -- (C_TooltipInfo.GetMinimapMouseover): the names of the dots under it. So the
 -- addon tries a grid of points over the minimap a few every frame (not in
--- combat), joins the neighbouring points that gave a name into one place per
+-- combat, unless a setting says so), joins the neighbouring points that gave a name into one place per
 -- dot (splitting a group that is too big for one dot), and works out from where
 -- that is on the minimap which way it is and how far (C_Minimap.GetViewRadius is the yards from the middle to the edge). The
 -- places get the map symbol on the minimap, and the nearest an arrow.
@@ -513,6 +525,24 @@ local GOLD_BORDER = 136430
 -- in from the left and 14.5 down from the top, with a hole about 20 across:
 -- at 30 wide the hole fits the symbol, and this puts its middle on the symbol's.
 local GOLD_SIZE, GOLD_X, GOLD_Y = 30, -9.3, 8.7
+-- High visibility tin and iron (the oreRings setting): tin and iron look
+-- alike, so their symbols get another ring of the game's in place of the gold
+-- one, the Necrolord ring of the Covenant choice screen (weathered bronze),
+-- half grayed (gray) and tinted by the ore: green for tin (as bright as a
+-- tint can make it), a brown rust for iron (tints, by the symbol's picture;
+-- a redder rust reads as copper on the minimap). Its
+-- picture is 80 by 82 with a hole 58 across in its middle, so drawn width and
+-- height times the symbol's size on the symbol's middle, the hole is the
+-- symbol's edge. ok: the game has the picture (without it the gold ring stays).
+local oreRing = {
+    atlas = "CovenantChoice-Offering-Ability-Ring-Necrolord",
+    width = 80 / 58, height = 82 / 58, gray = 0.5,
+    tints = {
+        ["Interface\\Icons\\inv_ore_tin_01"] = { 0.374, 1, 0.972 }, -- #43B3AE
+        ["Interface\\Icons\\inv_ore_iron_01"] = { 0.82, 0.55, 0.36 },
+    },
+}
+oreRing.ok = C_Texture.GetAtlasExists(oreRing.atlas)
 local ARROW = "MiniMap-QuestArrow" -- the game's arrow that points up
 local ARROW_SIZE = 40
 -- A point's number is x * 1000 + y in steps; these are the eight points around it.
@@ -593,34 +623,52 @@ local TREASURE = { "chest", "footlocker", "strongbox", "lockbox", "coffer", icon
 -- (Wowhead's WoW Forever data, 116 of them, in lower case). Their dots get
 -- a rare symbol of the game's (ICONS.rares) and the arrow, like a herb's.
 -- English names, like the herb list.
+--
+-- Each has the zone it lives in, as GetRealZoneText names it (two zones with
+-- a slash between them; true where Wowhead has none), and only counts there.
+-- A hunter's pet keeps the name of the rare beast it was tamed from and is a
+-- dot like any beast, and nothing on the minimap tells the two apart: but the
+-- beast itself never leaves its zone, so the same name anywhere else is
+-- somebody's pet.
 local RARES = {
-    ["abominable snowman"] = true, ["antilos"] = true, ["antilus the soarer"] = true, ["araga"] = true,
-    ["arash-ethis"] = true, ["arcterris"] = true, ["azzere the skyblade"] = true, ["bannerwing survivor"] = true,
-    ["barnabus"] = true, ["ben"] = true, ["big samras"] = true, ["bjarn"] = true, ["blightsculler"] = true,
-    ["blind hunter"] = true, ["broken tooth"] = true, ["brontus"] = true, ["carrodin"] = true, ["chatter"] = true,
-    ["clack the reaver"] = true, ["coldrasp"] = true, ["cranky benj"] = true, ["creepthess"] = true,
-    ["crystal fang"] = true, ["darkmist widow"] = true, ["dart"] = true, ["death flayer"] = true,
-    ["death howl"] = true, ["deatheye"] = true, ["deathmaw"] = true, ["den'dralass"] = true, ["dishu"] = true,
-    ["doomkin"] = true, ["duskstalker"] = true, ["fernfeather"] = true, ["ghost howl"] = true, ["ghostfang"] = true,
-    ["giggler"] = true, ["gorefang"] = true, ["greater firebird"] = true, ["gretheer"] = true, ["grubthor"] = true,
-    ["gruff"] = true, ["grunter"] = true, ["hayoc"] = true, ["heartrazor"] = true, ["hissperak"] = true,
-    ["humar the pridelord"] = true, ["ironback"] = true, ["ironeye the invincible"] = true, ["jorul"] = true,
-    ["kackle"] = true, ["king mosh"] = true, ["koartul"] = true, ["krellack"] = true,
-    ["krethis shadowspinner"] = true, ["kurmokk"] = true, ["large loch crocolisk"] = true, ["leech widow"] = true,
-    ["lord condar"] = true, ["lupos"] = true, ["matriarch bristlefur"] = true, ["mazzranache"] = true,
-    ["mist howler"] = true, ["mokwa"] = true, ["mongress"] = true, ["mowgh"] = true, ["murderous blisterpaw"] = true,
-    ["mystmane"] = true, ["naraxis"] = true, ["needletooth"] = true, ["nightscreech"] = true,
-    ["old cliff jumper"] = true, ["old grizzlegut"] = true, ["old ironfang"] = true, ["old rusthowl"] = true,
-    ["old thornpaw"] = true, ["old vicejaw"] = true, ["olm the wise"] = true, ["oozeworm"] = true,
-    ["pridewing patriarch"] = true, ["rak'shiri"] = true, ["raluk"] = true, ["ravage"] = true,
-    ["ravasaur matriarch"] = true, ["razormaw matriarch"] = true, ["rekk'tilac"] = true,
-    ["ressan the needler"] = true, ["rippa"] = true, ["ripscale"] = true, ["scale belly"] = true,
-    ["scalebeard"] = true, ["sewer beast"] = true, ["shadowclaw"] = true, ["shal'ma"] = true,
-    ["shanda the spinner"] = true, ["slydris"] = true, ["snapbeak the quick"] = true, ["snarler"] = true,
-    ["snort the heckler"] = true, ["sorrow wing"] = true, ["spiteflayer"] = true, ["sri'skulk"] = true,
-    ["strider clutchmother"] = true, ["swiftmane"] = true, ["takk the leaper"] = true, ["the evalcharr"] = true,
-    ["the rake"] = true, ["the razza"] = true, ["thunderstomp"] = true, ["timber"] = true, ["uhk'loc"] = true,
-    ["ursol'lok"] = true, ["vile sting"] = true, ["vultros"] = true, ["zaricotl"] = true, ["zopilote"] = true,
+    ["abominable snowman"] = true, ["antilos"] = "Azshara", ["antilus the soarer"] = "Feralas",
+    ["araga"] = "Alterac Mountains", ["arash-ethis"] = "Feralas", ["arcterris"] = "Winterspring",
+    ["azzere the skyblade"] = "The Barrens", ["bannerwing survivor"] = true, ["barnabus"] = "Badlands", ["ben"] = true,
+    ["big samras"] = "Hillsbrad Foothills", ["bjarn"] = "Dun Morogh", ["blightsculler"] = "Tirisfal Glades",
+    ["blind hunter"] = "Razorfen Kraul", ["broken tooth"] = "Badlands", ["brontus"] = "The Barrens",
+    ["carrodin"] = "Wetlands", ["chatter"] = "Redridge Mountains", ["clack the reaver"] = "Blasted Lands",
+    ["coldrasp"] = "Tirisfal Glades", ["cranky benj"] = "Alterac Mountains", ["creepthess"] = "Hillsbrad Foothills",
+    ["crystal fang"] = "Blackrock Spire", ["darkmist widow"] = "Dustwallow Marsh", ["dart"] = "Dustwallow Marsh",
+    ["death flayer"] = "Durotar", ["death howl"] = "Felwood", ["deatheye"] = "Blasted Lands",
+    ["deathmaw"] = "Burning Steppes", ["den'dralass"] = "Zephras Isle", ["dishu"] = "The Barrens",
+    ["doomkin"] = "The Hinterlands", ["duskstalker"] = "Teldrassil", ["fernfeather"] = "Zephras Isle",
+    ["ghost howl"] = "Mulgore/Thunder Bluff", ["ghostfang"] = "Dun Morogh", ["giggler"] = "Desolace",
+    ["gorefang"] = "Silverpine Forest", ["greater firebird"] = "Tanaris", ["gretheer"] = "Silithus",
+    ["grubthor"] = "Silithus", ["gruff"] = "Un'Goro Crater", ["grunter"] = "Blasted Lands",
+    ["hayoc"] = "Dustwallow Marsh", ["heartrazor"] = "Thousand Needles", ["hissperak"] = "Desolace",
+    ["humar the pridelord"] = "The Barrens", ["ironback"] = "The Hinterlands",
+    ["ironeye the invincible"] = "Thousand Needles", ["jorul"] = "Dun Morogh", ["kackle"] = "Loch Modan",
+    ["king mosh"] = "Un'Goro Crater", ["koartul"] = "Hillsbrad Foothills", ["krellack"] = "Silithus",
+    ["krethis shadowspinner"] = "Silverpine Forest", ["kurmokk"] = "Stranglethorn Vale",
+    ["large loch crocolisk"] = "Loch Modan", ["leech widow"] = "Wetlands", ["lord condar"] = "Loch Modan",
+    ["lupos"] = "Duskwood", ["matriarch bristlefur"] = "Elwynn Forest", ["mazzranache"] = "Mulgore",
+    ["mist howler"] = "Ashenvale", ["mokwa"] = "Mulgore", ["mongress"] = "Felwood", ["mowgh"] = "Teldrassil",
+    ["murderous blisterpaw"] = "Tanaris", ["mystmane"] = "Zephras Isle", ["naraxis"] = "Duskwood",
+    ["needletooth"] = "Arathi Highlands", ["nightscreech"] = "Teldrassil", ["old cliff jumper"] = "The Hinterlands",
+    ["old grizzlegut"] = "Feralas", ["old ironfang"] = true, ["old rusthowl"] = true, ["old thornpaw"] = true,
+    ["old vicejaw"] = "Silverpine Forest", ["olm the wise"] = "Felwood", ["oozeworm"] = "Dustwallow Marsh",
+    ["pridewing patriarch"] = "Stonetalon Mountains", ["rak'shiri"] = "Winterspring", ["raluk"] = "Durotar",
+    ["ravage"] = "Blasted Lands", ["ravasaur matriarch"] = "Un'Goro Crater", ["razormaw matriarch"] = "Wetlands",
+    ["rekk'tilac"] = "Searing Gorge", ["ressan the needler"] = "Tirisfal Glades", ["rippa"] = "Stranglethorn Vale",
+    ["ripscale"] = "Dustwallow Marsh", ["scale belly"] = "Stranglethorn Vale", ["scalebeard"] = "Azshara",
+    ["sewer beast"] = "Stormwind City", ["shadowclaw"] = "Darkshore", ["shal'ma"] = "Durotar",
+    ["shanda the spinner"] = "Loch Modan", ["slydris"] = "Zephras Isle", ["snapbeak the quick"] = "Zephras Isle",
+    ["snarler"] = "Feralas", ["snort the heckler"] = "The Barrens", ["sorrow wing"] = "Stonetalon Mountains",
+    ["spiteflayer"] = "Blasted Lands", ["sri'skulk"] = "Tirisfal Glades", ["strider clutchmother"] = "Darkshore",
+    ["swiftmane"] = "The Barrens", ["takk the leaper"] = "The Barrens", ["the evalcharr"] = "Azshara",
+    ["the rake"] = "Mulgore", ["the razza"] = "Feralas", ["thunderstomp"] = "The Barrens", ["timber"] = "Dun Morogh",
+    ["uhk'loc"] = "Un'Goro Crater", ["ursol'lok"] = "Ashenvale", ["vile sting"] = "Thousand Needles",
+    ["vultros"] = "Westfall", ["zaricotl"] = "Badlands", ["zopilote"] = "Tanaris",
 }
 local MAX_WORDS = 5
 
@@ -798,7 +846,11 @@ end
 local function KindOf(name)
     if db.rares then
         local plain = Plain(name)
-        if RARES[plain] then
+        local home = RARES[plain]
+        -- Only in the zone it lives in (see RARES): the slashes keep a part
+        -- of a zone's name from being taken for the zone.
+        local zone = home and GetRealZoneText()
+        if home == true or (type(zone) == "string" and ("/" .. home .. "/"):find("/" .. zone .. "/", 1, true)) then
             -- Not your own pet: a rare you tamed keeps its name.
             local pet = UnitName("pet")
             if not issecretvalue(pet) and (not pet or Plain(pet) ~= plain) then return "rares" end
@@ -967,6 +1019,7 @@ end
 local function Switch()
     local kind, other = Finders()
     turns.kind = kind
+    if InCombatLockdown() then return false end -- (never in a fight, also when the scan goes on in one: each switch costs a global cooldown)
     if not (kind and other and C_Minimap.SetTracking) then return false end
     local map, x, y, width, height = MapPosition()
     if not map then return false end
@@ -1091,9 +1144,16 @@ end
 
 -- The gold border is fitted to a symbol 12 across: with another size it grows
 -- or shrinks with the symbol, and so does how far its corner is from the
--- symbol's middle.
+-- symbol's middle. Tin's and iron's ring (icon.tint, see oreRing) hangs by its
+-- middle on the symbol's.
 local function SizeRing(icon)
     local scale = icon.size / ICON_SIZE
+    icon.border:ClearAllPoints() -- (the two rings hang by different points)
+    if icon.tint then
+        icon.border:SetSize(icon.size * oreRing.width, icon.size * oreRing.height)
+        icon.border:SetPoint("CENTER", icon.texture, "CENTER")
+        return
+    end
     icon.border:SetSize(GOLD_SIZE * scale, GOLD_SIZE * scale)
     icon.border:SetPoint("TOPLEFT", icon.texture, "CENTER", GOLD_X * scale, GOLD_Y * scale)
 end
@@ -1182,20 +1242,50 @@ local function ShowMarkers()
             -- that is set.)
             local shape = marker.kind == "rares" and 1 or db.shape
             if icon.shape ~= shape then ApplyShape(icon, shape) end
-            -- Red while it needs more skill than you have.
-            local hard = (db.hard and marker.hard) or false
-            if icon.hard ~= hard then
-                icon.hard = hard
-                if hard then
-                    icon.texture:SetVertexColor(TOO_HARD[1], TOO_HARD[2], TOO_HARD[3])
+            -- Tin's and iron's own ring, with High visibility tin and iron on
+            -- and the gold ring's shape: the gold ring's texture, given the
+            -- other picture, size and place (see oreRing).
+            local tint = icon.ring and db.oreRings and oreRing.ok and oreRing.tints[marker.file] or false
+            local swap = not icon.tint ~= not tint -- (tin to iron is only another tint, told below)
+            icon.tint = tint
+            if swap then
+                if tint then
+                    icon.border:SetAtlas(oreRing.atlas)
                 else
-                    icon.texture:SetVertexColor(1, 1, 1)
+                    icon.border:SetTexture(GOLD_BORDER)
                 end
+                SizeRing(icon)
             end
-            -- Gray while the game has its name in gray (it is in a cave). Always on.
-            if icon.dim ~= marker.dim then
-                icon.dim = marker.dim
+            -- Red while it needs more skill than you have, and dark while the
+            -- game has its name in gray (it is in a cave; always on): the
+            -- picture in grays at half its brightness. Grays alone don't
+            -- show on ore, whose picture is gray as it is.
+            local hard = (db.hard and marker.hard) or false
+            if icon.hard ~= hard or icon.dim ~= marker.dim then
+                icon.hard, icon.dim = hard, marker.dim
+                local shade = icon.dim and 0.5 or 1
+                if hard then
+                    icon.texture:SetVertexColor(TOO_HARD[1] * shade, TOO_HARD[2] * shade, TOO_HARD[3] * shade)
+                else
+                    icon.texture:SetVertexColor(shade, shade, shade)
+                end
                 icon.texture:SetDesaturated(icon.dim)
+            end
+            -- Its ring goes dark with it and loses its gold, or tin's or iron's
+            -- tint. (Told here and not with the picture: the ring may only just
+            -- have been made, shown again or given the other picture above, as
+            -- it was when it was hidden.) look: dark, the tint, or as it is.
+            local look = icon.dim or icon.tint or false
+            if icon.ring and (icon.ringLook or false) ~= look then
+                icon.ringLook = look
+                if icon.tint and not icon.dim then
+                    icon.ring:SetVertexColor(icon.tint[1], icon.tint[2], icon.tint[3])
+                    icon.ring:SetDesaturation(oreRing.gray)
+                else
+                    local shade = icon.dim and 0.5 or 1
+                    icon.ring:SetVertexColor(shade, shade, shade)
+                    icon.ring:SetDesaturated(icon.dim)
+                end
             end
             -- (Its one point set again replaces the old place: nothing to clear.)
             icon.texture:SetPoint("CENTER", mapFrame, "BOTTOMLEFT", marker.x, marker.y)
@@ -1636,13 +1726,17 @@ end
 local function StartScan()
     wait = WAIT
     if hurry > 0 then hurry = hurry - 1 end
-    if InCombatLockdown() or not Minimap:IsVisible() or not Minimap:GetLeft() then
+    if not Minimap:IsVisible() or not Minimap:GetLeft() then
         if markers[1] then
             markers = {}
             ShowMarkers()
         end
         return
     end
+    -- No scan in a fight, unless the Scan in combat setting is on. The symbols
+    -- found before it stay and follow you, and the fight's end brings a scan at
+    -- once (see the events at the end).
+    if InCombatLockdown() and not db.combatScan then return end
     if empties > 0 and Moved(MapPosition()) then empties = 0 end
     if db.switchFinders and Switch() then -- the other finder is on now: scan when its dots are there
         wait = SWITCH_WAIT
@@ -1862,7 +1956,7 @@ end
 -- Tries the next points. The soft cursor is only on while they are tried.
 local function ScanSome()
     local left, bottom = Minimap:GetLeft(), Minimap:GetBottom()
-    if not (left and bottom and Minimap:IsVisible()) or InCombatLockdown() then
+    if not (left and bottom and Minimap:IsVisible()) or (InCombatLockdown() and not db.combatScan) then
         scan = nil
         return
     end
@@ -2952,6 +3046,9 @@ local function RegisterSettings()
     Checkbox("scan", "Scan the minimap",
         "Scans the minimap for herbs and ore, for the arrow and the symbols. Turn it off to use only the sparkles: nothing is scanned then.",
         UpdateScanner)
+    Checkbox("combatScan", "Scan in combat",
+        "Keeps scanning the minimap during fights, so new herbs and ore still show up. With it off, the symbols you have stay during a fight and new ones show up after it. Needs Scan the minimap.",
+        UpdateScanner)
     Checkbox("arrow", "Arrow to the nearest herb or ore",
         "An arrow near the top of the screen points to the nearest herb or ore on your minimap, with its name and distance. Needs Scan the minimap, and Find Herbs or Find Minerals on. Zoom the minimap out to see farther. Drag the arrow to move it.",
         UpdateScanner)
@@ -2974,6 +3071,9 @@ local function RegisterSettings()
         UpdateScanner)
     Dropdown("shape", "Symbol shape", SHAPES,
         "The shape of the herb and ore symbols on the minimap: round with the game's gold ring around it, round without it, or square like the game's item icons. Needs Scan the minimap.",
+        UpdateScanner)
+    Checkbox("oreRings", "High visibility tin and iron",
+        "Tin and iron look alike on the minimap. With this on, tin's symbol gets a green ring and iron's a rust one, in place of the gold ring. Needs Symbol shape at Round, gold ring.",
         UpdateScanner)
     Slider("iconSize", "Symbol size", 8, 24,
         "How big the herb and ore symbols on the minimap are. The default is " .. defaults.iconSize .. ". Needs Herb and ore symbols on the minimap.",
@@ -3110,6 +3210,7 @@ events:SetScript("OnEvent", function(_, event, arg1, arg2)
     elseif event == "PLAYER_REGEN_DISABLED" then
         world.Fight()
     else -- (PLAYER_REGEN_ENABLED) the fight is over
+        wait = 0 -- (nothing was scanned in it: what changed meanwhile shows at once)
         world.fight = nil
         if pendingSetup then Setup() end
     end
