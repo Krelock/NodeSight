@@ -2,9 +2,14 @@
 ## Title: NodeSight
 ## Notes: See what every herb and ore on your minimap is, with an arrow to the nearest one and gold sparkles on it when you're close.
 ## Author: Krelock
-## Version: 1.3.3
+## Version: 1.3.4
 ## SavedVariables: NodeSightDB
 ## IconTexture: Interface\Icons\INV_Misc_Herb_01
 ## Category: Professions
 
+Names.lua
 NodeSight.lua
+Sparkles.lua
+FarSparkles.lua
+WhatsNew.lua
+Settings.lua
