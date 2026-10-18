@@ -90,7 +90,10 @@ local function RegisterSettings()
         "Puts the herb's or ore's map symbol on the minimap where the scan finds one. Needs Scan the minimap, and Find Herbs or Find Minerals on.",
         UpdateScanner)
     Checkbox("sound", "Sound when something new shows up",
-        "Plays the minimap's ping sound when a herb, ore, chest or rare beast shows up on your minimap that wasn't there in the last minute. Not for a herb or ore above your skill. Needs Scan the minimap.",
+        "Plays the minimap's ping sound when a herb, ore, chest, leyline or rare beast shows up on your minimap that wasn't there in the last minute. Not for a herb or ore above your skill. Needs Scan the minimap.",
+        UpdateScanner)
+    Checkbox("leylines", "Leylines on the minimap",
+        "For High Order Skyborne. Symbols on leylines on your minimap while Read Leyline is ready. Needs Scan the minimap.",
         UpdateScanner)
     Checkbox("switchFinders", "Switch between herbs and ore",
         "Switches between Find Herbs and Find Minerals. You need both trained and one active to start.",

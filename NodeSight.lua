@@ -40,6 +40,7 @@ local defaults = {
     combatScan = true, -- keep scanning in combat
     rares = true, -- rare beasts with Track Beasts (Beta)
     rareIcon = 2, -- which of ICONS.rares
+    leylines = true, -- leyline symbols for High Order Skyborne while Read Leyline is ready
     worldMark = false, -- Beta: sparkles on far away herbs and ore
     dotScale = 100, -- the game's own dot size, in percent
     sparkleColor = "ffffffff", -- sparkle tint, "aarrggbb" (white = none)
@@ -68,6 +69,26 @@ FINDERS[1494] = "rares" -- Track Beasts (only with the rares setting)
 local MAX_ICONS = 40
 local ICONS = { herbs = "Professions_Tracking_Herb", ore = "Professions_Tracking_Ore" }
 ICONS.rares = { "VignetteKill", "VignetteKillElite", "Rare-Elite-Star" }
+-- Leylines (High Order Skyborne). On ICONS (not new locals): 200-local main-chunk limit.
+ICONS.leylineSpell = 1259705 -- Read Leyline
+ICONS.leylineIcon = "Interface\\Icons\\Spell_Nature_StarFall"
+-- Setting on, racial known, and not on cooldown. Use isActive / isOnGCD only
+-- (start/duration are secret values in Forever).
+ICONS.LeyReady = function()
+    if not db.leylines then return false end
+    if not ((IsPlayerSpell and IsPlayerSpell(ICONS.leylineSpell)) or (IsSpellKnown and IsSpellKnown(ICONS.leylineSpell))) then
+        return false
+    end
+    if not (C_Spell and C_Spell.GetSpellCooldown) then return true end
+    local info = C_Spell.GetSpellCooldown(ICONS.leylineSpell)
+    if issecretvalue(info) or type(info) ~= "table" then return true end
+    local active, onGcd = info.isActive, info.isOnGCD
+    if issecretvalue(active) or active == nil then return true end
+    if not active then return true end -- no cooldown running
+    -- A cooldown is running: ready only while that is just the GCD.
+    if issecretvalue(onGcd) then return false end
+    return onGcd == true
+end
 local ICON_SIZE = 12 -- the size the gold ring is fitted to
 local NORMAL_DOTS = 100 -- the game's own dot size (%)
 -- Round shapes use Blizzard's circle mask; the gold ring is MiniMap-TrackingBorder.
@@ -147,8 +168,12 @@ local TRADE_GOODS, HERB, METAL_AND_STONE, GEM = 7, 9, 7, 3 -- item class/subclas
 local castTarget -- target of your last cast
 local lastSource -- GUID of the last looted object
 
--- Is a finder on (or the one for `kind`)? true if the game won't say.
+-- Is a finder on (or the one for `kind`)? Leylines count while LeyReady.
+-- true if the game won't say.
 local function FinderOn(kind)
+    local ley = ICONS.LeyReady()
+    if kind == "leyline" then return ley end
+    if not kind and ley then return true end
     if not (C_Minimap.GetNumTrackingTypes and C_Minimap.GetTrackingInfo) then return true end
     for index = 1, C_Minimap.GetNumTrackingTypes() do
         local info = C_Minimap.GetTrackingInfo(index)
@@ -163,7 +188,7 @@ local function FinderOn(kind)
     return false
 end
 
--- "herbs", "ore", "treasure", "rares" (with that setting) or nil.
+-- "herbs", "ore", "treasure", "leyline", "rares" (with that setting) or nil.
 local function KindOf(name)
     if db.rares then
         local plain = Plain(name)
@@ -177,11 +202,24 @@ local function KindOf(name)
         end
     end
     local known = db.learned and db.learned[Plain(name)]
-    return known and known.kind or NodeKind(name)
+    local kind = known and known.kind or NodeKind(name)
+    if kind == "leyline" and not ICONS.LeyReady() then return nil end
+    return kind
 end
 
 local function IconOf(name, kind)
     if kind == "treasure" then return TREASURE.icon end
+    if kind == "leyline" then
+        if not ICONS.leylineResolved then
+            ICONS.leylineResolved = true
+            local texture = C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(ICONS.leylineSpell)
+            if not texture and GetSpellTexture then texture = GetSpellTexture(ICONS.leylineSpell) end
+            if (type(texture) == "string" and texture ~= "") or (type(texture) == "number" and texture > 0) then
+                ICONS.leylineIcon = texture
+            end
+        end
+        return ICONS.leylineIcon
+    end
     local known = db.learned and db.learned[Plain(name)]
     return NodeIcon(name) or (known and known.icon)
 end
@@ -1399,6 +1437,7 @@ events:RegisterEvent("LOOT_CLOSED")
 events:RegisterEvent("PLAYER_STARTED_MOVING")
 events:RegisterEvent("MINIMAP_UPDATE_ZOOM")
 events:RegisterEvent("MINIMAP_UPDATE_TRACKING")
+events:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 events:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player")
 events:SetScript("OnEvent", function(_, event, arg1, arg2)
     if event == "ADDON_LOADED" then
@@ -1428,6 +1467,23 @@ events:SetScript("OnEvent", function(_, event, arg1, arg2)
         -- You may have just picked a herb: rescan now, twice more at full pace.
         wait, hurry = 0, 3
         Picked()
+    elseif event == "SPELL_UPDATE_COOLDOWN" then
+        -- When Read Leyline readiness changes: drop or rescan leyline symbols.
+        local ready = ICONS.LeyReady()
+        if ready ~= ICONS.leyWasReady then
+            ICONS.leyWasReady = ready
+            if not ready then
+                local gone = false
+                for i = #markers, 1, -1 do
+                    if markers[i].kind == "leyline" then
+                        table.remove(markers, i)
+                        gone = true
+                    end
+                end
+                if gone then ShowMarkers() end
+            end
+            wait, empties = 0, 0
+        end
     elseif event == "PLAYER_STARTED_MOVING" or event == "MINIMAP_UPDATE_ZOOM" or event == "MINIMAP_UPDATE_TRACKING" then
         -- Moving, zooming or a tracking change ends the slowdown.
         local soon = event == "MINIMAP_UPDATE_TRACKING" and SWITCH_WAIT or WAIT

@@ -98,7 +98,7 @@ local ORE_ICONS = {
     { "incendicite", "inv_ore_thorium_01" }, { "bloodstone", "inv_ore_thorium_01" },
 }
 
--- "herbs", "ore", "treasure" or nil.
+-- "herbs", "ore", "treasure", "leyline" or nil.
 local function NodeKind(name)
     name = Plain(name)
     if name:find("[%d:/]") then return nil end
@@ -115,6 +115,7 @@ local function NodeKind(name)
     for _, ending in ipairs(TREASURE) do
         if EndsWith(name, ending) then return "treasure" end
     end
+    if name == "leyline" or EndsWith(name, "leyline") then return "leyline" end
     return nil
 end
 
@@ -152,6 +153,7 @@ local NEEDED = {
         ["small obsidian chunk"] = 305, ["large obsidian chunk"] = 305,
     },
     treasure = {},
+    leyline = {}, -- (nor does a leyline)
     rares = {},
 }
 local TOO_HARD = { 1, 0.2, 0.2 } -- red tint for nodes above your skill
