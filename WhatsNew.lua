@@ -11,9 +11,23 @@ local ipairs = ipairs
 local ShowWhatsNew
 do
     local WHATS_NEW = {
-        {
+        { version = "1.4.0",
             { "New", {
-                { "Leylines for Skyborne.", "Leylines on your minimap get a symbol the way herbs and ore get theirs, while Read Leyline is ready. For High Order Skyborne; turn on or off in NodeSight's settings" },
+                { "Rares on the minimap (Beta) (on by default).", "Rare humanoids get a rare symbol now too, with Track Humanoids on (hunters and druids). Rares friendly to your faction don't get one. Turn it off under Beta" },
+                { "Round, slim gold ring.", "A new Symbol shape" },
+                { "Leylines and convergences (on by default).", "For Skyborne: High Order Skyborne get a symbol on leylines while Read Leyline is ready, Windshaper Skyborne on elemental convergences while Skysight is ready. Turn it off under Symbols. Thanks to Truth- for adding the leylines on GitHub" },
+                { "Skill colors in the minimap tooltip (always on).", "Hover any herb or ore on the minimap to see the skill it needs, colored like the profession window. Red still means your skill is too low" },
+                { "Arrow page.", "Every arrow setting in one place: what it points to, herbs and ore first (off by default) and skip the node you're at (on by default). Under Arrow" },
+                { "Lock the arrow in place (off by default).", "The arrow can't be dragged by accident, and your clicks go through it. Turn it on under Arrow. Thanks to lug_2121 for the patch" },
+                { "See-through near you (off by default).", "A symbol over your own arrow on the minimap is see-through, so you still see which way you're facing. Turn it on under Symbols" },
+            } },
+            { "Changes", {
+                "Shorter setting names",
+                { "Amber in Teldrassil.", "Chunk of Amber and Large Chunk of Amber, Teldrassil's new mining nodes, get a symbol with an amber picture" },
+            } },
+            { "Fixes", {
+                { "Chests", "Crates, sacks and other things you open no longer get the chest symbol and the arrow, only chests do" },
+                { "Rares on the minimap (Beta)", "No more Lua error when you change zones or call your pet while a rare beast is on the minimap" },
             } },
         },
         { version = "1.3.0",
@@ -71,6 +85,7 @@ do
         return button
     end
     local dialog = { page = 1 } -- the dialog's frames and current page
+    local WIDTHS = { 480, 720, 960 } -- tried in turn until the notes fit on the screen
     -- Shows a version's notes, sizing the dialog to fit.
     function dialog.ShowPage()
         local notes = WHATS_NEW[dialog.page]
@@ -84,12 +99,11 @@ do
             end
         end
         local frame, text = dialog.frame, dialog.text
-        frame:SetWidth(480)
-        text:SetWidth(440)
         text:SetText(table.concat(lines, "\n"))
-        if text:GetStringHeight() + 73 > UIParent:GetHeight() - 145 then -- the dialog's top is 135 below the screen's
-            frame:SetWidth(720)
-            text:SetWidth(680)
+        for _, width in ipairs(WIDTHS) do
+            frame:SetWidth(width)
+            text:SetWidth(width - 40)
+            if text:GetStringHeight() + 73 <= UIParent:GetHeight() - 145 then break end -- the dialog's top is 135 below the screen's
         end
         frame:SetHeight(text:GetStringHeight() + 73)
         dialog.older:SetEnabled(dialog.page < #WHATS_NEW)

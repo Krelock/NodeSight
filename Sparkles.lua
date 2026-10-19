@@ -92,12 +92,16 @@ local function RGB(color)
     return tonumber(r, 16) / 255, tonumber(g, 16) / 255, tonumber(b, 16) / 255
 end
 
+-- Tints a sparkle. A color puts the alpha back to 1, so it goes to 0 again: a sparkle
+-- is unseen until its twinkle fades it in.
 local function ApplyColor(part)
     if part.color ~= ns.db.sparkleColor then
         part.color = ns.db.sparkleColor
         local r, g, b = RGB(part.color)
         part.texture:SetVertexColor(r, g, b)
         part.core:SetVertexColor(r + (1 - r) * CORE_LIGHT, g + (1 - g) * CORE_LIGHT, b + (1 - b) * CORE_LIGHT)
+        part.texture:SetAlpha(0)
+        part.core:SetAlpha(0)
     end
 end
 
@@ -143,11 +147,9 @@ local function NewSparkle(frame)
     local texture = frame:CreateTexture(nil, "OVERLAY")
     texture:SetTexture(PICTURE)
     texture:SetBlendMode("ADD")
-    texture:SetAlpha(0)
     local core = frame:CreateTexture(nil, "OVERLAY", nil, 1) -- on top of the body
     core:SetTexture(PICTURE)
     core:SetBlendMode("ADD")
-    core:SetAlpha(0)
     local part = { texture = texture, core = core }
     -- Random speed so they don't pulse together.
     local time, delay = 0.5 + 0.7 * random(), random()

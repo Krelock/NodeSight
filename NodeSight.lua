@@ -15,8 +15,8 @@
 --   WhatsNew.lua     the patch notes dialog
 --   Settings.lua     the settings pages
 --
--- Sections: Minimap scan, Learning nodes, Switching finders, Tooltip, Symbols
--- and arrow, Splitting groups, Following, Scanning, Running the scan, Loading.
+-- Sections: Minimap scan, Node kinds, Learning nodes, Switching finders, Tooltip,
+-- Symbols and arrow, Splitting groups, Following, Scanning, Running the scan, Loading.
 
 local ADDON_NAME, ns = ...
 
@@ -27,20 +27,29 @@ local defaults = {
     ore = false, -- sparkles on ore
     others = false, -- sparkles on other objects
     arrow = false, -- arrow to the nearest node
+    arrowLocked = false, -- the arrow can't be dragged, and clicks go through it
+    arrowSkip = true, -- the arrow passes over the node you're at
+    arrowFirst = false, -- the arrow to herbs and ore before anything else
+    arrowHerbs = true, -- what the arrow points to: herbs,
+    arrowOre = true, -- ore,
+    arrowChests = true, -- chests,
+    arrowRares = true, -- rares,
+    arrowLeylines = true, -- leylines and convergences
     mapIcons = true, -- symbols on the minimap
-    shape = 3, -- 1 square, 2 round, 3 round with a gold ring
+    shape = 3, -- 1 square, 2 round, 3 round with a gold ring, 4 with a slim one
     oreRings = false, -- green and rust rings for tin and iron
     iconSize = 11, -- symbol size
     hard = true, -- red symbols for nodes above your skill
+    clearNear = false, -- symbols see-through over your own arrow
     sound = false, -- sound when something new shows up
     scan = true, -- the minimap scan
     scanDetail = 2, -- 3 full, 2 lighter, 1 lightest
     switchFinders = false, -- Find Herbs and Find Minerals in turn
     switchYards = 15, -- yards between switches (10 at least)
     combatScan = true, -- keep scanning in combat
-    rares = true, -- rare beasts with Track Beasts (Beta)
+    rares = true, -- rare beasts and humanoids (Beta)
     rareIcon = 2, -- which of ICONS.rares
-    leylines = true, -- leyline symbols for High Order Skyborne while Read Leyline is ready
+    leylines = true, -- Skyborne: leylines and elemental convergences, while the racial is ready
     worldMark = false, -- Beta: sparkles on far away herbs and ore
     dotScale = 100, -- the game's own dot size, in percent
     sparkleColor = "ffffffff", -- sparkle tint, "aarrggbb" (white = none)
@@ -66,33 +75,21 @@ local NO_FINDER = 5 -- seconds between checks while no finder is on
 -- Tracking spell IDs: Find Herbs, Find Minerals, Find Treasure.
 local FINDERS = { [2383] = "herbs", [2580] = "ore", [2481] = "treasure" }
 FINDERS[1494] = "rares" -- Track Beasts (only with the rares setting)
+FINDERS[19883], FINDERS[5225] = "rares", "rares" -- Track Humanoids: hunters', druids'
 local MAX_ICONS = 40
 local ICONS = { herbs = "Professions_Tracking_Herb", ore = "Professions_Tracking_Ore" }
 ICONS.rares = { "VignetteKill", "VignetteKillElite", "Rare-Elite-Star" }
--- Leylines (High Order Skyborne). On ICONS (not new locals): 200-local main-chunk limit.
-ICONS.leylineSpell = 1259705 -- Read Leyline
-ICONS.leylineIcon = "Interface\\Icons\\Spell_Nature_StarFall"
--- Setting on, racial known, and not on cooldown. Use isActive / isOnGCD only
--- (start/duration are secret values in Forever).
-ICONS.LeyReady = function()
-    if not db.leylines then return false end
-    if not ((IsPlayerSpell and IsPlayerSpell(ICONS.leylineSpell)) or (IsSpellKnown and IsSpellKnown(ICONS.leylineSpell))) then
-        return false
-    end
-    if not (C_Spell and C_Spell.GetSpellCooldown) then return true end
-    local info = C_Spell.GetSpellCooldown(ICONS.leylineSpell)
-    if issecretvalue(info) or type(info) ~= "table" then return true end
-    local active, onGcd = info.isActive, info.isOnGCD
-    if issecretvalue(active) or active == nil then return true end
-    if not active then return true end -- no cooldown running
-    -- A cooldown is running: ready only while that is just the GCD.
-    if issecretvalue(onGcd) then return false end
-    return onGcd == true
-end
+-- Skyborne racials and what each finds, shown while it is ready: High Order Skyborne's
+-- Read Leyline leylines, Windshaper Skyborne's Skysight elemental convergences. The
+-- icon is the spell's, for when the game gives none.
+local RACIALS = {
+    leyline = { spell = 1259705, icon = "Interface\\Icons\\ability_mage_incantersabsorbtion" },
+    convergence = { spell = 1259686, icon = "Interface\\Icons\\ability_skyreach_lens_flare" },
+}
 local ICON_SIZE = 12 -- the size the gold ring is fitted to
 local NORMAL_DOTS = 100 -- the game's own dot size (%)
 -- Round shapes use Blizzard's circle mask; the gold ring is MiniMap-TrackingBorder.
-local SHAPES = { "Square", "Round", "Round, gold ring" }
+local SHAPES = { "Square", "Round", "Round, gold ring", "Round, slim gold ring" }
 local CIRCLE = "CircleMask"
 local GOLD_BORDER = 136430
 -- Gold ring size and top-left offset that center its hole on the symbol.
@@ -108,8 +105,17 @@ local oreRing = {
     },
 }
 oreRing.ok = C_Texture.GetAtlasExists(oreRing.atlas)
+-- The gold ring's outer edge across, per symbol size (measured on Blizzard's art).
+local GOLD_OUTER = 17.6 / 12
+local SLIM = 26 -- the slim gold ring: the gold ring cut to this share of its width (%)
 local ARROW = "MiniMap-QuestArrow" -- points up
 local ARROW_SIZE = 40
+-- The arrow's checkbox for each kind, and how near the node you're at is (yards).
+local ARROW_TO = { herbs = "arrowHerbs", ore = "arrowOre", treasure = "arrowChests", rares = "arrowRares", leyline = "arrowLeylines", convergence = "arrowLeylines" }
+local SKIP_YARDS = 5
+-- See-through near you: the game draws your own arrow under addons' textures, so a
+-- symbol over it (half its size plus this many minimap units from the middle) gets this alpha.
+local PLAYER_ARROW, CLEAR = 8, 0.35
 -- Grid points are keyed x * 1000 + y; these are the offsets of the 8 neighbours.
 local AROUND = { -1001, -1000, -999, -1, 1, 999, 1000, 1001 }
 local AROUND4 = { -1000, -1, 1, 1000 } -- and the 4 direct ones
@@ -136,7 +142,7 @@ local eased, quiet = 0, 0 -- detail levels dropped, quiet scans since
 
 local scan
 local wait = 0 -- seconds until the next scan
-local hurry = 0 -- scans left at full pace (after loot, rare beasts)
+local hurry = 0 -- scans left at full pace (after loot, rares)
 local markers = {} -- the places the last scan found, nearest first
 local grid, gridWidth -- grid points for this minimap size
 local tracker, arrow, arrowTexture, arrowText
@@ -153,134 +159,8 @@ local arrowOn = false
 local turning -- the minimap was rotating at the last scan
 -- Switch state: kind, map, x, y, scanned, picked (see Switch and Picked).
 local turns = {}
-
--- From Names.lua.
-local Plain, NodeKind, NodeIcon = ns.Plain, ns.NodeKind, ns.NodeIcon
-local TREASURE, RARES = ns.TREASURE, ns.RARES
-local TOO_HARD, skills, professions, TooHard = ns.TOO_HARD, ns.skills, ns.professions, ns.TooHard
-
----------------------------------------------------------------------------
--- Learning nodes
----------------------------------------------------------------------------
--- Nodes missing from the English lists are learned when gathered, from the loot.
-
-local TRADE_GOODS, HERB, METAL_AND_STONE, GEM = 7, 9, 7, 3 -- item class/subclasses
-local castTarget -- target of your last cast
-local lastSource -- GUID of the last looted object
-
--- Is a finder on (or the one for `kind`)? Leylines count while LeyReady.
--- true if the game won't say.
-local function FinderOn(kind)
-    local ley = ICONS.LeyReady()
-    if kind == "leyline" then return ley end
-    if not kind and ley then return true end
-    if not (C_Minimap.GetNumTrackingTypes and C_Minimap.GetTrackingInfo) then return true end
-    for index = 1, C_Minimap.GetNumTrackingTypes() do
-        local info = C_Minimap.GetTrackingInfo(index)
-        if issecretvalue(info) then return true end
-        if info then
-            if issecretvalue(info.active) or issecretvalue(info.spellID) then return true end
-            local shows = info.spellID and FINDERS[info.spellID]
-            if shows == "rares" and not db.rares then shows = nil end
-            if shows and info.active and (not kind or shows == kind) then return true end
-        end
-    end
-    return false
-end
-
--- "herbs", "ore", "treasure", "leyline", "rares" (with that setting) or nil.
-local function KindOf(name)
-    if db.rares then
-        local plain = Plain(name)
-        local home = RARES[plain]
-        -- Only in its home zone; the slashes stop partial zone names matching.
-        local zone = home and GetRealZoneText()
-        if home == true or (type(zone) == "string" and ("/" .. home .. "/"):find("/" .. zone .. "/", 1, true)) then
-            -- Not your own pet (a tamed rare keeps its name).
-            local pet = UnitName("pet")
-            if not issecretvalue(pet) and (not pet or Plain(pet) ~= plain) then return "rares" end
-        end
-    end
-    local known = db.learned and db.learned[Plain(name)]
-    local kind = known and known.kind or NodeKind(name)
-    if kind == "leyline" and not ICONS.LeyReady() then return nil end
-    return kind
-end
-
-local function IconOf(name, kind)
-    if kind == "treasure" then return TREASURE.icon end
-    if kind == "leyline" then
-        if not ICONS.leylineResolved then
-            ICONS.leylineResolved = true
-            local texture = C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(ICONS.leylineSpell)
-            if not texture and GetSpellTexture then texture = GetSpellTexture(ICONS.leylineSpell) end
-            if (type(texture) == "string" and texture ~= "") or (type(texture) == "number" and texture > 0) then
-                ICONS.leylineIcon = texture
-            end
-        end
-        return ICONS.leylineIcon
-    end
-    local known = db.learned and db.learned[Plain(name)]
-    return NodeIcon(name) or (known and known.icon)
-end
-
-local function NoteCast(target)
-    castTarget = nil
-    if issecretvalue(target) or type(target) ~= "string" or target == "" then return end
-    castTarget = target
-end
-
--- "herbs" or "ore" if a node gave this loot, and its items as { item, icon }.
-local function LootKind()
-    local kind, gave = nil, {}
-    for slot = 1, GetNumLootItems() do
-        local link = GetLootSlotLink(slot)
-        if not link or issecretvalue(link) then return nil end
-        local item, _, _, _, icon, class, subclass = C_Item.GetItemInfoInstant(link)
-        local this = class == TRADE_GOODS and (subclass == HERB and "herbs" or subclass == METAL_AND_STONE and "ore") or nil
-        if this then
-            if kind and kind ~= this then return nil end
-            kind = this
-            gave[#gave + 1] = { item, icon }
-        elseif class ~= GEM then
-            return nil
-        end
-    end
-    return kind, gave
-end
-
-local function SourceName(guid)
-    local name = UnitNameFromGUID and UnitNameFromGUID(guid)
-    if issecretvalue(name) or type(name) ~= "string" or name == "" or name == UNKNOWNOBJECT then name = castTarget end
-    return name
-end
-
--- LOOT_READY: learn the node the loot came from.
-local function Learn()
-    local guid = GetLootSourceInfo(1)
-    if issecretvalue(guid) or type(guid) ~= "string" or guid == lastSource then return end
-    lastSource = guid
-    if guid:sub(1, 11) ~= "GameObject-" then return end
-    local name = SourceName(guid)
-    castTarget = nil
-    local kind, gave = LootKind()
-    turns.picked = kind -- (see Picked)
-    if not name then return end
-    local key = Plain(name)
-    if not kind then
-        -- Not a herb or ore: with Find Treasure on, it's treasure.
-        if not KindOf(name) and FinderOn("treasure") then db.learned[key] = { kind = "treasure", seen = {}, most = 0 } end
-        return
-    end
-    local known = db.learned[key] or { seen = {}, most = 0 }
-    known.kind = kind
-    for _, pair in ipairs(gave) do
-        local count = (known.seen[pair[1]] or 0) + 1
-        known.seen[pair[1]] = count
-        if count > known.most then known.most, known.icon = count, pair[2] end
-    end
-    db.learned[key] = known
-end
+local racialWasReady = false -- a Skyborne racial was ready at the last cooldown change
+local racialShown = false -- the last scan found a leyline or convergence
 
 -- Scan detail setting (3 if invalid).
 local function SettingLevel()
@@ -324,6 +204,139 @@ local function Moved(map, x, y, width, height)
     return dx * dx + dy * dy > 9
 end
 
+-- From Names.lua.
+local Plain, NodeKind, NodeIcon = ns.Plain, ns.NodeKind, ns.NodeIcon
+local TREASURE, RARES, FRIENDLY = ns.TREASURE, ns.RARES, ns.FRIENDLY
+local TOO_HARD, skills, professions, TooHard, NodeSkill = ns.TOO_HARD, ns.skills, ns.professions, ns.TooHard, ns.NodeSkill
+
+---------------------------------------------------------------------------
+-- Node kinds
+---------------------------------------------------------------------------
+-- What a minimap dot's name stands for, and the picture its symbol gets.
+
+-- The racial that finds `kind` known and ready, with the setting on. Its global
+-- cooldown counts as ready. isActive and isOnGCD are never secret; the times are in a fight.
+local function RacialReady(kind)
+    local spell = RACIALS[kind].spell
+    if not db.leylines or not (C_SpellBook.IsSpellKnown and C_SpellBook.IsSpellKnown(spell)) then return false end
+    local info = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(spell)
+    if issecretvalue(info) or type(info) ~= "table" or issecretvalue(info.isActive) or not info.isActive then return true end
+    return not issecretvalue(info.isOnGCD) and info.isOnGCD == true
+end
+
+-- Is a finder on? true if the game won't say. A ready racial needs none.
+local function FinderOn()
+    if not (C_Minimap.GetNumTrackingTypes and C_Minimap.GetTrackingInfo) then return true end
+    for index = 1, C_Minimap.GetNumTrackingTypes() do
+        local info = C_Minimap.GetTrackingInfo(index)
+        if issecretvalue(info) then return true end
+        if info then
+            if issecretvalue(info.active) or issecretvalue(info.spellID) then return true end
+            local shows = info.spellID and FINDERS[info.spellID]
+            if shows == "rares" and not db.rares then shows = nil end
+            if shows and info.active then return true end
+        end
+    end
+    return RacialReady("leyline") or RacialReady("convergence")
+end
+
+-- "herbs", "ore", "treasure", "rares" (with that setting), "leyline" or "convergence"
+-- (while its racial is ready) or nil.
+local function KindOf(name)
+    if db.rares then
+        local plain = Plain(name)
+        local home = RARES[plain]
+        if FRIENDLY[plain] and FRIENDLY[plain] == UnitFactionGroup("player") then home = nil end
+        -- Only in its home zone; the slashes stop partial zone names matching.
+        local zone = home and GetRealZoneText()
+        if home == true or (type(zone) == "string" and ("/" .. home .. "/"):find("/" .. zone .. "/", 1, true)) then
+            -- Not your own pet (a tamed rare keeps its name).
+            local pet = UnitName("pet")
+            if not issecretvalue(pet) and (not pet or Plain(pet) ~= plain) then return "rares" end
+        end
+    end
+    -- Learned herbs and ore. Chests go by their names, so a learned "treasure" is passed over.
+    local known = db.learned and db.learned[Plain(name)]
+    local kind = known and known.kind ~= "treasure" and known.kind or NodeKind(name)
+    if RACIALS[kind] and not RacialReady(kind) then return nil end
+    return kind
+end
+
+local function IconOf(name, kind)
+    if kind == "treasure" then return TREASURE.icon end
+    if kind == "rares" then return nil end -- the rare symbol, though a name can hold an ore's ("Dark Iron ...")
+    local racial = RACIALS[kind]
+    if racial then
+        local file = C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(racial.spell)
+        if issecretvalue(file) or type(file) ~= "number" or file <= 0 then file = racial.icon end
+        return file
+    end
+    local known = db.learned and db.learned[Plain(name)]
+    return NodeIcon(name) or (known and known.icon)
+end
+
+---------------------------------------------------------------------------
+-- Learning nodes
+---------------------------------------------------------------------------
+-- Nodes missing from the English lists are learned when gathered, from the loot.
+
+local TRADE_GOODS, HERB, METAL_AND_STONE, GEM = 7, 9, 7, 3 -- item class/subclasses
+local castTarget -- target of your last cast
+local lastSource -- GUID of the last looted object
+
+local function NoteCast(target)
+    castTarget = nil
+    if issecretvalue(target) or type(target) ~= "string" or target == "" then return end
+    castTarget = target
+end
+
+-- "herbs" or "ore" if a node gave this loot, and its items as { item, icon }.
+local function LootKind()
+    local kind, gave = nil, {}
+    for slot = 1, GetNumLootItems() do
+        local link = GetLootSlotLink(slot)
+        if not link or issecretvalue(link) then return nil end
+        local item, _, _, _, icon, class, subclass = C_Item.GetItemInfoInstant(link)
+        local this = class == TRADE_GOODS and (subclass == HERB and "herbs" or subclass == METAL_AND_STONE and "ore") or nil
+        if this then
+            if kind and kind ~= this then return nil end
+            kind = this
+            gave[#gave + 1] = { item, icon }
+        elseif class ~= GEM then
+            return nil
+        end
+    end
+    return kind, gave
+end
+
+local function SourceName(guid)
+    local name = UnitNameFromGUID and UnitNameFromGUID(guid)
+    if issecretvalue(name) or type(name) ~= "string" or name == "" or name == UNKNOWNOBJECT then name = castTarget end
+    return name
+end
+
+-- LOOT_READY: learn the node the loot came from.
+local function Learn()
+    local guid = GetLootSourceInfo(1)
+    if issecretvalue(guid) or type(guid) ~= "string" or guid == lastSource then return end
+    lastSource = guid
+    if guid:sub(1, 11) ~= "GameObject-" then return end
+    local name = SourceName(guid)
+    castTarget = nil
+    local kind, gave = LootKind()
+    turns.picked = kind -- (see Picked)
+    if not (name and kind) then return end -- no name, or not a herb or ore
+    local key = Plain(name)
+    local known = db.learned[key] or { seen = {}, most = 0 }
+    known.kind = kind
+    for _, pair in ipairs(gave) do
+        local count = (known.seen[pair[1]] or 0) + 1
+        known.seen[pair[1]] = count
+        if count > known.most then known.most, known.icon = count, pair[2] end
+    end
+    db.learned[key] = known
+end
+
 ---------------------------------------------------------------------------
 -- Switching finders
 ---------------------------------------------------------------------------
@@ -341,7 +354,7 @@ local function Finders()
         local info = C_Minimap.GetTrackingInfo(index)
         if issecretvalue(info) then return nil end
         local shows = info and not issecretvalue(info.spellID) and FINDERS[info.spellID]
-        if shows == "herbs" or shows == "ore" then -- (not Find Treasure or Track Beasts)
+        if shows == "herbs" or shows == "ore" then -- (not Find Treasure or creature tracking)
             if issecretvalue(info.active) then return nil end
             if info.active then
                 on, active = shows, active + 1
@@ -426,18 +439,23 @@ local function Record(hits, text, point, gray)
     end
 end
 
--- Adds a red "Requires Herbalism (15)" line to the minimap tooltip. It's rebuilt
--- every frame, so skills are reread at most once a second.
+-- Adds a "Requires Herbalism (15)" line to the minimap tooltip, red if your skill
+-- is too low, else in the profession window's colors for the chance of a skill-up.
+-- It's rebuilt every frame, so skills are reread at most once a second.
 local SKILL_WAIT = 1
 local skillsRead = 0 -- last skill refresh
 local said = {} -- lines added this frame
 
+-- The line and its color. A skill-up always, likely, unlikely, never: 25, 50 and
+-- 100 points above what the node needs.
 local function Requirement(name)
     local kind = KindOf(name)
-    if not kind then return nil end
-    local hard, need = TooHard(name, kind)
-    if not hard or not professions[kind] then return nil end
-    return ITEM_MIN_SKILL:format(professions[kind], need)
+    local need, skill = NodeSkill(name, kind) -- nothing for chests, rares and the like
+    if not skill or not professions[kind] then return nil end
+    local over = skill - need
+    local color = over < 0 and RED_FONT_COLOR or over < 25 and DIFFICULT_DIFFICULTY_COLOR
+        or over < 50 and FAIR_DIFFICULTY_COLOR or over < 100 and EASY_DIFFICULTY_COLOR or TRIVIAL_DIFFICULTY_COLOR
+    return ITEM_MIN_SKILL:format(professions[kind], need), color
 end
 
 local function OnMinimapTooltip(tooltip, data)
@@ -450,10 +468,10 @@ local function OnMinimapTooltip(tooltip, data)
         local text = line.leftText
         if text and not issecretvalue(text) then
             for _, name in ipairs(NamesIn(text)) do
-                local requires = Requirement(name)
+                local requires, color = Requirement(name)
                 if requires and not said[requires] then
                     said[requires] = true
-                    tooltip:AddLine(requires, RED_FONT_COLOR:GetRGB())
+                    tooltip:AddLine(requires, color:GetRGB())
                 end
             end
         end
@@ -479,8 +497,41 @@ local function NewMask(region)
     return mask
 end
 
+-- How much of the ring's width a shape shows (%): the slim gold ring is cut.
+local function RingCut(shape) return shape == 4 and SLIM or 100 end
+
+-- The slim gold ring is the gold ring cut thin: it goes under the symbol, which
+-- hides its dark inner edge, and a circle on the symbol's middle cuts it from the
+-- outside, so what shows is an even band between two circles around the same point.
+local function CutRing(icon)
+    icon.cut = RingCut(icon.shape)
+    local cut = icon.cut < 100
+    if cut then
+        if not icon.cutMask then
+            icon.cutMask = mapFrame:CreateMaskTexture()
+            -- Clear outside its square, or the game stretches the circle's edge outward.
+            icon.cutMask:SetAtlas(CIRCLE, false, nil, nil, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+            icon.cutMask:SetPoint("CENTER", icon.texture, "CENTER")
+        end
+        local outer = icon.tint and oreRing.width or GOLD_OUTER
+        local across = icon.size * (1 + (outer - 1) * icon.cut / 100)
+        icon.cutMask:SetSize(across, across)
+    end
+    if cut ~= (icon.ringCut or false) then
+        icon.ringCut = cut
+        if cut then
+            icon.border:AddMaskTexture(icon.cutMask)
+            icon.border:SetDrawLayer("OVERLAY", -1)
+        else
+            icon.border:RemoveMaskTexture(icon.cutMask)
+            icon.border:SetDrawLayer("OVERLAY", 1)
+        end
+    end
+end
+
 -- The gold ring scales with the symbol; the ore rings are centered on it.
 local function SizeRing(icon)
+    CutRing(icon)
     local scale = icon.size / ICON_SIZE
     icon.border:ClearAllPoints() -- the rings use different anchors
     if icon.tint then
@@ -501,7 +552,7 @@ end
 -- Applies a shape; the mask and ring are created on first use.
 local function ApplyShape(icon, shape)
     icon.shape = shape
-    local ringed = shape == 3
+    local ringed = shape == 3 or shape == 4
     local round = shape == 2 or ringed
     if round ~= (icon.round or false) then
         icon.round = round
@@ -528,10 +579,96 @@ local function ApplyShape(icon, shape)
     end
 end
 
--- Nearest node you can gather (not too hard, not in a cave).
+-- The arrow's node: the nearest you can gather (not too hard, not in a cave) of the
+-- kinds it points to; with those settings past the one you're at, herbs and ore first.
 local function Target()
+    local other
     for _, marker in ipairs(markers) do
-        if not marker.hard and not marker.dim then return marker end
+        if not marker.hard and not marker.dim and db[ARROW_TO[marker.kind]]
+            and not (db.arrowSkip and marker.yards and marker.yards < SKIP_YARDS) then
+            if not db.arrowFirst or marker.kind == "herbs" or marker.kind == "ore" then return marker end
+            other = other or marker
+        end
+    end
+    return other
+end
+
+-- A symbol's picture: the item icon, or the plain herb, ore or rare symbol.
+local function ShowPicture(icon, marker)
+    local picture = marker.file or ICONS[marker.kind]
+    if marker.kind == "rares" then picture = picture[db.rareIcon] end
+    if icon.picture ~= picture then
+        icon.picture = picture
+        if marker.file then
+            icon.texture:SetTexture(picture)
+            icon.texture:SetTexCoord(0.08, 0.92, 0.08, 0.92) -- without the icon's border
+        else
+            icon.texture:SetAtlas(picture)
+        end
+    end
+end
+
+-- A symbol's size, shape and ring.
+local function ShowShape(icon, marker)
+    if icon.size ~= db.iconSize then ApplySize(icon) end -- before ApplyShape, so a new ring gets this size
+    -- Rare symbols keep Blizzard's own look: square, no ring.
+    local shape = marker.kind == "rares" and 1 or db.shape
+    if icon.shape ~= shape then ApplyShape(icon, shape) end
+    -- High visibility tin and iron: swap the gold ring for the tinted one.
+    local tint = icon.ring and db.oreRings and oreRing.ok and oreRing.tints[marker.file] or false
+    local swap = not icon.tint ~= not tint -- tin to iron is just a new tint
+    icon.tint = tint
+    if swap then
+        if tint then
+            icon.border:SetAtlas(oreRing.atlas)
+        else
+            icon.border:SetTexture(GOLD_BORDER)
+        end
+        SizeRing(icon)
+    end
+    if icon.ring and icon.cut ~= RingCut(shape) then CutRing(icon) end
+end
+
+-- A symbol's look: red, gray in a cave, see-through over your arrow. A color puts a
+-- texture's alpha back to 1, so after one the alpha is set again.
+local function ShowLook(icon, marker)
+    -- Red if too hard; dimmed and desaturated in a cave (ore icons are already gray).
+    local hard = (db.hard and marker.hard) or false
+    if icon.hard ~= hard or icon.dim ~= marker.dim then
+        icon.hard, icon.dim = hard, marker.dim
+        local shade = icon.dim and 0.5 or 1
+        if hard then
+            icon.texture:SetVertexColor(TOO_HARD[1] * shade, TOO_HARD[2] * shade, TOO_HARD[3] * shade)
+        else
+            icon.texture:SetVertexColor(shade, shade, shade)
+        end
+        icon.texture:SetDesaturated(icon.dim)
+        icon.alpha = nil -- the color set it back to 1
+    end
+    -- The ring gets the cave look or the ore tint. Done here because ApplyShape may
+    -- have just created or re-shown it.
+    local look = icon.dim or icon.tint or false
+    if icon.ring and (icon.ringLook or false) ~= look then
+        icon.ringLook = look
+        if icon.tint and not icon.dim then
+            icon.ring:SetVertexColor(icon.tint[1], icon.tint[2], icon.tint[3])
+            icon.ring:SetDesaturation(oreRing.gray)
+        else
+            local shade = icon.dim and 0.5 or 1
+            icon.ring:SetVertexColor(shade, shade, shade)
+            icon.ring:SetDesaturated(icon.dim)
+        end
+        icon.ringAlpha = nil
+    end
+    -- See-through near you: while over your own arrow.
+    local alpha = db.clearNear and marker.distance < icon.size / 2 + PLAYER_ARROW and CLEAR or 1
+    if (icon.alpha or 1) ~= alpha then
+        icon.alpha = alpha
+        icon.texture:SetAlpha(alpha)
+    end
+    if icon.ring and (icon.ringAlpha or 1) ~= alpha then
+        icon.ringAlpha = alpha
+        icon.ring:SetAlpha(alpha)
     end
 end
 
@@ -551,60 +688,9 @@ local function ShowMarkers()
         if marker and not marker.far then
             icon = icon or NewIcon()
             mapIcons[i] = icon
-            -- Item icon, or the plain herb or ore symbol.
-            local picture = marker.file or ICONS[marker.kind]
-            if marker.kind == "rares" then picture = picture[db.rareIcon] end
-            if icon.picture ~= picture then
-                icon.picture = picture
-                if marker.file then
-                    icon.texture:SetTexture(picture)
-                    icon.texture:SetTexCoord(0.08, 0.92, 0.08, 0.92) -- without the icon's border
-                else
-                    icon.texture:SetAtlas(picture)
-                end
-            end
-            if icon.size ~= db.iconSize then ApplySize(icon) end -- before ApplyShape, so a new ring gets this size
-            -- Rare beast symbols keep Blizzard's own look: square, no ring.
-            local shape = marker.kind == "rares" and 1 or db.shape
-            if icon.shape ~= shape then ApplyShape(icon, shape) end
-            -- High visibility tin and iron: swap the gold ring for the tinted one.
-            local tint = icon.ring and db.oreRings and oreRing.ok and oreRing.tints[marker.file] or false
-            local swap = not icon.tint ~= not tint -- tin to iron is just a new tint
-            icon.tint = tint
-            if swap then
-                if tint then
-                    icon.border:SetAtlas(oreRing.atlas)
-                else
-                    icon.border:SetTexture(GOLD_BORDER)
-                end
-                SizeRing(icon)
-            end
-            -- Red if too hard; dimmed and desaturated in a cave (ore icons are already gray).
-            local hard = (db.hard and marker.hard) or false
-            if icon.hard ~= hard or icon.dim ~= marker.dim then
-                icon.hard, icon.dim = hard, marker.dim
-                local shade = icon.dim and 0.5 or 1
-                if hard then
-                    icon.texture:SetVertexColor(TOO_HARD[1] * shade, TOO_HARD[2] * shade, TOO_HARD[3] * shade)
-                else
-                    icon.texture:SetVertexColor(shade, shade, shade)
-                end
-                icon.texture:SetDesaturated(icon.dim)
-            end
-            -- The ring gets the cave look or the ore tint. Done here because ApplyShape may
-            -- have just created or re-shown it.
-            local look = icon.dim or icon.tint or false
-            if icon.ring and (icon.ringLook or false) ~= look then
-                icon.ringLook = look
-                if icon.tint and not icon.dim then
-                    icon.ring:SetVertexColor(icon.tint[1], icon.tint[2], icon.tint[3])
-                    icon.ring:SetDesaturation(oreRing.gray)
-                else
-                    local shade = icon.dim and 0.5 or 1
-                    icon.ring:SetVertexColor(shade, shade, shade)
-                    icon.ring:SetDesaturated(icon.dim)
-                end
-            end
+            ShowPicture(icon, marker)
+            ShowShape(icon, marker)
+            ShowLook(icon, marker)
             -- Setting the same point again moves it; no ClearAllPoints needed.
             icon.texture:SetPoint("CENTER", mapFrame, "BOTTOMLEFT", marker.x, marker.y)
             if not icon.shown then
@@ -636,6 +722,11 @@ local function UpdateArrow()
         arrowOn = true
         arrow:Show()
     end
+end
+
+-- A locked arrow takes no mouse: it can't be dragged, and clicks go through it.
+local function ApplyArrowLock()
+    arrow:EnableMouse(not db.arrowLocked)
 end
 
 ---------------------------------------------------------------------------
@@ -868,7 +959,7 @@ local function Smooth(found, before, width, height, used)
                 if gap < MERGE * MERGE and (not bestGap or gap < bestGap) then best, bestGap = old, gap end
             end
         end
-        -- Rare beasts move: no averaging.
+        -- Rares move: no averaging.
         if marker.kind == "rares" then best = nil end
         if marker.pinned then
             marker.count = marker.count or 1
@@ -901,6 +992,7 @@ local function FinishScan()
     local facing = PlayerFacing()
     local found, pinOf, kept = {}, {}, {}
     skills.herbs, skills.ore = nil, nil -- reread when needed
+    racialShown = false
     -- A rotating minimap has your facing at the top; otherwise north.
     if not (rotating and not facing) then
         for _, place in ipairs(places) do
@@ -908,6 +1000,7 @@ local function FinishScan()
             -- Skip names that stopped being nodes mid-scan (zone change, pet called).
             local kind = KindOf(name)
             if kind then
+                if RACIALS[kind] then racialShown = true end
                 local dx, dy = x - width / 2, y - width / 2
                 local bearing = math.atan2(dx, dy) -- clockwise from the top of the minimap
                 local distance = math.sqrt(dx * dx + dy * dy)
@@ -966,7 +1059,7 @@ local function FinishScan()
         empties = empties + 1
         emptyMap, emptyX, emptyY = map, x, y -- current position
     end
-    -- A rare beast in sight keeps the scan at full pace.
+    -- A rare in sight keeps the scan at full pace.
     for _, marker in ipairs(found) do
         if marker.kind == "rares" and hurry == 0 then hurry = 1 end
     end
@@ -1202,7 +1295,7 @@ local function EndCoarse()
                     local place = { name = name, x = x, y = y }
                     if mapped and #keys <= Single() then -- one dot
                         place.pin = PinAt(name, x, y) -- FinishScan keeps its map spot
-                        -- Rare beasts move: never pinned.
+                        -- Rares move: never pinned.
                         if place.pin and place.pin.kind == "rares" then place.pin = nil end
                         if not place.pin then
                             place.box = Box(keys)
@@ -1318,6 +1411,27 @@ local function Picked()
     if gone then ShowMarkers() end
 end
 
+-- A cooldown changed: a Skyborne racial just used takes its symbols away at once,
+-- and one ready again starts a scan now.
+local function RacialsChanged()
+    local ready, gone = false, false
+    for kind in pairs(RACIALS) do
+        if RacialReady(kind) then
+            ready = true
+        elseif racialShown then
+            for i = #markers, 1, -1 do
+                if markers[i].kind == kind then
+                    table.remove(markers, i)
+                    gone = true
+                end
+            end
+        end
+    end
+    if gone then ShowMarkers() end
+    if ready and not racialWasReady then wait, empties = 0, 0 end
+    racialWasReady = ready
+end
+
 -- After a settings change: start or stop the scan and rescan now.
 local function UpdateScanner()
     eased, quiet = 0, 0
@@ -1361,7 +1475,7 @@ local function NewScanner()
     arrow:Hide()
     arrow:SetMovable(true)
     arrow:SetClampedToScreen(true)
-    arrow:EnableMouse(true)
+    ApplyArrowLock()
     arrow:RegisterForDrag("LeftButton")
     local dragging = false
     -- Save the position on drop (or if hidden mid-drag).
@@ -1395,7 +1509,7 @@ end
 -- What the other files use of this one.
 ns.defaults, ns.SHAPES, ns.world = defaults, SHAPES, world
 ns.Clean, ns.MapPosition, ns.PlayerFacing = Clean, MapPosition, PlayerFacing
-ns.UpdateScanner, ns.ApplyDotScale = UpdateScanner, ApplyDotScale
+ns.UpdateScanner, ns.ApplyDotScale, ns.ApplyArrowLock = UpdateScanner, ApplyDotScale, ApplyArrowLock
 -- A getter, since each scan replaces the list.
 function ns.Markers() return markers end
 
@@ -1468,22 +1582,7 @@ events:SetScript("OnEvent", function(_, event, arg1, arg2)
         wait, hurry = 0, 3
         Picked()
     elseif event == "SPELL_UPDATE_COOLDOWN" then
-        -- When Read Leyline readiness changes: drop or rescan leyline symbols.
-        local ready = ICONS.LeyReady()
-        if ready ~= ICONS.leyWasReady then
-            ICONS.leyWasReady = ready
-            if not ready then
-                local gone = false
-                for i = #markers, 1, -1 do
-                    if markers[i].kind == "leyline" then
-                        table.remove(markers, i)
-                        gone = true
-                    end
-                end
-                if gone then ShowMarkers() end
-            end
-            wait, empties = 0, 0
-        end
+        RacialsChanged()
     elseif event == "PLAYER_STARTED_MOVING" or event == "MINIMAP_UPDATE_ZOOM" or event == "MINIMAP_UPDATE_TRACKING" then
         -- Moving, zooming or a tracking change ends the slowdown.
         local soon = event == "MINIMAP_UPDATE_TRACKING" and SWITCH_WAIT or WAIT

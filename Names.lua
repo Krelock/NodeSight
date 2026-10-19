@@ -2,20 +2,22 @@
 -- node, its icon and the skill it needs all come from the name. English only;
 -- other names are learned by gathering (Learn in NodeSight.lua).
 --
--- In order: NodeKind, NodeIcon, TooHard.
+-- In order: NodeKind, NodeIcon, TooHard, NodeSkill.
 
 local _, ns = ...
 
 local ipairs = ipairs
 
--- Herbs are matched by the end of the name, ore by "vein" or "deposit". Names
--- with digits, ":" or "/" are quest progress ("Peacebloom 3/8"), not nodes.
+-- Herbs are matched by the end of the name, ore by "vein" or "deposit" (or ORE_OTHER).
+-- Names with digits, ":" or "/" are quest progress ("Peacebloom 3/8"), not nodes.
 local HERB_OTHER = { "doom weed", "gloom weed", "moonroot" } -- no item icon: plain herb symbol
--- Find Treasure chests, by the end of the name. Other treasure is learned when opened.
+local ORE_OTHER = { "chunk of amber", "obsidian chunk", "moonstone formation" } -- no vein or deposit
+-- Find Treasure chests, by the end of the name (crates and sacks are quest things too).
 local TREASURE = { "chest", "footlocker", "strongbox", "lockbox", "coffer", icon = "Interface\\Icons\\racial_dwarf_findtreasure" }
--- Rare beasts (Wowhead's WoW Forever data) and their zone (GetRealZoneText; "a/b"
--- for two, true if unknown). They only count in their zone, since a hunter's pet
--- keeps the name of the rare it was tamed from.
+-- Rare beasts and humanoids (Wowhead's WoW Forever data) and their zone
+-- (GetRealZoneText; "a/b" for two, true if unknown). They only count in their
+-- zone: a hunter's pet keeps the name of the rare it was tamed from, and some
+-- ordinary NPCs elsewhere share a rare's name.
 local RARES = {
     ["abominable snowman"] = true, ["antilos"] = "Azshara", ["antilus the soarer"] = "Feralas",
     ["araga"] = "Alterac Mountains", ["arash-ethis"] = "Feralas", ["arcterris"] = "Winterspring",
@@ -55,6 +57,105 @@ local RARES = {
     ["the rake"] = "Mulgore", ["the razza"] = "Feralas", ["thunderstomp"] = "The Barrens", ["timber"] = "Dun Morogh",
     ["uhk'loc"] = "Un'Goro Crater", ["ursol'lok"] = "Ashenvale", ["vile sting"] = "Thousand Needles",
     ["vultros"] = "Westfall", ["zaricotl"] = "Badlands", ["zopilote"] = "Tanaris",
+    -- Humanoids
+    ["accursed slitherblade"] = "Desolace", ["achellios the banished"] = "Thousand Needles",
+    ["aean swiftriver"] = "The Barrens", ["akubar the seer"] = "Blasted Lands",
+    ["apothecary falthis"] = "Ashenvale", ["bannok grimaxe"] = "Blackrock Spire",
+    ["bloodroar the stalker"] = "Feralas", ["boahn"] = true, ["boss galgosh"] = "Loch Modan",
+    ["brack"] = "Westfall", ["brainwashed noble"] = true, ["brokespear"] = "The Barrens",
+    ["brother ravenoak"] = "Stonetalon Mountains", ["bruegal ironknuckle"] = "The Stockade",
+    ["burgle eye"] = "Dustwallow Marsh", ["captain flat tusk"] = "Durotar",
+    ["captain gerogg hammertoe"] = "The Barrens", ["carnivous the breaker"] = "Darkshore",
+    ["cursed centaur"] = "Desolace", ["cyclok the mad"] = "Tanaris",
+    ["dalaran spellscribe"] = "Silverpine Forest", ["darbel montrose"] = "Arathi Highlands",
+    ["dark iron ambassador"] = "Gnomeregan", ["darkslayer mordenthal"] = "Ashenvale",
+    ["deathspeaker selendre"] = "Eastern Plaguelands", ["deeb"] = "Tirisfal Glades",
+    ["desert mirage"] = "The Barrens", ["diamond head"] = "Feralas", ["digger flameforge"] = "The Barrens",
+    ["digmaster shovelphlange"] = true, ["dragonmaw battlemaster"] = "Wetlands",
+    ["dreadscorn"] = "Blasted Lands", ["dro'zem the blasphemous"] = "Redridge Mountains",
+    ["duggan wildhammer"] = "Eastern Plaguelands", ["dustwind eggtender"] = "Durotar",
+    ["dustwraith"] = "Zul'Farrak", ["earthcaller halmgar"] = "Razorfen Kraul",
+    ["edan the howler"] = "Dun Morogh", ["elder finseer"] = "Elwynn Forest",
+    ["elder mystic razorsnout"] = "The Barrens", ["emogg the crusher"] = "Loch Modan",
+    ["enforcer emilgund"] = "Mulgore", ["engineer whirleygig"] = "The Barrens",
+    ["farmer solliden"] = "Tirisfal Glades", ["fedfennel"] = "Elwynn Forest",
+    ["felweaver scornn"] = "Durotar", ["fenros"] = "Duskwood", ["fingat"] = "Swamp of Sorrows",
+    ["firecaller radison"] = "Darkshore", ["flagglemurk the cruel"] = "Darkshore",
+    ["flamebringer kelris"] = "Searing Gorge", ["foreman grills"] = "The Barrens",
+    ["foreman jerris"] = "Western Plaguelands", ["foreman marcrid"] = "Western Plaguelands",
+    ["foreman rigger"] = "Stonetalon Mountains", ["foulbelly"] = "Arathi Highlands",
+    ["fury shelda"] = "Teldrassil", ["galemender delanea"] = "Zephras Isle", ["galenges"] = "Searing Gorge",
+    ["garneg charskull"] = "Wetlands", ["gatekeeper rageroar"] = "Azshara", ["gefell"] = "Shadowfang Keep",
+    ["gemela"] = "Shadowfang Keep", ["general fangferror"] = "Azshara", ["geolord mottle"] = "Durotar",
+    ["geopriest gukk'rok"] = "The Barrens", ["ghok bashguud"] = "Blackrock Spire",
+    ["gibblesnik"] = "Thousand Needles", ["gibblewilt"] = "Dun Morogh", ["gilmorian"] = "Swamp of Sorrows",
+    ["gluggle"] = "Stranglethorn Vale", ["gnawbone"] = "Wetlands", ["gorgon'och"] = "Burning Steppes",
+    ["gravis slipknot"] = "Alterac Mountains", ["great father arctikus"] = "Dun Morogh",
+    ["grimmaw"] = "Teldrassil", ["grizlak"] = "Loch Modan", ["grizzle snowpaw"] = "Winterspring",
+    ["gruff swiftbite"] = "Elwynn Forest", ["gruklash"] = "Burning Steppes",
+    ["hagg taurenbane"] = "The Barrens", ["hahk'zor"] = "Burning Steppes", ["hammerspine"] = "Dun Morogh",
+    ["hannah bladeleaf"] = "The Barrens", ["harb foulmountain"] = "Thousand Needles",
+    ["heggin stonewhisker"] = "The Barrens", ["high general abbendis"] = "Eastern Plaguelands",
+    ["high priestess hai'watna"] = "Stranglethorn Vale", ["highlord mastrogonde"] = "Searing Gorge",
+    ["jalinde summerdrake"] = "The Hinterlands", ["jed runewatcher"] = "Blackrock Spire",
+    ["jimmy the bleeder"] = "Alterac Mountains", ["jin'zallah the sandbringer"] = "Tanaris",
+    ["kazon"] = "Redridge Mountains", ["kovork"] = "Arathi Highlands", ["kregg keelhaul"] = "Tanaris",
+    ["lady sesspira"] = "Azshara", ["lady szallah"] = "Feralas", ["lady vespia"] = "Ashenvale",
+    ["lady vespira"] = "Darkshore", ["lady zephris"] = "Hillsbrad Foothills",
+    ["lieutenant skarresh"] = "Searing Gorge", ["lo'grosh"] = "Alterac Mountains",
+    ["lord angler"] = "Dustwallow Marsh", ["lord gazzran"] = "Searing Gorge",
+    ["lord maldazzar"] = "Western Plaguelands", ["lord sakrasis"] = "Stranglethorn Vale",
+    ["lord sinslayer"] = "Darkshore", ["lost one chieftain"] = "Swamp of Sorrows",
+    ["lost one cook"] = "Swamp of Sorrows", ["lyn the ignored"] = "Alterac Mountains",
+    ["ma'ruk wyrmscale"] = "Wetlands", ["magister hawkhelm"] = "Azshara", ["magosh"] = "Loch Modan",
+    ["magronos the unyielding"] = "Blasted Lands", ["malgin barleybrew"] = "The Barrens",
+    ["marcus bel"] = "The Barrens", ["marisa du'paige"] = true, ["master digger"] = "Westfall",
+    ["mezzir the howler"] = "Winterspring", ["miner johnson"] = "The Deadmines",
+    ["mith'rethis the enchanter"] = "The Hinterlands", ["mojo the twisted"] = "Blasted Lands",
+    ["molok the crusher"] = "Arathi Highlands", ["morgaine the sly"] = "Elwynn Forest",
+    ["mosh'ogg butcher"] = "Stranglethorn Vale", ["muad"] = "Tirisfal Glades", ["mugglefin"] = "Ashenvale",
+    ["narg the taskmaster"] = "Elwynn Forest", ["nefaru"] = "Duskwood",
+    ["nimar the slayer"] = "Arathi Highlands", ["oakpaw"] = "Ashenvale", ["omgorn the lost"] = "Tanaris",
+    ["overseer myoleth"] = "Mount Hyjal", ["par'kourc"] = "Redridge Mountains",
+    ["prince nazjak"] = "Arathi Highlands", ["ragepaw"] = "Felwood",
+    ["ranger lord hawkspear"] = "Eastern Plaguelands", ["razortalon"] = "The Hinterlands",
+    ["retherokk the berserker"] = "The Hinterlands", ["ribchaser"] = "Redridge Mountains",
+    ["ro'bark"] = "Hillsbrad Foothills", ["rocklance"] = "The Barrens",
+    ["rohh the silent"] = "Redridge Mountains", ["roloch"] = "Stranglethorn Vale",
+    ["rorgish jowl"] = "Ashenvale", ["ruul onestone"] = "Arathi Highlands",
+    ["sandarr dunereaver"] = "Zul'Farrak", ["scargil"] = "Hillsbrad Foothills",
+    ["scarlet captain"] = "Eastern Plaguelands",
+    ["scarlet executioner"] = "Scarlet Enclave/Western Plaguelands",
+    ["scarlet high clerist"] = "Western Plaguelands", ["scarlet interrogator"] = "Western Plaguelands",
+    ["scarlet judge"] = "Western Plaguelands", ["scarlet smith"] = "Western Plaguelands",
+    ["scarshield quartermaster"] = true, ["sentinel amarassan"] = "Stonetalon Mountains",
+    ["sergeant brashclaw"] = "Westfall", ["setis"] = "Silithus", ["shadowforge commander"] = "Badlands",
+    ["singer"] = "Arathi Highlands", ["sister hatelash"] = "Mulgore", ["sister rathtalon"] = "The Barrens",
+    ["sister riven"] = "Stonetalon Mountains", ["skarr the unbreakable"] = "Feralas",
+    ["skhowl"] = "Alterac Mountains", ["slark"] = "Westfall", ["slave master blackheart"] = "Searing Gorge",
+    ["snagglespear"] = "Mulgore", ["snarlsnout"] = "Mulgore", ["spirestone battle lord"] = "Blackrock Spire",
+    ["spirestone butcher"] = "Blackrock Spire", ["spirestone lord magus"] = "Blackrock Spire",
+    ["squiddic"] = "Redridge Mountains", ["stonearm"] = "The Barrens", ["stormherald ukta"] = "Mulgore",
+    ["swinegart spearhide"] = "The Barrens", ["tamra stormpike"] = "Hillsbrad Foothills",
+    ["taskmaster whipfang"] = "Stonetalon Mountains", ["tel'daeor the stormspeaker"] = "Zephras Isle",
+    ["terrowulf packlord"] = "Ashenvale", ["thauris balgarr"] = "Burning Steppes", ["the behemoth"] = true,
+    ["the snatcher"] = "Westfall", ["thora feathermoon"] = "The Barrens", ["thornstarter igleg"] = "Mulgore",
+    ["thuros lightfingers"] = "Elwynn Forest", ["twilight lord everun"] = "Silithus",
+    ["urok doomhowl"] = "Blackrock Spire", ["uruson"] = "Teldrassil", ["verifonix"] = "Stranglethorn Vale",
+    ["warleader krazzilak"] = "Tanaris", ["warlord kolkanis"] = "Durotar",
+    ["warlord thresh'jin"] = "Eastern Plaguelands", ["watch commander zalaphil"] = "Durotar",
+    ["witherheart the stalker"] = "The Hinterlands", ["zalas witherbark"] = "Arathi Highlands",
+    ["zerillis"] = "Zul'Farrak", ["zul'arek hatefowler"] = "The Hinterlands",
+    ["zul'brin warpbranch"] = "Eastern Plaguelands",
+}
+-- Rares friendly to one faction: no symbol for that faction.
+local FRIENDLY = {
+    ["aean swiftriver"] = "Alliance", ["dalaran spellscribe"] = "Alliance",
+    ["darkslayer mordenthal"] = "Horde", ["duggan wildhammer"] = "Alliance",
+    ["hannah bladeleaf"] = "Alliance", ["heggin stonewhisker"] = "Alliance",
+    ["jalinde summerdrake"] = "Alliance", ["marcus bel"] = "Alliance",
+    ["ranger lord hawkspear"] = "Alliance", ["sentinel amarassan"] = "Alliance",
+    ["thora feathermoon"] = "Alliance",
 }
 local MAX_WORDS = 5
 
@@ -96,9 +197,11 @@ local ORE_ICONS = {
     { "mithril deposit", "inv_ore_mithril_02" }, { "truesilver deposit", "inv_ore_truesilver_01" },
     { "thorium vein", "inv_ore_thorium_02" }, { "indurium", "inv_ore_mithril_01" },
     { "incendicite", "inv_ore_thorium_01" }, { "bloodstone", "inv_ore_thorium_01" },
+    { "chunk of amber", "trade_archaeology_insect-in-amber" }, { "small obsidian", "inv_misc_stonetablet_01" },
+    { "large obsidian", "inv_stone_15" }, { "moonstone", "inv_misc_apexis_crystal" },
 }
 
--- "herbs", "ore", "treasure", "leyline" or nil.
+-- "herbs", "ore", "treasure", "leyline", "convergence" or nil.
 local function NodeKind(name)
     name = Plain(name)
     if name:find("[%d:/]") then return nil end
@@ -106,6 +209,9 @@ local function NodeKind(name)
     for _ in name:gmatch("%S+") do words = words + 1 end
     if words > MAX_WORDS then return nil end
     if EndsWith(name, " vein") or EndsWith(name, " deposit") then return "ore" end
+    for _, other in ipairs(ORE_OTHER) do
+        if EndsWith(name, other) then return "ore" end
+    end
     for _, entry in ipairs(HERB_ICONS) do
         if EndsWith(name, entry[1]) then return "herbs" end
     end
@@ -115,7 +221,8 @@ local function NodeKind(name)
     for _, ending in ipairs(TREASURE) do
         if EndsWith(name, ending) then return "treasure" end
     end
-    if name == "leyline" or EndsWith(name, "leyline") then return "leyline" end
+    if EndsWith(name, "leyline") or EndsWith(name, "ley line") then return "leyline" end
+    if EndsWith(name, "convergence") then return "convergence" end
     return nil
 end
 
@@ -152,9 +259,6 @@ local NEEDED = {
         ["ooze covered rich thorium vein"] = 275, ["hakkari thorium vein"] = 275, ["heavy thorium vein"] = 300,
         ["small obsidian chunk"] = 305, ["large obsidian chunk"] = 305,
     },
-    treasure = {},
-    leyline = {}, -- (nor does a leyline)
-    rares = {},
 }
 local TOO_HARD = { 1, 0.2, 0.2 } -- red tint for nodes above your skill
 local skills = {} -- cached skill levels (false = unknown)
@@ -171,16 +275,26 @@ local function GatherSkill(kind)
     return rank + (bonus or 0)
 end
 
--- true if the node needs more skill than you have, plus the skill needed.
+-- true if the node needs more skill than you have.
 local function TooHard(name, kind)
-    local need = NEEDED[kind][Plain(name)]
+    local need = NEEDED[kind] and NEEDED[kind][Plain(name)]
     if not need then return false end
     if skills[kind] == nil then skills[kind] = GatherSkill(kind) or false end
     local skill = skills[kind]
-    return skill ~= false and need > skill, need
+    return skill ~= false and need > skill
+end
+
+-- What a herb or ore needs (1 for one known by name but not listed, nil for one only
+-- learned by gathering and for other kinds), and your skill (false if unknown).
+local function NodeSkill(name, kind)
+    local list = NEEDED[kind]
+    local need = list and (list[Plain(name)] or (NodeKind(name) == kind and 1))
+    if not need then return nil end
+    if skills[kind] == nil then skills[kind] = GatherSkill(kind) or false end
+    return need, skills[kind]
 end
 
 -- Used by NodeSight.lua.
 ns.Plain, ns.NodeKind, ns.NodeIcon = Plain, NodeKind, NodeIcon
-ns.TREASURE, ns.RARES = TREASURE, RARES
-ns.TOO_HARD, ns.skills, ns.professions, ns.TooHard = TOO_HARD, skills, professions, TooHard
+ns.TREASURE, ns.RARES, ns.FRIENDLY = TREASURE, RARES, FRIENDLY
+ns.TOO_HARD, ns.skills, ns.professions, ns.TooHard, ns.NodeSkill = TOO_HARD, skills, professions, TooHard, NodeSkill
