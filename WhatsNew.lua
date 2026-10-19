@@ -11,6 +11,11 @@ local ipairs = ipairs
 local ShowWhatsNew
 do
     local WHATS_NEW = {
+        {
+            { "New", {
+                { "Leylines for Skyborne.", "Leylines on your minimap get a symbol the way herbs and ore get theirs, while Read Leyline is ready. For High Order Skyborne; turn on or off in NodeSight's settings" },
+            } },
+        },
         { version = "1.3.0",
             { "New", {
                 { "Sparkles on far away herbs and ore (Beta) (off by default).", "Sparkles on the herb or ore you are facing, and on up to four more, from as far away as your minimap shows them. This does not work perfectly: on hills the sparkles can be above or below the herb, and it uses a lot more CPU than with it off. It will be improved in further updates. While it is on it uses the game's map pin and In-Game Navigation, in place of your own map pin and tracked quest. Turn it on under Beta, with Sparkles on herbs or Sparkles on ore on" },
