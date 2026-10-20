@@ -11,6 +11,15 @@ local ipairs = ipairs
 local ShowWhatsNew
 do
     local WHATS_NEW = {
+        { version = "1.4.1",
+            { "New", {
+                { "Skill colors on herbs and ore (always on).", "Hover a herb or ore in the world to see the skill it needs, colored like on the minimap" },
+                { "Keep the game's icons (off by default).", "The game's own icon stays over the herb, ore, chest or corpse you can interact with while sparkles are on. Turn it on under Sparkles" },
+            } },
+            { "Changes", {
+                { "Switch between herbs and ore.", "No more click each time it switches" },
+            } },
+        },
         { version = "1.4.0",
             { "New", {
                 { "Rares on the minimap (Beta) (on by default).", "Rare humanoids get a rare symbol now too, with Track Humanoids on (hunters and druids). Rares friendly to your faction don't get one. Turn it off under Beta" },

@@ -56,7 +56,7 @@ local function RegisterSettings()
     end
 
     -- Added to the sparkle checkboxes' tooltips.
-    local NEEDS = " While any sparkles are on, NodeSight turns on Enable Interact Key, its icons for objects and targeting all around you (Options > Controls and Accessibility), and hides the game's own icon and name. Turning all sparkles off puts your settings back."
+    local NEEDS = " While any sparkles are on, NodeSight turns on Enable Interact Key, its icons for objects and targeting all around you (Options > Controls and Accessibility), and hides the game's own icon and name (unless Keep the game's icons is on). Turning all sparkles off puts your settings back."
     local function SparklesChanged()
         UpdateAll()
         Setup()
@@ -156,6 +156,9 @@ local function RegisterSettings()
         SparklesChanged)
     Checkbox("others", "Sparkles on other objects",
         "Sparkles around other objects with an interact icon, like chests and quest objects. Not mailboxes, chairs or doors." .. NEEDS,
+        SparklesChanged)
+    Checkbox("gameIcons", "Keep the game's icons",
+        "The game's own icon stays over the herb, ore, chest or corpse you can interact with while sparkles are on. Needs Sparkles on herbs, ore or other objects.",
         SparklesChanged)
     ColorSwatch("sparkleColor", "Sparkle color",
         "The sparkles' tint. White shows them in their own colors.",

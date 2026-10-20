@@ -1,6 +1,7 @@
 -- NodeSight's sparkles on the herb or ore in front of you. They sit on the
 -- nameplate of the game's soft interact target, so while sparkles are on the
--- interact CVars are turned on and Blizzard's object plates are hidden.
+-- interact CVars are turned on and Blizzard's object plates are hidden (unless
+-- the game's icons are kept).
 --
 -- Sections: Telling herbs and ore apart, Sparkles, Nameplates, Interact detection.
 
@@ -257,7 +258,11 @@ local function Update(unit)
     if not unitFrame then return end -- forbidden (friendly in instances) or gone
     if UnitIsGameObject(unit) and SparklesOn() then
         -- Hide every object plate (alpha only); sparkle herbs, ore and, if set, others.
-        SetHidden(unitFrame, true)
+        if not ns.db.gameIcons then
+            SetHidden(unitFrame, true)
+        elseif hidden[unitFrame] then
+            SetHidden(unitFrame, false)
+        end
         if ns.db[ObjectKind(unit, unitFrame.SoftTargetFrame.Icon)] then ShowSparkles(namePlate) else HideSparkles(namePlate) end
     else
         if hidden[unitFrame] then SetHidden(unitFrame, false) end
@@ -297,7 +302,7 @@ local WANTED = {
     { "SoftTargetInteractArc", "2" }, -- anywhere around you, not only in front
     { "SoftTargetInteractRange", tostring(RANGE) },
     -- NPC interact icons have no plate to hide, so shrink them to 0.
-    { "SoftTargetWorldtextSize", "0" },
+    { "SoftTargetWorldtextSize", "0", npcIcon = true },
 }
 local pendingSetup -- a change is waiting for combat to end
 
@@ -318,7 +323,9 @@ local function ApplySetup()
     for _, entry in ipairs(WANTED) do
         local cvar, value = entry[1], entry[2]
         local old = C_CVar.GetCVar(cvar)
-        if old ~= nil and not Same(old, value) then
+        if entry.npcIcon and ns.db.gameIcons then
+            PutBack(cvar)
+        elseif old ~= nil and not Same(old, value) then
             C_CVar.SetCVar(cvar, value)
             -- Save only if the game accepted it, and only once.
             if Same(C_CVar.GetCVar(cvar), value) then

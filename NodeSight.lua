@@ -26,6 +26,7 @@ local defaults = {
     herbs = false, -- sparkles on herbs
     ore = false, -- sparkles on ore
     others = false, -- sparkles on other objects
+    gameIcons = false, -- keep the game's interact icons while sparkles are on
     arrow = false, -- arrow to the nearest node
     arrowLocked = false, -- the arrow can't be dragged, and clicks go through it
     arrowSkip = true, -- the arrow passes over the node you're at
@@ -367,6 +368,32 @@ local function Finders()
     return on, off
 end
 
+-- A switch plays the game's UI click. That file is shared by most UI buttons,
+-- so it's muted only from just before the switch until the cast is through
+-- (or MUTE_MAX at most).
+local SWITCH_SOUND = 567407 -- sound/interface/uchatscrollbutton.ogg
+local MUTE_MAX, MUTE_TAIL = 0.6, 0.1 -- seconds (switches are over a second apart)
+local muted = false
+
+local function Unmute()
+    if not muted then return end
+    UnmuteSoundFile(SWITCH_SOUND)
+    muted = false
+end
+
+local function Mute()
+    muted = true
+    MuteSoundFile(SWITCH_SOUND)
+    C_Timer.After(MUTE_MAX, Unmute)
+end
+
+-- Your cast went through: if it was the switch, its sound has played.
+local function CastDone(spellID)
+    if not muted or issecretvalue(spellID) then return end
+    local kind = FINDERS[spellID]
+    if kind == "herbs" or kind == "ore" then C_Timer.After(MUTE_TAIL, Unmute) end
+end
+
 -- Switches finder after switchYards; true if it did.
 local function Switch()
     local kind, other = Finders()
@@ -382,6 +409,7 @@ local function Switch()
     local dx, dy = (x - turns.x) * width, (y - turns.y) * height
     if not turns.scanned or dx * dx + dy * dy < db.switchYards ^ 2 then return false end
     turns.x, turns.y, turns.scanned = x, y, false
+    Mute()
     C_Minimap.SetTracking(other, true)
     return true
 end
@@ -458,11 +486,15 @@ local function Requirement(name)
     return ITEM_MIN_SKILL:format(professions[kind], need), color
 end
 
+local function FreshSkills()
+    local now = GetTime()
+    if now - skillsRead >= SKILL_WAIT then skills.herbs, skills.ore, skillsRead = nil, nil, now end
+end
+
 local function OnMinimapTooltip(tooltip, data)
     local lines = not issecretvalue(data) and data.lines
     if not lines or issecretvalue(lines) then return end
-    local now = GetTime()
-    if now - skillsRead >= SKILL_WAIT then skills.herbs, skills.ore, skillsRead = nil, nil, now end
+    FreshSkills()
     if next(said) then wipe(said) end
     for _, line in ipairs(lines) do
         local text = line.leftText
@@ -476,6 +508,24 @@ local function OnMinimapTooltip(tooltip, data)
             end
         end
     end
+end
+
+-- The same line on a herb's or ore's own tooltip, when the mouse is over it.
+local function OnObjectTooltip(tooltip, data)
+    local lines = not issecretvalue(data) and data.lines
+    if not lines or issecretvalue(lines) or issecretvalue(lines[1]) then return end
+    local name = lines[1] and lines[1].leftText
+    if not name or issecretvalue(name) then return end
+    FreshSkills()
+    local requires, color = Requirement(Clean(name))
+    if not requires then return end
+    for i = 2, #lines do
+        local line = lines[i]
+        if issecretvalue(line) then return end
+        local text = line.leftText
+        if issecretvalue(text) or text == requires then return end -- the game has it already
+    end
+    tooltip:AddLine(requires, color:GetRGB())
 end
 
 ---------------------------------------------------------------------------
@@ -1514,6 +1564,7 @@ ns.UpdateScanner, ns.ApplyDotScale, ns.ApplyArrowLock = UpdateScanner, ApplyDotS
 function ns.Markers() return markers end
 
 local MINIMAP_TOOLTIP = Enum.TooltipDataType.MinimapMouseover -- the minimap dots' tooltip type
+local OBJECT_TOOLTIP = Enum.TooltipDataType.Object -- a herb's or ore's own tooltip
 
 local function OnAddonLoaded()
     NodeSightDB = NodeSightDB or {}
@@ -1536,8 +1587,9 @@ local function OnAddonLoaded()
     NodeSightDB.learned = NodeSightDB.learned or {}
     -- Registered with the gamepad UI on too; it works there.
     ns.RegisterSettings()
-    -- The "Requires ..." line in the minimap's tooltip.
+    -- The "Requires ..." line in the minimap's tooltip and a node's own.
     if MINIMAP_TOOLTIP then TooltipDataProcessor.AddTooltipPostCall(MINIMAP_TOOLTIP, OnMinimapTooltip) end
+    if OBJECT_TOOLTIP then TooltipDataProcessor.AddTooltipPostCall(OBJECT_TOOLTIP, OnObjectTooltip) end
 end
 
 local events = CreateFrame("Frame")
@@ -1553,7 +1605,9 @@ events:RegisterEvent("MINIMAP_UPDATE_ZOOM")
 events:RegisterEvent("MINIMAP_UPDATE_TRACKING")
 events:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 events:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player")
-events:SetScript("OnEvent", function(_, event, arg1, arg2)
+events:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+events:RegisterEvent("PLAYER_LOGOUT")
+events:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
     if event == "ADDON_LOADED" then
         if arg1 == ADDON_NAME then
             events:UnregisterEvent("ADDON_LOADED")
@@ -1575,6 +1629,10 @@ events:SetScript("OnEvent", function(_, event, arg1, arg2)
         if next(ns.sparkles) then ns.HideSparkles(C_NamePlate.GetNamePlateForUnit(arg1)) end
     elseif event == "UNIT_SPELLCAST_SENT" then
         NoteCast(arg2)
+    elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+        CastDone(arg3)
+    elseif event == "PLAYER_LOGOUT" then
+        Unmute() -- also on a /reload: the timers end with the UI
     elseif event == "LOOT_READY" then
         Learn()
     elseif event == "LOOT_CLOSED" then
