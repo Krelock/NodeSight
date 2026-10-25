@@ -1,6 +1,7 @@
 -- NodeSight's name lists. A minimap dot only gives its name, so the kind of
--- node, its icon and the skill it needs all come from the name. English only;
--- other names are learned by gathering (Learn in NodeSight.lua).
+-- node, its icon and the skill it needs all come from the name. English, and for
+-- other clients the names in Locales (German); the rest are learned by gathering
+-- (Learn in NodeSight.lua).
 --
 -- In order: NodeKind, NodeIcon, TooHard, NodeSkill.
 
@@ -164,6 +165,21 @@ local function Plain(name)
     return (name:lower():gsub("\226\128\153", "'"))
 end
 
+-- This client's names (each Locales\*.lua loads only on its client), in one lookup.
+local LOCALE = ns.LOCALE
+local ENGLISH = {}
+if LOCALE then
+    for _, kind in ipairs({ "HERBS", "ITEM_HERBS", "ORE", "OTHER", "TREASURE" }) do
+        for name, english in pairs(LOCALE[kind] or {}) do ENGLISH[name] = english end
+    end
+end
+
+-- Plain() of the English name, if this client's name is known.
+local function Key(name)
+    local plain = Plain(name)
+    return ENGLISH[plain] or plain
+end
+
 local function EndsWith(text, ending)
     return text:sub(-#ending) == ending
 end
@@ -203,7 +219,7 @@ local ORE_ICONS = {
 
 -- "herbs", "ore", "treasure", "leyline", "convergence" or nil.
 local function NodeKind(name)
-    name = Plain(name)
+    name = Key(name)
     if name:find("[%d:/]") then return nil end
     local words = 0
     for _ in name:gmatch("%S+") do words = words + 1 end
@@ -221,13 +237,21 @@ local function NodeKind(name)
     for _, ending in ipairs(TREASURE) do
         if EndsWith(name, ending) then return "treasure" end
     end
+    -- This client's chests, by the end of any word ("Truhe der Horde").
+    if LOCALE and LOCALE.TREASURE_ENDINGS then
+        for word in name:gmatch("%S+") do
+            for _, ending in ipairs(LOCALE.TREASURE_ENDINGS) do
+                if EndsWith(word, ending) then return "treasure" end
+            end
+        end
+    end
     if EndsWith(name, "leyline") or EndsWith(name, "ley line") then return "leyline" end
     if EndsWith(name, "convergence") then return "convergence" end
     return nil
 end
 
 local function NodeIcon(name)
-    name = Plain(name)
+    name = Key(name)
     for pass = 1, 2 do -- herbs, then ore
         for _, entry in ipairs(pass == 1 and HERB_ICONS or ORE_ICONS) do
             if name:find(entry[1], 1, true) then return "Interface\\Icons\\" .. entry[2] end
@@ -277,7 +301,7 @@ end
 
 -- true if the node needs more skill than you have.
 local function TooHard(name, kind)
-    local need = NEEDED[kind] and NEEDED[kind][Plain(name)]
+    local need = NEEDED[kind] and NEEDED[kind][Key(name)]
     if not need then return false end
     if skills[kind] == nil then skills[kind] = GatherSkill(kind) or false end
     local skill = skills[kind]
@@ -288,7 +312,7 @@ end
 -- learned by gathering and for other kinds), and your skill (false if unknown).
 local function NodeSkill(name, kind)
     local list = NEEDED[kind]
-    local need = list and (list[Plain(name)] or (NodeKind(name) == kind and 1))
+    local need = list and (list[Key(name)] or (NodeKind(name) == kind and 1))
     if not need then return nil end
     if skills[kind] == nil then skills[kind] = GatherSkill(kind) or false end
     return need, skills[kind]
