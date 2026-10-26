@@ -8,6 +8,7 @@
 ## Category: Professions
 
 Locales\deDE.lua
+Zones.lua
 Names.lua
 NodeSight.lua
 Sparkles.lua

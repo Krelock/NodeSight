@@ -9,6 +9,7 @@
 --
 -- Files, in load order (they share functions through the addon table `ns`):
 --   Locales\deDE.lua German node names (German clients only)
+--   Zones.lua        map and instance IDs of the rares' home zones
 --   Names.lua        node names, icons and skill levels
 --   NodeSight.lua    defaults, the minimap scan, loading and events
 --   Sparkles.lua     sparkles on the herb or ore in front of you
@@ -249,9 +250,8 @@ local function KindOf(name)
         local plain = Plain(name)
         local home = RARES[plain]
         if FRIENDLY[plain] and FRIENDLY[plain] == UnitFactionGroup("player") then home = nil end
-        -- Only in its home zone; the slashes stop partial zone names matching.
-        local zone = home and GetRealZoneText()
-        if home == true or (type(zone) == "string" and ("/" .. home .. "/"):find("/" .. zone .. "/", 1, true)) then
+        -- Only in its home zone.
+        if home == true or (home and ns.InZone(home)) then
             -- Not your own pet (a tamed rare keeps its name).
             local pet = UnitName("pet")
             if not issecretvalue(pet) and (not pet or Plain(pet) ~= plain) then return "rares" end
