@@ -7,6 +7,7 @@
 ## IconTexture: Interface\Icons\INV_Misc_Herb_01
 ## Category: Professions
 
+Locales\deDE.lua
 Names.lua
 NodeSight.lua
 Sparkles.lua
