@@ -680,8 +680,8 @@ local function ShowShape(icon, marker)
     if icon.ring and icon.cut ~= RingCut(shape) then CutRing(icon) end
 end
 
--- A symbol's look: red, gray in a cave, see-through over your arrow. A color puts a
--- texture's alpha back to 1, so after one the alpha is set again.
+-- A symbol's look: red, gray in a cave, see-through over your arrow. After a color
+-- change the alpha is set again, not left to what the color did to it.
 local function ShowLook(icon, marker)
     -- Red if too hard; dimmed and desaturated in a cave (ore icons are already gray).
     local hard = (db.hard and marker.hard) or false
@@ -694,7 +694,7 @@ local function ShowLook(icon, marker)
             icon.texture:SetVertexColor(shade, shade, shade)
         end
         icon.texture:SetDesaturated(icon.dim)
-        icon.alpha = nil -- the color set it back to 1
+        icon.alpha = nil -- set again below
     end
     -- The ring gets the cave look or the ore tint. Done here because ApplyShape may
     -- have just created or re-shown it.
@@ -713,11 +713,11 @@ local function ShowLook(icon, marker)
     end
     -- See-through near you: while over your own arrow.
     local alpha = db.clearNear and marker.distance < icon.size / 2 + PLAYER_ARROW and CLEAR or 1
-    if (icon.alpha or 1) ~= alpha then
+    if icon.alpha ~= alpha then
         icon.alpha = alpha
         icon.texture:SetAlpha(alpha)
     end
-    if icon.ring and (icon.ringAlpha or 1) ~= alpha then
+    if icon.ring and icon.ringAlpha ~= alpha then
         icon.ringAlpha = alpha
         icon.ring:SetAlpha(alpha)
     end

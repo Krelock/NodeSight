@@ -63,10 +63,10 @@ local function RegisterSettings()
     end
 
     -- What's New button, left of Blizzard's Defaults button and parented to it (so
-    -- it hides during searches). Not shown with the gamepad UI.
+    -- it hides during searches).
     local list = SettingsPanel and SettingsPanel.Container and SettingsPanel.Container.SettingsList
     local defaultsButton = list and list.Header and list.Header.DefaultsButton
-    if defaultsButton and C_InputInterfaceStyle.GetCurrentStyle() ~= Enum.InputDeviceInterfaceType.Gamepad then
+    if defaultsButton then
         local button = CreateFrame("Button", nil, nil, "UIPanelButtonTemplate")
         button:SetParent(defaultsButton)
         button:SetSize(96, 22)

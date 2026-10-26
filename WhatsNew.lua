@@ -11,6 +11,17 @@ local ipairs = ipairs
 local ShowWhatsNew
 do
     local WHATS_NEW = {
+        { version = "1.4.2",
+            { "New", {
+                { "German node names (always on).", "On German clients, herbs, ore, chests, leylines and convergences get their symbols, red and skill line right away, without gathering them first. Other languages still learn herbs and ore when you gather them once. Thanks to tester617 for adding them on GitHub" },
+            } },
+            { "Changes", {
+                { "What's New button.", "Now there with the gamepad UI on too" },
+            } },
+            { "Fixes", {
+                { "See-through near you", "Symbols far from you no longer stay see-through. It happened most with Switch between herbs and ore on" },
+            } },
+        },
         { version = "1.4.1",
             { "New", {
                 { "Skill colors on herbs and ore (always on).", "Hover a herb or ore in the world to see the skill it needs, colored like on the minimap" },

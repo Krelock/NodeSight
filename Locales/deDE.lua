@@ -1,5 +1,5 @@
 -- deDE names for NodeSight, mapped to the English names in Names.lua, one table per kind
--- like the tables there. From Wowhead's WoW Forever object lists, fetched 2026-10-25.
+-- like the tables there. From Wowhead's WoW Forever object lists.
 -- Keys are written like Plain() makes them.
 
 if GetLocale() ~= "deDE" then return end
