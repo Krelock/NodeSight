@@ -160,6 +160,41 @@ local FRIENDLY = {
 }
 local MAX_WORDS = 5
 
+-- Map and instance IDs of the home zones (Zones.lua), so rares match on any client language.
+local ZONE_IDS = ns.ZONE_IDS or {}
+local PARENTS = 3 -- parent maps to check, for sub-maps of a zone such as caves (this client has none so far)
+
+-- true if you are in the zone: by map (or a parent map) or by instance ID.
+local function InZoneID(zone)
+    if zone.instances then
+        local instanceID = select(8, GetInstanceInfo())
+        return not issecretvalue(instanceID) and tContains(zone.instances, instanceID)
+    end
+    local map = C_Map.GetBestMapForUnit("player")
+    for _ = 0, PARENTS do
+        if not map or issecretvalue(map) or map == 0 then return false end
+        if tContains(zone.maps, map) then return true end
+        local info = C_Map.GetMapInfo(map)
+        map = info and not issecretvalue(info) and info.parentMapID
+    end
+    return false
+end
+
+-- true if you are in a rare's home zone ("a/b" for two). Zones without IDs go by
+-- their English name, which only matches on English clients.
+local function InZone(home)
+    for name in home:gmatch("[^/]+") do
+        local zone = ZONE_IDS[name]
+        if zone then
+            if InZoneID(zone) then return true end
+        else
+            local here = GetRealZoneText()
+            if not issecretvalue(here) and here == name then return true end
+        end
+    end
+    return false
+end
+
 -- Lowercase, with curly apostrophes made straight.
 local function Plain(name)
     return (name:lower():gsub("\226\128\153", "'"))
@@ -320,5 +355,5 @@ end
 
 -- Used by NodeSight.lua.
 ns.Plain, ns.NodeKind, ns.NodeIcon = Plain, NodeKind, NodeIcon
-ns.TREASURE, ns.RARES, ns.FRIENDLY = TREASURE, RARES, FRIENDLY
+ns.TREASURE, ns.RARES, ns.FRIENDLY, ns.InZone = TREASURE, RARES, FRIENDLY, InZone
 ns.TOO_HARD, ns.skills, ns.professions, ns.TooHard, ns.NodeSkill = TOO_HARD, skills, professions, TooHard, NodeSkill

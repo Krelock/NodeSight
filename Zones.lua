@@ -1,0 +1,63 @@
+-- Map IDs of the home zones in RARES (Names.lua), so rares match on clients in any language.
+-- maps: uiMapIDs for C_Map.GetBestMapForUnit; instances: instance IDs from GetInstanceInfo.
+-- From the client's UiMap, Map and AreaTable tables, build 1.60.1.70532.
+--
+-- A new home zone: stand in it and /dump C_Map.GetBestMapForUnit("player") for its map ID,
+-- or, in a dungeon or raid, /dump select(8, GetInstanceInfo()) for its instance ID, and add
+-- it under its English name as in RARES. A zone left out still matches by its English name,
+-- on English clients only.
+
+local _, ns = ...
+
+ns.ZONE_IDS = {
+    ["Alterac Mountains"] = { maps = { 1416 } },
+    ["Arathi Highlands"] = { maps = { 1417 } },
+    ["Ashenvale"] = { maps = { 1440 } },
+    ["Azshara"] = { maps = { 1447 } },
+    ["Badlands"] = { maps = { 1418 } },
+    ["Blackrock Spire"] = { instances = { 229 } },
+    ["Blasted Lands"] = { maps = { 1419 } },
+    ["Burning Steppes"] = { maps = { 1428 } },
+    ["Darkshore"] = { maps = { 1439 } },
+    ["Desolace"] = { maps = { 1443 } },
+    ["Dun Morogh"] = { maps = { 1426 } },
+    ["Durotar"] = { maps = { 1411 } },
+    ["Duskwood"] = { maps = { 1431 } },
+    ["Dustwallow Marsh"] = { maps = { 1445 } },
+    ["Eastern Plaguelands"] = { maps = { 1423 } },
+    ["Elwynn Forest"] = { maps = { 1429 } },
+    ["Felwood"] = { maps = { 1448 } },
+    ["Feralas"] = { maps = { 1444 } },
+    ["Gnomeregan"] = { instances = { 90 } },
+    ["Hillsbrad Foothills"] = { maps = { 1424 } },
+    ["Loch Modan"] = { maps = { 1432 } },
+    ["Mount Hyjal"] = { maps = { 2482 } },
+    ["Mulgore"] = { maps = { 1412 } },
+    ["Razorfen Kraul"] = { instances = { 47 } },
+    ["Redridge Mountains"] = { maps = { 1433 } },
+    ["Scarlet Enclave"] = { instances = { 2856 } },
+    ["Searing Gorge"] = { maps = { 1427 } },
+    ["Shadowfang Keep"] = { instances = { 33 } },
+    ["Silithus"] = { maps = { 1451 } },
+    ["Silverpine Forest"] = { maps = { 1421 } },
+    ["Stonetalon Mountains"] = { maps = { 1442 } },
+    ["Stormwind City"] = { maps = { 1453 } },
+    ["Stranglethorn Vale"] = { maps = { 1434 } },
+    ["Swamp of Sorrows"] = { maps = { 1435 } },
+    ["Tanaris"] = { maps = { 1446 } },
+    ["Teldrassil"] = { maps = { 1438 } },
+    ["The Barrens"] = { maps = { 1413 } },
+    ["The Deadmines"] = { instances = { 36 } },
+    ["The Hinterlands"] = { maps = { 1425 } },
+    ["The Stockade"] = { instances = { 34 } },
+    ["Thousand Needles"] = { maps = { 1441 } },
+    ["Thunder Bluff"] = { maps = { 1456 } },
+    ["Tirisfal Glades"] = { maps = { 1420 } },
+    ["Un'Goro Crater"] = { maps = { 1449 } },
+    ["Western Plaguelands"] = { maps = { 1422 } },
+    ["Westfall"] = { maps = { 1436 } },
+    ["Wetlands"] = { maps = { 1437 } },
+    ["Winterspring"] = { maps = { 1452 } },
+    ["Zephras Isle"] = { maps = { 2521, 2665 } },
+    ["Zul'Farrak"] = { instances = { 209 } },
+}
