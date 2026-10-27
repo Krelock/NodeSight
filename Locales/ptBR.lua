@@ -1,0 +1,132 @@
+-- ptBR names for NodeSight, mapped to the English names in Names.lua, one table per kind
+-- like the tables there. From Wowhead's WoW Forever object lists.
+-- Keys are written like Plain() makes them.
+--
+-- Another language: copy this file as Locales\<locale>.lua (frFR, esES, ...), set
+-- that locale in the GetLocale() line, put the client's names on the left (lowercase,
+-- straight apostrophes), and list the file in NodeSight.toc before Names.lua.
+-- Names left out are still learned by gathering.
+
+if GetLocale() ~= "ptBR" then return end
+local _, ns = ...
+local LOCALE = {}
+ns.LOCALE = LOCALE
+
+LOCALE.HERBS = {
+    ["lágrimas-de-arthas"] = "arthas' tears",
+    ["lótus preto"] = "black lotus",
+    ["ervacega"] = "blindweed",
+    ["cravespinho"] = "briarthorn",
+    ["ervamossa"] = "bruiseweed",
+    ["erva-do-demo"] = "doom weed",
+    ["folha-de-sonho"] = "dreamfoil",
+    ["raiz-de-sonho"] = "dreamroot",
+    ["raiz-telúrica"] = "earthroot",
+    ["some-folha"] = "fadeleaf",
+    ["ignídea"] = "firebloom",
+    ["cogumelo-fantasma"] = "ghost mushroom",
+    ["erva-do-emo"] = "gloom weed",
+    ["sonsona-dourada"] = "golden sansam",
+    ["espinheira-dourada"] = "goldthorn",
+    ["musgo-de-tumba"] = "grave moss",
+    ["sangue-de-grom"] = "gromsblood",
+    ["chapéu-de-gelo"] = "icecap",
+    ["bigode-de-hadgar"] = "khadgar's whisker",
+    ["sangue-real"] = "kingsblood",
+    ["raiz-da-vida"] = "liferoot",
+    ["magi-real"] = "mageroyal",
+    ["raiz-da-lua"] = "moonroot",
+    ["sálvia-prata-da-montanha"] = "mountain silversage",
+    ["musgo do pesadelo"] = "nightmare moss",
+    ["botão-da-paz"] = "peacebloom",
+    ["pragônia"] = "plaguebloom",
+    ["lótus roxo"] = "purple lotus",
+    ["folha-prata"] = "silverleaf",
+    ["estrangulalga"] = "stranglekelp",
+    ["folha-prata atrofiada"] = "stunted silverleaf",
+    ["ervassol"] = "sungrass",
+    ["Ácera-agreste"] = "wild steelbloom",
+    ["botão-da-paz murcho"] = "wilted peacebloom",
+    ["boquinha-do-inverno"] = "wintersbite",
+}
+-- New Forever herbs: their item names, not yet confirmed as node names.
+LOCALE.ITEM_HERBS = {
+    ["lótus-da-morte"] = "death lotus",
+    ["demonissálvia"] = "demonsage",
+    ["líquen pregueado"] = "frilled lichen",
+    ["cardo de colmeia"] = "hive thistle",
+    ["marefolha"] = "marefoil",
+    ["chapéu de rosa"] = "rosecap",
+    ["enforcavinha"] = "stranglevine",
+}
+LOCALE.ORE = {
+    ["depósito de ferro frio"] = "cold iron deposit",
+    ["veio de cobre"] = "copper vein",
+    ["depósito de ferro negro"] = "dark iron deposit",
+    ["veio de ouro de tolo"] = "fool's gold vein",
+    ["veio de ouro"] = "gold vein",
+    ["formação de pedras-da-lua maiores"] = "greater moonstone formation",
+    ["veio de tório hakkari"] = "hakkari thorium vein",
+    ["veio de incendicita"] = "incendicite mineral vein",
+    ["veio de indúrio"] = "indurium mineral vein",
+    ["depósito de ferro"] = "iron deposit",
+    ["depósito de pedra-sangrenta menor"] = "lesser bloodstone deposit",
+    ["depósito de mithril"] = "mithril deposit",
+    ["veio de ouro coberto de gosma"] = "ooze covered gold vein",
+    ["depósito de mithril coberto de gosma"] = "ooze covered mithril deposit",
+    ["veio de tório abundante e coberto de gosma"] = "ooze covered rich thorium vein",
+    ["veio de prata coberto de gosma"] = "ooze covered silver vein",
+    ["veio de tório coberto de gosma"] = "ooze covered thorium vein",
+    ["depósito de veraprata coberto de gosma"] = "ooze covered truesilver deposit",
+    ["veio de cobre mirrado"] = "poor copper vein",
+    ["veio de tório abundante"] = "rich thorium vein",
+    ["veio de prata"] = "silver vein",
+    ["veio de tório escasso"] = "small thorium vein",
+    ["veio de estanho"] = "tin vein",
+    ["depósito de veraprata"] = "truesilver deposit",
+}
+-- Ley lines and elemental convergences of the new racials.
+LOCALE.OTHER = {
+    ["convergência elemental"] = "elemental convergence",
+    ["meridiano"] = "leyline",
+}
+LOCALE.TREASURE = {
+    ["baú do aleixo"] = "alexston's chest",
+    ["baú da aliança"] = "alliance chest",
+    ["caixa-forte da aliança"] = "alliance strongbox",
+    ["cofre de lenhâmbar"] = "ambermill strongbox",
+    ["baú desgastado"] = "battered chest",
+    ["maleta surrada"] = "battered footlocker",
+    ["baú do bento"] = "benedict's chest",
+    ["cofre do contador herodes"] = "bookie herod's strongbox",
+    ["caixa-forte dos bucaneiros"] = "buccaneer's strongbox",
+    ["maleta do capitão"] = "captain's footlocker",
+    ["maleta do cosella"] = "cozzle's footlocker",
+    ["baú danificado"] = "damaged chest",
+    ["caixa-forte do dente-podre"] = "dead-tooth's strongbox",
+    ["caixa-forte dos défias"] = "defias strongbox",
+    ["baú cheio de mossas"] = "dented chest",
+    ["caixa-forte de doan"] = "doan's strongbox",
+    ["baú da floresta do crepúsculo"] = "duskwood chest",
+    ["cofre de gallywix"] = "gallywix's lockbox",
+    ["cofre do general duas-tranças"] = "general twinbraid's strongbox",
+    ["cofre escondido"] = "hidden strongbox",
+    ["baú da horda"] = "horde chest",
+    ["cofre trancado do intrépido"] = "intrepid's locked strongbox",
+    ["baú desgastado grande"] = "large battered chest",
+    ["baú grande reforçado com ferro"] = "large iron bound chest",
+    ["baú grande reforçado com mithril"] = "large mithril bound chest",
+    ["baú grande sólido"] = "large solid chest",
+    ["baú trancado"] = "locked chest",
+    ["baú de malem"] = "malem chest",
+    ["baú do marechal haggard"] = "marshal haggard's chest",
+    ["baú do véu das brumas"] = "mist veil's lockbox",
+    ["baú do perrine"] = "perrine's chest",
+    ["baú do aurora de prata"] = "silver dawning's lockbox",
+    ["baú sólido"] = "solid chest",
+    ["baú de ferro roubado"] = "stolen iron chest",
+    ["baú de estoque"] = "storage chest",
+    ["cofre estranho"] = "strange lockbox",
+    ["baú afundado"] = "sunken chest",
+    ["maleta encharcada"] = "waterlogged footlocker",
+}
