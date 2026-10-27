@@ -11,6 +11,8 @@
 --   Locales\deDE.lua German node names (German clients only)
 --   Zones.lua        map and instance IDs of the rares' home zones
 --   Names.lua        node names, icons and skill levels
+--   RareIDs.lua      NPC IDs of the rares
+--   RareNames.lua    rare names in the client's language, asked from the client
 --   NodeSight.lua    defaults, the minimap scan, loading and events
 --   Sparkles.lua     sparkles on the herb or ore in front of you
 --   FarSparkles.lua  sparkles on far away herbs and ore (Beta)
@@ -247,14 +249,14 @@ end
 -- (while its racial is ready) or nil.
 local function KindOf(name)
     if db.rares then
-        local plain = Plain(name)
+        local plain = ns.RareKey(Plain(name)) -- English, also on other clients (RareNames.lua)
         local home = RARES[plain]
         if FRIENDLY[plain] and FRIENDLY[plain] == UnitFactionGroup("player") then home = nil end
         -- Only in its home zone.
         if home == true or (home and ns.InZone(home)) then
             -- Not your own pet (a tamed rare keeps its name).
             local pet = UnitName("pet")
-            if not issecretvalue(pet) and (not pet or Plain(pet) ~= plain) then return "rares" end
+            if not issecretvalue(pet) and (not pet or ns.RareKey(Plain(pet)) ~= plain) then return "rares" end
         end
     end
     -- Learned herbs and ore. Chests go by their names, so a learned "treasure" is passed over.
@@ -1614,7 +1616,7 @@ events:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
             events:UnregisterEvent("ADDON_LOADED")
             -- After an update, a /reload only loads the files the old .toc listed:
             -- stay off until the game is restarted.
-            if not (ns.Plain and ns.Setup and world.Update and ns.ShowWhatsNew and ns.RegisterSettings) then
+            if not (ns.Plain and ns.RareKey and ns.Setup and world.Update and ns.ShowWhatsNew and ns.RegisterSettings) then
                 events:UnregisterAllEvents()
                 return
             end
