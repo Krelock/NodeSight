@@ -17,7 +17,6 @@ Locales\zhCN.lua
 Locales\zhTW.lua
 Zones.lua
 Names.lua
-RareIDs.lua
 RareNames.lua
 NodeSight.lua
 Sparkles.lua

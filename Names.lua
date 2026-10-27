@@ -1,9 +1,10 @@
 -- NodeSight's name lists. A minimap dot only gives its name, so the kind of
--- node, its icon and the skill it needs all come from the name. English, and for
--- other clients the names in Locales (German); the rest are learned by gathering
--- (Learn in NodeSight.lua).
+-- node, its icon and the skill it needs all come from the name: English, and for
+-- other clients the names in Locales; the rest are learned by gathering (Learn in
+-- NodeSight.lua). Rares are listed by NPC ID: RareNames.lua asks the client for
+-- their names, and Zones.lua holds the IDs of their home zones.
 --
--- In order: NodeKind, NodeIcon, TooHard, NodeSkill.
+-- In order: InZone, NodeKind, NodeIcon, TooHard, NodeSkill.
 
 local _, ns = ...
 
@@ -15,148 +16,350 @@ local HERB_OTHER = { "doom weed", "gloom weed", "moonroot" } -- no item icon: pl
 local ORE_OTHER = { "chunk of amber", "obsidian chunk", "moonstone formation" } -- no vein or deposit
 -- Find Treasure chests, by the end of the name (crates and sacks are quest things too).
 local TREASURE = { "chest", "footlocker", "strongbox", "lockbox", "coffer", icon = "Interface\\Icons\\racial_dwarf_findtreasure" }
--- Rare beasts and humanoids (Wowhead's WoW Forever data) and their zone
--- (GetRealZoneText; "a/b" for two, true if unknown). They only count in their
--- zone: a hunter's pet keeps the name of the rare it was tamed from, and some
--- ordinary NPCs elsewhere share a rare's name.
+-- Rare beasts and humanoids by NPC ID (Wowhead's WoW Forever data), with their name, and
+-- their zone (English name, see Zones.lua; "a/b" for two, true if unknown). RareNames.lua
+-- asks the client for their names. They only count in their zone: a hunter's pet keeps the
+-- name of the rare it was tamed from, and some ordinary NPCs elsewhere share a rare's name.
 local RARES = {
-    ["abominable snowman"] = true, ["antilos"] = "Azshara", ["antilus the soarer"] = "Feralas",
-    ["araga"] = "Alterac Mountains", ["arash-ethis"] = "Feralas", ["arcterris"] = "Winterspring",
-    ["azzere the skyblade"] = "The Barrens", ["bannerwing survivor"] = true, ["barnabus"] = "Badlands", ["ben"] = true,
-    ["big samras"] = "Hillsbrad Foothills", ["bjarn"] = "Dun Morogh", ["blightsculler"] = "Tirisfal Glades",
-    ["blind hunter"] = "Razorfen Kraul", ["broken tooth"] = "Badlands", ["brontus"] = "The Barrens",
-    ["carrodin"] = "Wetlands", ["chatter"] = "Redridge Mountains", ["clack the reaver"] = "Blasted Lands",
-    ["coldrasp"] = "Tirisfal Glades", ["cranky benj"] = "Alterac Mountains", ["creepthess"] = "Hillsbrad Foothills",
-    ["crystal fang"] = "Blackrock Spire", ["darkmist widow"] = "Dustwallow Marsh", ["dart"] = "Dustwallow Marsh",
-    ["death flayer"] = "Durotar", ["death howl"] = "Felwood", ["deatheye"] = "Blasted Lands",
-    ["deathmaw"] = "Burning Steppes", ["den'dralass"] = "Zephras Isle", ["dishu"] = "The Barrens",
-    ["doomkin"] = "The Hinterlands", ["duskstalker"] = "Teldrassil", ["fernfeather"] = "Zephras Isle",
-    ["ghost howl"] = "Mulgore/Thunder Bluff", ["ghostfang"] = "Dun Morogh", ["giggler"] = "Desolace",
-    ["gorefang"] = "Silverpine Forest", ["greater firebird"] = "Tanaris", ["gretheer"] = "Silithus",
-    ["grubthor"] = "Silithus", ["gruff"] = "Un'Goro Crater", ["grunter"] = "Blasted Lands",
-    ["hayoc"] = "Dustwallow Marsh", ["heartrazor"] = "Thousand Needles", ["hissperak"] = "Desolace",
-    ["humar the pridelord"] = "The Barrens", ["ironback"] = "The Hinterlands",
-    ["ironeye the invincible"] = "Thousand Needles", ["jorul"] = "Dun Morogh", ["kackle"] = "Loch Modan",
-    ["king mosh"] = "Un'Goro Crater", ["koartul"] = "Hillsbrad Foothills", ["krellack"] = "Silithus",
-    ["krethis shadowspinner"] = "Silverpine Forest", ["kurmokk"] = "Stranglethorn Vale",
-    ["large loch crocolisk"] = "Loch Modan", ["leech widow"] = "Wetlands", ["lord condar"] = "Loch Modan",
-    ["lupos"] = "Duskwood", ["matriarch bristlefur"] = "Elwynn Forest", ["mazzranache"] = "Mulgore",
-    ["mist howler"] = "Ashenvale", ["mokwa"] = "Mulgore", ["mongress"] = "Felwood", ["mowgh"] = "Teldrassil",
-    ["murderous blisterpaw"] = "Tanaris", ["mystmane"] = "Zephras Isle", ["naraxis"] = "Duskwood",
-    ["needletooth"] = "Arathi Highlands", ["nightscreech"] = "Teldrassil", ["old cliff jumper"] = "The Hinterlands",
-    ["old grizzlegut"] = "Feralas", ["old ironfang"] = true, ["old rusthowl"] = true, ["old thornpaw"] = true,
-    ["old vicejaw"] = "Silverpine Forest", ["olm the wise"] = "Felwood", ["oozeworm"] = "Dustwallow Marsh",
-    ["pridewing patriarch"] = "Stonetalon Mountains", ["rak'shiri"] = "Winterspring", ["raluk"] = "Durotar",
-    ["ravage"] = "Blasted Lands", ["ravasaur matriarch"] = "Un'Goro Crater", ["razormaw matriarch"] = "Wetlands",
-    ["rekk'tilac"] = "Searing Gorge", ["ressan the needler"] = "Tirisfal Glades", ["rippa"] = "Stranglethorn Vale",
-    ["ripscale"] = "Dustwallow Marsh", ["scale belly"] = "Stranglethorn Vale", ["scalebeard"] = "Azshara",
-    ["sewer beast"] = "Stormwind City", ["shadowclaw"] = "Darkshore", ["shal'ma"] = "Durotar",
-    ["shanda the spinner"] = "Loch Modan", ["slydris"] = "Zephras Isle", ["snapbeak the quick"] = "Zephras Isle",
-    ["snarler"] = "Feralas", ["snort the heckler"] = "The Barrens", ["sorrow wing"] = "Stonetalon Mountains",
-    ["spiteflayer"] = "Blasted Lands", ["sri'skulk"] = "Tirisfal Glades", ["strider clutchmother"] = "Darkshore",
-    ["swiftmane"] = "The Barrens", ["takk the leaper"] = "The Barrens", ["the evalcharr"] = "Azshara",
-    ["the rake"] = "Mulgore", ["the razza"] = "Feralas", ["thunderstomp"] = "The Barrens", ["timber"] = "Dun Morogh",
-    ["uhk'loc"] = "Un'Goro Crater", ["ursol'lok"] = "Ashenvale", ["vile sting"] = "Thousand Needles",
-    ["vultros"] = "Westfall", ["zaricotl"] = "Badlands", ["zopilote"] = "Tanaris",
+    [208843] = true, -- Abominable Snowman
+    [6648] = "Azshara", -- Antilos
+    [5347] = "Feralas", -- Antilus the Soarer
+    [14222] = "Alterac Mountains", -- Araga
+    [5349] = "Feralas", -- Arash-ethis
+    [228814] = "Winterspring", -- Arcterris
+    [5834] = "The Barrens", -- Azzere the Skyblade
+    [256830] = true, -- Bannerwing Survivor
+    [2753] = "Badlands", -- Barnabus
+    [5796] = true, -- Ben
+    [14280] = "Hillsbrad Foothills", -- Big Samras
+    [1130] = "Dun Morogh", -- Bjarn
+    [271080] = "Tirisfal Glades", -- Blightsculler
+    [4425] = "Razorfen Kraul", -- Blind Hunter
+    [2850] = "Badlands", -- Broken Tooth
+    [5827] = "The Barrens", -- Brontus
+    [211965] = "Wetlands", -- Carrodin
+    [616] = "Redridge Mountains", -- Chatter
+    [8301] = "Blasted Lands", -- Clack the Reaver
+    [274300] = "Tirisfal Glades", -- Coldrasp
+    [14223] = "Alterac Mountains", -- Cranky Benj
+    [14279] = "Hillsbrad Foothills", -- Creepthess
+    [10376] = "Blackrock Spire", -- Crystal Fang
+    [4380] = "Dustwallow Marsh", -- Darkmist Widow
+    [14232] = "Dustwallow Marsh", -- Dart
+    [5823] = "Durotar", -- Death Flayer
+    [14339] = "Felwood", -- Death Howl
+    [8302] = "Blasted Lands", -- Deatheye
+    [10077] = "Burning Steppes", -- Deathmaw
+    [250936] = "Zephras Isle", -- Den'dralass
+    [5865] = "The Barrens", -- Dishu
+    [221333] = "The Hinterlands", -- Doomkin
+    [14430] = "Teldrassil", -- Duskstalker
+    [256492] = "Zephras Isle", -- Fernfeather
+    [3056] = "Mulgore/Thunder Bluff", -- Ghost Howl
+    [276111] = "Dun Morogh", -- Ghostfang
+    [14228] = "Desolace", -- Giggler
+    [12431] = "Silverpine Forest", -- Gorefang
+    [8207] = "Tanaris", -- Greater Firebird
+    [14472] = "Silithus", -- Gretheer
+    [14477] = "Silithus", -- Grubthor
+    [6583] = "Un'Goro Crater", -- Gruff
+    [8303] = "Blasted Lands", -- Grunter
+    [14234] = "Dustwallow Marsh", -- Hayoc
+    [5934] = "Thousand Needles", -- Heartrazor
+    [14227] = "Desolace", -- Hissperak
+    [5828] = "The Barrens", -- Humar the Pridelord
+    [8213] = "The Hinterlands", -- Ironback
+    [5935] = "Thousand Needles", -- Ironeye the Invincible
+    [208812] = "Dun Morogh", -- Jorul
+    [210107] = "Loch Modan", -- Kackle
+    [6584] = "Un'Goro Crater", -- King Mosh
+    [211951] = "Hillsbrad Foothills", -- Koartul
+    [14476] = "Silithus", -- Krellack
+    [12433] = "Silverpine Forest", -- Krethis Shadowspinner
+    [14491] = "Stranglethorn Vale", -- Kurmokk
+    [2476] = "Loch Modan", -- Large Loch Crocolisk
+    [1112] = "Wetlands", -- Leech Widow
+    [14268] = "Loch Modan", -- Lord Condar
+    [521] = "Duskwood", -- Lupos
+    [276189] = "Elwynn Forest", -- Matriarch Bristlefur
+    [3068] = "Mulgore", -- Mazzranache
+    [10644] = "Ashenvale", -- Mist Howler
+    [205382] = "Mulgore", -- Mokwa
+    [14344] = "Felwood", -- Mongress
+    [209928] = "Teldrassil", -- Mowgh
+    [8208] = "Tanaris", -- Murderous Blisterpaw
+    [259388] = "Zephras Isle", -- Mystmane
+    [574] = "Duskwood", -- Naraxis
+    [217836] = "Arathi Highlands", -- Needletooth
+    [276101] = "Teldrassil", -- Nightscreech
+    [8211] = "The Hinterlands", -- Old Cliff Jumper
+    [5352] = "Feralas", -- Old Grizzlegut
+    [261662] = true, -- Old Ironfang
+    [263935] = true, -- Old Rusthowl
+    [250352] = true, -- Old Thornpaw
+    [12432] = "Silverpine Forest", -- Old Vicejaw
+    [14343] = "Felwood", -- Olm the Wise
+    [14237] = "Dustwallow Marsh", -- Oozeworm
+    [4015] = "Stonetalon Mountains", -- Pridewing Patriarch
+    [10200] = "Winterspring", -- Rak'shiri
+    [208124] = "Durotar", -- Raluk
+    [8300] = "Blasted Lands", -- Ravage
+    [6581] = "Un'Goro Crater", -- Ravasaur Matriarch
+    [1140] = "Wetlands", -- Razormaw Matriarch
+    [8277] = "Searing Gorge", -- Rekk'tilac
+    [10357] = "Tirisfal Glades", -- Ressan the Needler
+    [14490] = "Stranglethorn Vale", -- Rippa
+    [14233] = "Dustwallow Marsh", -- Ripscale
+    [1552] = "Stranglethorn Vale", -- Scale Belly
+    [13896] = "Azshara", -- Scalebeard
+    [244188] = "Azshara", -- Scalebeard
+    [3581] = "Stormwind City", -- Sewer Beast
+    [2175] = "Darkshore", -- Shadowclaw
+    [276198] = "Durotar", -- Shal'ma
+    [14266] = "Loch Modan", -- Shanda the Spinner
+    [255887] = "Zephras Isle", -- Slydris
+    [259394] = "Zephras Isle", -- Snapbeak the Quick
+    [5356] = "Feralas", -- Snarler
+    [5829] = "The Barrens", -- Snort the Heckler
+    [5928] = "Stonetalon Mountains", -- Sorrow Wing
+    [8299] = "Blasted Lands", -- Spiteflayer
+    [10359] = "Tirisfal Glades", -- Sri'skulk
+    [2172] = "Darkshore", -- Strider Clutchmother
+    [5831] = "The Barrens", -- Swiftmane
+    [5842] = "The Barrens", -- Takk the Leaper
+    [8660] = "Azshara", -- The Evalcharr
+    [5807] = "Mulgore", -- The Rake
+    [11497] = "Feralas", -- The Razza
+    [5832] = "The Barrens", -- Thunderstomp
+    [1132] = "Dun Morogh", -- Timber
+    [6585] = "Un'Goro Crater", -- Uhk'loc
+    [12037] = "Ashenvale", -- Ursol'lok
+    [5937] = "Thousand Needles", -- Vile Sting
+    [462] = "Westfall", -- Vultros
+    [2931] = "Badlands", -- Zaricotl
+    [222243] = "Tanaris", -- Zopilote
     -- Humanoids
-    ["accursed slitherblade"] = "Desolace", ["achellios the banished"] = "Thousand Needles",
-    ["aean swiftriver"] = "The Barrens", ["akubar the seer"] = "Blasted Lands",
-    ["apothecary falthis"] = "Ashenvale", ["bannok grimaxe"] = "Blackrock Spire",
-    ["bloodroar the stalker"] = "Feralas", ["boahn"] = true, ["boss galgosh"] = "Loch Modan",
-    ["brack"] = "Westfall", ["brainwashed noble"] = true, ["brokespear"] = "The Barrens",
-    ["brother ravenoak"] = "Stonetalon Mountains", ["bruegal ironknuckle"] = "The Stockade",
-    ["burgle eye"] = "Dustwallow Marsh", ["captain flat tusk"] = "Durotar",
-    ["captain gerogg hammertoe"] = "The Barrens", ["carnivous the breaker"] = "Darkshore",
-    ["cursed centaur"] = "Desolace", ["cyclok the mad"] = "Tanaris",
-    ["dalaran spellscribe"] = "Silverpine Forest", ["darbel montrose"] = "Arathi Highlands",
-    ["dark iron ambassador"] = "Gnomeregan", ["darkslayer mordenthal"] = "Ashenvale",
-    ["deathspeaker selendre"] = "Eastern Plaguelands", ["deeb"] = "Tirisfal Glades",
-    ["desert mirage"] = "The Barrens", ["diamond head"] = "Feralas", ["digger flameforge"] = "The Barrens",
-    ["digmaster shovelphlange"] = true, ["dragonmaw battlemaster"] = "Wetlands",
-    ["dreadscorn"] = "Blasted Lands", ["dro'zem the blasphemous"] = "Redridge Mountains",
-    ["duggan wildhammer"] = "Eastern Plaguelands", ["dustwind eggtender"] = "Durotar",
-    ["dustwraith"] = "Zul'Farrak", ["earthcaller halmgar"] = "Razorfen Kraul",
-    ["edan the howler"] = "Dun Morogh", ["elder finseer"] = "Elwynn Forest",
-    ["elder mystic razorsnout"] = "The Barrens", ["emogg the crusher"] = "Loch Modan",
-    ["enforcer emilgund"] = "Mulgore", ["engineer whirleygig"] = "The Barrens",
-    ["farmer solliden"] = "Tirisfal Glades", ["fedfennel"] = "Elwynn Forest",
-    ["felweaver scornn"] = "Durotar", ["fenros"] = "Duskwood", ["fingat"] = "Swamp of Sorrows",
-    ["firecaller radison"] = "Darkshore", ["flagglemurk the cruel"] = "Darkshore",
-    ["flamebringer kelris"] = "Searing Gorge", ["foreman grills"] = "The Barrens",
-    ["foreman jerris"] = "Western Plaguelands", ["foreman marcrid"] = "Western Plaguelands",
-    ["foreman rigger"] = "Stonetalon Mountains", ["foulbelly"] = "Arathi Highlands",
-    ["fury shelda"] = "Teldrassil", ["galemender delanea"] = "Zephras Isle", ["galenges"] = "Searing Gorge",
-    ["garneg charskull"] = "Wetlands", ["gatekeeper rageroar"] = "Azshara", ["gefell"] = "Shadowfang Keep",
-    ["gemela"] = "Shadowfang Keep", ["general fangferror"] = "Azshara", ["geolord mottle"] = "Durotar",
-    ["geopriest gukk'rok"] = "The Barrens", ["ghok bashguud"] = "Blackrock Spire",
-    ["gibblesnik"] = "Thousand Needles", ["gibblewilt"] = "Dun Morogh", ["gilmorian"] = "Swamp of Sorrows",
-    ["gluggle"] = "Stranglethorn Vale", ["gnawbone"] = "Wetlands", ["gorgon'och"] = "Burning Steppes",
-    ["gravis slipknot"] = "Alterac Mountains", ["great father arctikus"] = "Dun Morogh",
-    ["grimmaw"] = "Teldrassil", ["grizlak"] = "Loch Modan", ["grizzle snowpaw"] = "Winterspring",
-    ["gruff swiftbite"] = "Elwynn Forest", ["gruklash"] = "Burning Steppes",
-    ["hagg taurenbane"] = "The Barrens", ["hahk'zor"] = "Burning Steppes", ["hammerspine"] = "Dun Morogh",
-    ["hannah bladeleaf"] = "The Barrens", ["harb foulmountain"] = "Thousand Needles",
-    ["heggin stonewhisker"] = "The Barrens", ["high general abbendis"] = "Eastern Plaguelands",
-    ["high priestess hai'watna"] = "Stranglethorn Vale", ["highlord mastrogonde"] = "Searing Gorge",
-    ["jalinde summerdrake"] = "The Hinterlands", ["jed runewatcher"] = "Blackrock Spire",
-    ["jimmy the bleeder"] = "Alterac Mountains", ["jin'zallah the sandbringer"] = "Tanaris",
-    ["kazon"] = "Redridge Mountains", ["kovork"] = "Arathi Highlands", ["kregg keelhaul"] = "Tanaris",
-    ["lady sesspira"] = "Azshara", ["lady szallah"] = "Feralas", ["lady vespia"] = "Ashenvale",
-    ["lady vespira"] = "Darkshore", ["lady zephris"] = "Hillsbrad Foothills",
-    ["lieutenant skarresh"] = "Searing Gorge", ["lo'grosh"] = "Alterac Mountains",
-    ["lord angler"] = "Dustwallow Marsh", ["lord gazzran"] = "Searing Gorge",
-    ["lord maldazzar"] = "Western Plaguelands", ["lord sakrasis"] = "Stranglethorn Vale",
-    ["lord sinslayer"] = "Darkshore", ["lost one chieftain"] = "Swamp of Sorrows",
-    ["lost one cook"] = "Swamp of Sorrows", ["lyn the ignored"] = "Alterac Mountains",
-    ["ma'ruk wyrmscale"] = "Wetlands", ["magister hawkhelm"] = "Azshara", ["magosh"] = "Loch Modan",
-    ["magronos the unyielding"] = "Blasted Lands", ["malgin barleybrew"] = "The Barrens",
-    ["marcus bel"] = "The Barrens", ["marisa du'paige"] = true, ["master digger"] = "Westfall",
-    ["mezzir the howler"] = "Winterspring", ["miner johnson"] = "The Deadmines",
-    ["mith'rethis the enchanter"] = "The Hinterlands", ["mojo the twisted"] = "Blasted Lands",
-    ["molok the crusher"] = "Arathi Highlands", ["morgaine the sly"] = "Elwynn Forest",
-    ["mosh'ogg butcher"] = "Stranglethorn Vale", ["muad"] = "Tirisfal Glades", ["mugglefin"] = "Ashenvale",
-    ["narg the taskmaster"] = "Elwynn Forest", ["nefaru"] = "Duskwood",
-    ["nimar the slayer"] = "Arathi Highlands", ["oakpaw"] = "Ashenvale", ["omgorn the lost"] = "Tanaris",
-    ["overseer myoleth"] = "Mount Hyjal", ["par'kourc"] = "Redridge Mountains",
-    ["prince nazjak"] = "Arathi Highlands", ["ragepaw"] = "Felwood",
-    ["ranger lord hawkspear"] = "Eastern Plaguelands", ["razortalon"] = "The Hinterlands",
-    ["retherokk the berserker"] = "The Hinterlands", ["ribchaser"] = "Redridge Mountains",
-    ["ro'bark"] = "Hillsbrad Foothills", ["rocklance"] = "The Barrens",
-    ["rohh the silent"] = "Redridge Mountains", ["roloch"] = "Stranglethorn Vale",
-    ["rorgish jowl"] = "Ashenvale", ["ruul onestone"] = "Arathi Highlands",
-    ["sandarr dunereaver"] = "Zul'Farrak", ["scargil"] = "Hillsbrad Foothills",
-    ["scarlet captain"] = "Eastern Plaguelands",
-    ["scarlet executioner"] = "Scarlet Enclave/Western Plaguelands",
-    ["scarlet high clerist"] = "Western Plaguelands", ["scarlet interrogator"] = "Western Plaguelands",
-    ["scarlet judge"] = "Western Plaguelands", ["scarlet smith"] = "Western Plaguelands",
-    ["scarshield quartermaster"] = true, ["sentinel amarassan"] = "Stonetalon Mountains",
-    ["sergeant brashclaw"] = "Westfall", ["setis"] = "Silithus", ["shadowforge commander"] = "Badlands",
-    ["singer"] = "Arathi Highlands", ["sister hatelash"] = "Mulgore", ["sister rathtalon"] = "The Barrens",
-    ["sister riven"] = "Stonetalon Mountains", ["skarr the unbreakable"] = "Feralas",
-    ["skhowl"] = "Alterac Mountains", ["slark"] = "Westfall", ["slave master blackheart"] = "Searing Gorge",
-    ["snagglespear"] = "Mulgore", ["snarlsnout"] = "Mulgore", ["spirestone battle lord"] = "Blackrock Spire",
-    ["spirestone butcher"] = "Blackrock Spire", ["spirestone lord magus"] = "Blackrock Spire",
-    ["squiddic"] = "Redridge Mountains", ["stonearm"] = "The Barrens", ["stormherald ukta"] = "Mulgore",
-    ["swinegart spearhide"] = "The Barrens", ["tamra stormpike"] = "Hillsbrad Foothills",
-    ["taskmaster whipfang"] = "Stonetalon Mountains", ["tel'daeor the stormspeaker"] = "Zephras Isle",
-    ["terrowulf packlord"] = "Ashenvale", ["thauris balgarr"] = "Burning Steppes", ["the behemoth"] = true,
-    ["the snatcher"] = "Westfall", ["thora feathermoon"] = "The Barrens", ["thornstarter igleg"] = "Mulgore",
-    ["thuros lightfingers"] = "Elwynn Forest", ["twilight lord everun"] = "Silithus",
-    ["urok doomhowl"] = "Blackrock Spire", ["uruson"] = "Teldrassil", ["verifonix"] = "Stranglethorn Vale",
-    ["warleader krazzilak"] = "Tanaris", ["warlord kolkanis"] = "Durotar",
-    ["warlord thresh'jin"] = "Eastern Plaguelands", ["watch commander zalaphil"] = "Durotar",
-    ["witherheart the stalker"] = "The Hinterlands", ["zalas witherbark"] = "Arathi Highlands",
-    ["zerillis"] = "Zul'Farrak", ["zul'arek hatefowler"] = "The Hinterlands",
-    ["zul'brin warpbranch"] = "Eastern Plaguelands",
+    [14229] = "Desolace", -- Accursed Slitherblade
+    [5933] = "Thousand Needles", -- Achellios the Banished
+    [5797] = "The Barrens", -- Aean Swiftriver
+    [8298] = "Blasted Lands", -- Akubar the Seer
+    [3735] = "Ashenvale", -- Apothecary Falthis
+    [9596] = "Blackrock Spire", -- Bannok Grimaxe
+    [5346] = "Feralas", -- Bloodroar the Stalker
+    [3672] = true, -- Boahn
+    [1398] = "Loch Modan", -- Boss Galgosh
+    [520] = "Westfall", -- Brack
+    [596] = true, -- Brainwashed Noble
+    [5838] = "The Barrens", -- Brokespear
+    [5915] = "Stonetalon Mountains", -- Brother Ravenoak
+    [1720] = "The Stockade", -- Bruegal Ironknuckle
+    [14230] = "Dustwallow Marsh", -- Burgle Eye
+    [5824] = "Durotar", -- Captain Flat Tusk
+    [5851] = "The Barrens", -- Captain Gerogg Hammertoe
+    [2186] = "Darkshore", -- Carnivous the Breaker
+    [11688] = "Desolace", -- Cursed Centaur
+    [8202] = "Tanaris", -- Cyclok the Mad
+    [1920] = "Silverpine Forest", -- Dalaran Spellscribe
+    [2598] = "Arathi Highlands", -- Darbel Montrose
+    [6228] = "Gnomeregan", -- Dark Iron Ambassador
+    [3736] = "Ashenvale", -- Darkslayer Mordenthal
+    [10827] = "Eastern Plaguelands", -- Deathspeaker Selendre
+    [1911] = "Tirisfal Glades", -- Deeb
+    [209742] = "The Barrens", -- Desert Mirage
+    [5345] = "Feralas", -- Diamond Head
+    [5849] = "The Barrens", -- Digger Flameforge
+    [7057] = true, -- Digmaster Shovelphlange
+    [1037] = "Wetlands", -- Dragonmaw Battlemaster
+    [8304] = "Blasted Lands", -- Dreadscorn
+    [214456] = "Redridge Mountains", -- Dro'zem the Blasphemous
+    [10817] = "Eastern Plaguelands", -- Duggan Wildhammer
+    [276194] = "Durotar", -- Dustwind Eggtender
+    [10081] = "Zul'Farrak", -- Dustwraith
+    [4842] = "Razorfen Kraul", -- Earthcaller Halmgar
+    [1137] = "Dun Morogh", -- Edan the Howler
+    [276180] = "Elwynn Forest", -- Elder Finseer
+    [3270] = "The Barrens", -- Elder Mystic Razorsnout
+    [14267] = "Loch Modan", -- Emogg the Crusher
+    [5787] = "Mulgore", -- Enforcer Emilgund
+    [5836] = "The Barrens", -- Engineer Whirleygig
+    [1936] = "Tirisfal Glades", -- Farmer Solliden
+    [472] = "Elwynn Forest", -- Fedfennel
+    [5822] = "Durotar", -- Felweaver Scornn
+    [507] = "Duskwood", -- Fenros
+    [14446] = "Swamp of Sorrows", -- Fingat
+    [2192] = "Darkshore", -- Firecaller Radison
+    [7015] = "Darkshore", -- Flagglemurk the Cruel
+    [228728] = "Searing Gorge", -- Flamebringer Kelris
+    [5835] = "The Barrens", -- Foreman Grills
+    [1843] = "Western Plaguelands", -- Foreman Jerris
+    [1844] = "Western Plaguelands", -- Foreman Marcrid
+    [5931] = "Stonetalon Mountains", -- Foreman Rigger
+    [2601] = "Arathi Highlands", -- Foulbelly
+    [14431] = "Teldrassil", -- Fury Shelda
+    [259398] = "Zephras Isle", -- Galemender Delanea
+    [228970] = "Searing Gorge", -- Galenges
+    [2108] = "Wetlands", -- Garneg Charskull
+    [6651] = "Azshara", -- Gatekeeper Rageroar
+    [236573] = "Azshara", -- Gatekeeper Rageroar
+    [211764] = "Shadowfang Keep", -- Gefell
+    [211765] = "Shadowfang Keep", -- Gemela
+    [6650] = "Azshara", -- General Fangferror
+    [5826] = "Durotar", -- Geolord Mottle
+    [5863] = "The Barrens", -- Geopriest Gukk'rok
+    [9718] = "Blackrock Spire", -- Ghok Bashguud
+    [14427] = "Thousand Needles", -- Gibblesnik
+    [8503] = "Dun Morogh", -- Gibblewilt
+    [14447] = "Swamp of Sorrows", -- Gilmorian
+    [14487] = "Stranglethorn Vale", -- Gluggle
+    [14425] = "Wetlands", -- Gnawbone
+    [9604] = "Burning Steppes", -- Gorgon'och
+    [14221] = "Alterac Mountains", -- Gravis Slipknot
+    [1260] = "Dun Morogh", -- Great Father Arctikus
+    [14429] = "Teldrassil", -- Grimmaw
+    [1425] = "Loch Modan", -- Grizlak
+    [10199] = "Winterspring", -- Grizzle Snowpaw
+    [100] = "Elwynn Forest", -- Gruff Swiftbite
+    [8979] = "Burning Steppes", -- Gruklash
+    [5859] = "The Barrens", -- Hagg Taurenbane
+    [9602] = "Burning Steppes", -- Hahk'Zor
+    [1119] = "Dun Morogh", -- Hammerspine
+    [5799] = "The Barrens", -- Hannah Bladeleaf
+    [14426] = "Thousand Needles", -- Harb Foulmountain
+    [5847] = "The Barrens", -- Heggin Stonewhisker
+    [10828] = "Eastern Plaguelands", -- High General Abbendis
+    [243893] = "Eastern Plaguelands", -- High General Abbendis
+    [11383] = "Stranglethorn Vale", -- High Priestess Hai'watna
+    [8282] = "Searing Gorge", -- Highlord Mastrogonde
+    [8214] = "The Hinterlands", -- Jalinde Summerdrake
+    [10509] = "Blackrock Spire", -- Jed Runewatcher
+    [14281] = "Alterac Mountains", -- Jimmy the Bleeder
+    [8200] = "Tanaris", -- Jin'Zallah the Sandbringer
+    [584] = "Redridge Mountains", -- Kazon
+    [2603] = "Arathi Highlands", -- Kovork
+    [8203] = "Tanaris", -- Kregg Keelhaul
+    [6649] = "Azshara", -- Lady Sesspira
+    [239942] = "Azshara", -- Lady Sesspira
+    [5343] = "Feralas", -- Lady Szallah
+    [10559] = "Ashenvale", -- Lady Vespia
+    [7016] = "Darkshore", -- Lady Vespira
+    [14277] = "Hillsbrad Foothills", -- Lady Zephris
+    [228721] = "Searing Gorge", -- Lieutenant Skarresh
+    [2453] = "Alterac Mountains", -- Lo'Grosh
+    [14236] = "Dustwallow Marsh", -- Lord Angler
+    [228969] = "Searing Gorge", -- Lord Gazzran
+    [1848] = "Western Plaguelands", -- Lord Maldazzar
+    [2541] = "Stranglethorn Vale", -- Lord Sakrasis
+    [7017] = "Darkshore", -- Lord Sinslayer
+    [763] = "Swamp of Sorrows", -- Lost One Chieftain
+    [1106] = "Swamp of Sorrows", -- Lost One Cook
+    [247032] = "Alterac Mountains", -- Lyn the Ignored
+    [2090] = "Wetlands", -- Ma'ruk Wyrmscale
+    [6647] = "Azshara", -- Magister Hawkhelm
+    [246991] = "Azshara", -- Magister Hawkhelm
+    [1399] = "Loch Modan", -- Magosh
+    [8297] = "Blasted Lands", -- Magronos the Unyielding
+    [5848] = "The Barrens", -- Malgin Barleybrew
+    [5800] = "The Barrens", -- Marcus Bel
+    [599] = true, -- Marisa du'Paige
+    [1424] = "Westfall", -- Master Digger
+    [10197] = "Winterspring", -- Mezzir the Howler
+    [3586] = "The Deadmines", -- Miner Johnson
+    [8217] = "The Hinterlands", -- Mith'rethis the Enchanter
+    [8296] = "Blasted Lands", -- Mojo the Twisted
+    [2604] = "Arathi Highlands", -- Molok the Crusher
+    [99] = "Elwynn Forest", -- Morgaine the Sly
+    [723] = "Stranglethorn Vale", -- Mosh'Ogg Butcher
+    [1910] = "Tirisfal Glades", -- Muad
+    [10643] = "Ashenvale", -- Mugglefin
+    [79] = "Elwynn Forest", -- Narg the Taskmaster
+    [534] = "Duskwood", -- Nefaru
+    [2606] = "Arathi Highlands", -- Nimar the Slayer
+    [10640] = "Ashenvale", -- Oakpaw
+    [8201] = "Tanaris", -- Omgorn the Lost
+    [260823] = "Mount Hyjal", -- Overseer Myoleth
+    [208845] = "Redridge Mountains", -- Par'kourc
+    [245332] = "Redridge Mountains", -- Par'kourc
+    [2779] = "Arathi Highlands", -- Prince Nazjak
+    [14342] = "Felwood", -- Ragepaw
+    [10824] = "Eastern Plaguelands", -- Ranger Lord Hawkspear
+    [8210] = "The Hinterlands", -- Razortalon
+    [8216] = "The Hinterlands", -- Retherokk the Berserker
+    [14271] = "Redridge Mountains", -- Ribchaser
+    [14278] = "Hillsbrad Foothills", -- Ro'Bark
+    [5841] = "The Barrens", -- Rocklance
+    [947] = "Redridge Mountains", -- Rohh the Silent
+    [14488] = "Stranglethorn Vale", -- Roloch
+    [10639] = "Ashenvale", -- Rorgish Jowl
+    [2602] = "Arathi Highlands", -- Ruul Onestone
+    [10080] = "Zul'Farrak", -- Sandarr Dunereaver
+    [14276] = "Hillsbrad Foothills", -- Scargil
+    [243046] = "Eastern Plaguelands", -- Scarlet Captain
+    [1841] = "Scarlet Enclave/Western Plaguelands", -- Scarlet Executioner
+    [240797] = "Scarlet Enclave/Western Plaguelands", -- Scarlet Executioner
+    [1839] = "Western Plaguelands", -- Scarlet High Clerist
+    [1838] = "Western Plaguelands", -- Scarlet Interrogator
+    [1837] = "Western Plaguelands", -- Scarlet Judge
+    [1885] = "Western Plaguelands", -- Scarlet Smith
+    [240792] = "Western Plaguelands", -- Scarlet Smith
+    [9046] = true, -- Scarshield Quartermaster
+    [5916] = "Stonetalon Mountains", -- Sentinel Amarassan
+    [506] = "Westfall", -- Sergeant Brashclaw
+    [14471] = "Silithus", -- Setis
+    [2744] = "Badlands", -- Shadowforge Commander
+    [2600] = "Arathi Highlands", -- Singer
+    [5785] = "Mulgore", -- Sister Hatelash
+    [5830] = "The Barrens", -- Sister Rathtalon
+    [5930] = "Stonetalon Mountains", -- Sister Riven
+    [11498] = "Feralas", -- Skarr the Unbreakable
+    [2452] = "Alterac Mountains", -- Skhowl
+    [519] = "Westfall", -- Slark
+    [8283] = "Searing Gorge", -- Slave Master Blackheart
+    [5786] = "Mulgore", -- Snagglespear
+    [276109] = "Mulgore", -- Snarlsnout
+    [9218] = "Blackrock Spire", -- Spirestone Battle Lord
+    [9219] = "Blackrock Spire", -- Spirestone Butcher
+    [9217] = "Blackrock Spire", -- Spirestone Lord Magus
+    [14270] = "Redridge Mountains", -- Squiddic
+    [5837] = "The Barrens", -- Stonearm
+    [276105] = "Mulgore", -- Stormherald Ukta
+    [5864] = "The Barrens", -- Swinegart Spearhide
+    [14275] = "Hillsbrad Foothills", -- Tamra Stormpike
+    [5932] = "Stonetalon Mountains", -- Taskmaster Whipfang
+    [259385] = "Zephras Isle", -- Tel'daeor the Stormspeaker
+    [3792] = "Ashenvale", -- Terrowulf Packlord
+    [8978] = "Burning Steppes", -- Thauris Balgarr
+    [8924] = true, -- The Behemoth
+    [208847] = "Westfall", -- The Snatcher
+    [5798] = "The Barrens", -- Thora Feathermoon
+    [276108] = "Mulgore", -- Thornstarter Igleg
+    [61] = "Elwynn Forest", -- Thuros Lightfingers
+    [14479] = "Silithus", -- Twilight Lord Everun
+    [10584] = "Blackrock Spire", -- Urok Doomhowl
+    [14428] = "Teldrassil", -- Uruson
+    [14492] = "Stranglethorn Vale", -- Verifonix
+    [8199] = "Tanaris", -- Warleader Krazzilak
+    [5808] = "Durotar", -- Warlord Kolkanis
+    [10822] = "Eastern Plaguelands", -- Warlord Thresh'jin
+    [5809] = "Durotar", -- Watch Commander Zalaphil
+    [8218] = "The Hinterlands", -- Witherheart the Stalker
+    [2605] = "Arathi Highlands", -- Zalas Witherbark
+    [10082] = "Zul'Farrak", -- Zerillis
+    [8219] = "The Hinterlands", -- Zul'arek Hatefowler
+    [10823] = "Eastern Plaguelands", -- Zul'Brin Warpbranch
 }
 -- Rares friendly to one faction: no symbol for that faction.
 local FRIENDLY = {
-    ["aean swiftriver"] = "Alliance", ["dalaran spellscribe"] = "Alliance",
-    ["darkslayer mordenthal"] = "Horde", ["duggan wildhammer"] = "Alliance",
-    ["hannah bladeleaf"] = "Alliance", ["heggin stonewhisker"] = "Alliance",
-    ["jalinde summerdrake"] = "Alliance", ["marcus bel"] = "Alliance",
-    ["ranger lord hawkspear"] = "Alliance", ["sentinel amarassan"] = "Alliance",
-    ["thora feathermoon"] = "Alliance",
+    [5797] = "Alliance", -- Aean Swiftriver
+    [1920] = "Alliance", -- Dalaran Spellscribe
+    [3736] = "Horde", -- Darkslayer Mordenthal
+    [10817] = "Alliance", -- Duggan Wildhammer
+    [5799] = "Alliance", -- Hannah Bladeleaf
+    [5847] = "Alliance", -- Heggin Stonewhisker
+    [8214] = "Alliance", -- Jalinde Summerdrake
+    [5800] = "Alliance", -- Marcus Bel
+    [10824] = "Alliance", -- Ranger Lord Hawkspear
+    [5916] = "Alliance", -- Sentinel Amarassan
+    [5798] = "Alliance", -- Thora Feathermoon
 }
 local MAX_WORDS = 5
 
