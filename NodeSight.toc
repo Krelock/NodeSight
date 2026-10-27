@@ -10,6 +10,8 @@
 Locales\deDE.lua
 Zones.lua
 Names.lua
+RareIDs.lua
+RareNames.lua
 NodeSight.lua
 Sparkles.lua
 FarSparkles.lua
