@@ -1,23 +1,22 @@
--- Rare names in the client's language. RARES and FRIENDLY (Names.lua) use English names, so on
--- other clients NodeSight asks the client for each rare's name by NPC ID (RareIDs.lua) and keeps
--- the answers per language in NodeSightDB. From the next login on they count at once, and only
--- names still missing are asked, until a new game build asks for all of them again.
+-- Rare names in the client's language. RARES and FRIENDLY (Names.lua) are keyed by NPC ID, so
+-- NodeSight asks the client for each rare's name and keeps the answers per language in
+-- NodeSightDB. From the next login on they count at once, and only names still missing are
+-- asked, until a new game build asks for all of them again.
 --
 -- In order: lookup, asking the client, events.
 
 local _, ns = ...
 
-local ipairs, pairs = ipairs, pairs
+local pairs = pairs
 
-local KEY = {} -- Plain() of a name in the client's language -> its English key in RARES
+local ID = {} -- Plain() of a rare's name in the client's language -> its NPC ID
 
--- The English key for Plain() of a rare's name, else the name unchanged.
-function ns.RareKey(plain)
-    return KEY[plain] or plain
+-- The NPC ID of a rare by Plain() of its name, or nil.
+function ns.RareID(plain)
+    return ID[plain]
 end
 
-local LOCALE = GetLocale()
-if LOCALE == "enUS" or LOCALE == "enGB" or not ns.RARE_IDS then return end
+if not ns.RARES then return end
 
 ---------------------------------------------------------------------------
 -- Asking the client
@@ -27,8 +26,9 @@ local PER_FRAME = 10 -- names asked per frame
 local RETRY = 2 -- seconds before asking again for names the client has not loaded yet
 local TRIES = 5 -- then give up on that NPC until the next login
 
+local LOCALE = GetLocale()
 local Plain = ns.Plain
-local queue, later = {}, {} -- { id, rare, tries } to ask now, and to ask again after RETRY
+local queue, later = {}, {} -- { id, tries } to ask now, and to ask again after RETRY
 local waited = 0 -- seconds since the last pass of the queue ended
 local saved -- NodeSightDB.rareNames[LOCALE]: NPC ID -> name, and the game build they are from
 
@@ -51,7 +51,7 @@ local function Step(_, elapsed)
         queue[#queue] = nil
         local name = Ask(entry.id)
         if name then
-            KEY[Plain(name)] = entry.rare
+            ID[Plain(name)] = entry.id
             saved[entry.id] = name
         elseif entry.tries < TRIES then
             entry.tries = entry.tries + 1
@@ -83,11 +83,9 @@ frame:SetScript("OnEvent", function(self)
     local sameBuild = saved.build == build
     saved.build = build
     -- Saved names count at once. In the same build only missing ones are asked, after a new build all.
-    for rare, ids in pairs(ns.RARE_IDS) do
-        for _, id in ipairs(ids) do
-            if saved[id] then KEY[Plain(saved[id])] = rare end
-            if not (sameBuild and saved[id]) then queue[#queue + 1] = { id = id, rare = rare, tries = 1 } end
-        end
+    for id in pairs(ns.RARES) do
+        if saved[id] then ID[Plain(saved[id])] = id end
+        if not (sameBuild and saved[id]) then queue[#queue + 1] = { id = id, tries = 1 } end
     end
     if queue[1] then self:SetScript("OnUpdate", Step) end
 end)
