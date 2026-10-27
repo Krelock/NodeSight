@@ -8,6 +8,13 @@
 ## Category: Professions
 
 Locales\deDE.lua
+Locales\esES.lua
+Locales\esMX.lua
+Locales\frFR.lua
+Locales\koKR.lua
+Locales\ptBR.lua
+Locales\zhCN.lua
+Locales\zhTW.lua
 Zones.lua
 Names.lua
 NodeSight.lua

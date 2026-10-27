@@ -8,7 +8,7 @@
 -- points to the nearest one, and the one in front of you sparkles.
 --
 -- Files, in load order (they share functions through the addon table `ns`):
---   Locales\deDE.lua German node names (German clients only)
+--   Locales\*.lua    node names in other languages (each loads only on its client)
 --   Zones.lua        map and instance IDs of the rares' home zones
 --   Names.lua        node names, icons and skill levels
 --   NodeSight.lua    defaults, the minimap scan, loading and events
