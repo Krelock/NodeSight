@@ -6,6 +6,7 @@ local ipairs = ipairs
 
 local defaults, SHAPES, world = ns.defaults, ns.SHAPES, ns.world
 local UpdateScanner, ApplyDotScale, ApplyArrowLock = ns.UpdateScanner, ns.ApplyDotScale, ns.ApplyArrowLock
+local ApplyArrowSize = ns.ApplyArrowSize
 local Setup, UpdateAll, ShowWhatsNew = ns.Setup, ns.UpdateAll, ns.ShowWhatsNew
 
 ---------------------------------------------------------------------------
@@ -120,6 +121,9 @@ local function RegisterSettings()
     Checkbox("arrowLeylines", "Leylines and convergences",
         "The arrow points to leylines and elemental convergences. Needs Arrow to the nearest herb or ore, and Leylines and convergences.",
         UpdateScanner)
+    Slider("arrowSize", "Arrow size", 20, 100,
+        "How big the arrow is. The default is " .. defaults.arrowSize .. ". Needs Arrow to the nearest herb or ore.",
+        ApplyArrowSize)
 
     Page("Symbols")
     Checkbox("hard", "Red symbols when too low",

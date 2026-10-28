@@ -32,6 +32,7 @@ local defaults = {
     gameIcons = false, -- keep the game's interact icons while sparkles are on
     arrow = false, -- arrow to the nearest node
     arrowLocked = false, -- the arrow can't be dragged, and clicks go through it
+    arrowSize = 40, -- arrow size
     arrowSkip = true, -- the arrow passes over the node you're at
     arrowFirst = false, -- the arrow to herbs and ore before anything else
     arrowHerbs = true, -- what the arrow points to: herbs,
@@ -113,7 +114,6 @@ oreRing.ok = C_Texture.GetAtlasExists(oreRing.atlas)
 local GOLD_OUTER = 17.6 / 12
 local SLIM = 26 -- the slim gold ring: the gold ring cut to this share of its width (%)
 local ARROW = "MiniMap-QuestArrow" -- points up
-local ARROW_SIZE = 40
 -- The arrow's checkbox for each kind, and how near the node you're at is (yards).
 local ARROW_TO = { herbs = "arrowHerbs", ore = "arrowOre", treasure = "arrowChests", rares = "arrowRares", leyline = "arrowLeylines", convergence = "arrowLeylines" }
 local SKIP_YARDS = 5
@@ -779,6 +779,10 @@ end
 -- A locked arrow takes no mouse: it can't be dragged, and clicks go through it.
 local function ApplyArrowLock()
     arrow:EnableMouse(not db.arrowLocked)
+end
+
+local function ApplyArrowSize()
+    arrow:SetSize(db.arrowSize, db.arrowSize)
 end
 
 ---------------------------------------------------------------------------
@@ -1517,7 +1521,7 @@ local function NewScanner()
     tracker = CreateFrame("Frame")
     arrow = CreateFrame("Frame")
     arrow:SetParent(UIParent)
-    arrow:SetSize(ARROW_SIZE, ARROW_SIZE)
+    ApplyArrowSize()
     local place = db.arrowPlace
     if place then
         arrow:SetPoint(place[1], UIParent, place[2], place[3], place[4])
@@ -1562,6 +1566,7 @@ end
 ns.defaults, ns.SHAPES, ns.world = defaults, SHAPES, world
 ns.Clean, ns.MapPosition, ns.PlayerFacing = Clean, MapPosition, PlayerFacing
 ns.UpdateScanner, ns.ApplyDotScale, ns.ApplyArrowLock = UpdateScanner, ApplyDotScale, ApplyArrowLock
+ns.ApplyArrowSize = ApplyArrowSize
 -- A getter, since each scan replaces the list.
 function ns.Markers() return markers end
 

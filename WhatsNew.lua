@@ -11,6 +11,15 @@ local ipairs = ipairs
 local ShowWhatsNew
 do
     local WHATS_NEW = {
+        { version = "1.4.3",
+            { "New", {
+                { "Arrow size (40 by default).", "How big the arrow is, from 20 to 100. Change it under Arrow" },
+                { "Node names in more languages (always on).", "French, Spanish, Portuguese, Korean and Chinese clients now get the symbols, red and skill line right away too, like German ones. Thanks to tester617 for adding them on GitHub" },
+            } },
+            { "Changes", {
+                { "Rares on the minimap (Beta).", "Rares now show on every client, not only English ones. The first time you log in, they show once the game has loaded their names. Thanks to tester617 for this on GitHub" },
+            } },
+        },
         { version = "1.4.2",
             { "New", {
                 { "German node names (always on).", "On German clients, herbs, ore, chests, leylines and convergences get their symbols, red and skill line right away, without gathering them first. Other languages still learn herbs and ore when you gather them once. Thanks to tester617 for adding them on GitHub" },
