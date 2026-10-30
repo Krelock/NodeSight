@@ -99,9 +99,12 @@ end
 -- the bobber's height: it floats on the water, at 0).
 local function CarryOverLooks(db)
     for _, kind in ipairs({ "chests", "quests" }) do
-        if db[kind] == nil then db[kind] = db.others end
-        for what, key in pairs(KEYS[kind]) do
-            if db[key] == nil then db[key] = db[KEYS.others[what]] end
+        -- Only once: a kind's second color is often unset, and must stay so.
+        if db[kind] == nil then
+            db[kind] = db.others
+            for what, key in pairs(KEYS[kind]) do
+                if db[key] == nil then db[key] = db[KEYS.others[what]] end
+            end
         end
     end
     for _, what in ipairs({ "color", "size", "height", "count" }) do
@@ -878,8 +881,9 @@ end
 
 local function Brightness() return (ns.db.brightness or 100) / 100 end
 
-local function FrameAlpha(frame)
-    local alpha = Brightness() * frame.fade * (1 - GATHER_DIM * frame.gather) * (frame.harvestAlpha or 1)
+-- With own set, leaves out the finish's fade (for a part drawn past it).
+local function FrameAlpha(frame, own)
+    local alpha = Brightness() * frame.fade * (1 - GATHER_DIM * frame.gather) * (not own and frame.harvestAlpha or 1)
     if ns.db.reachLook then alpha = alpha * (REACH_DIM + (1 - REACH_DIM) * frame.reach) end
     return alpha
 end
@@ -939,8 +943,11 @@ local HARVESTS = {
         local pull = min(1, u / 0.6)
         frame.harvestScale = 1 - 0.85 * EaseIn(pull)
         frame.harvestAlpha = u < 0.6 and 1 - 0.3 * pull or 0
-        local v = max(0, (u - 0.5) / 0.5) -- the glint at the end, drawn at its own size
-        Put(frame, Part(frame, "glint", STAR4, 7, true), 0, 0, S * 0.8 * Bell(v) / frame.harvestScale, nil, Bell(v))
+        -- The glint at the end, at its own size, and shown though the sparkles are gone.
+        local v = max(0, (u - 0.5) / 0.5)
+        local glint = Part(frame, "glint", STAR4, 7, true)
+        glint:SetIgnoreParentAlpha(true)
+        Put(frame, glint, 0, 0, S * 0.8 * Bell(v) / frame.harvestScale, nil, Bell(v) * FrameAlpha(frame, true))
     end },
     { name = "Scatter", Draw = function(frame, u, S)
         frame.scatter = frame.scatter or {}
@@ -1073,6 +1080,7 @@ local function ShowSparkles(namePlate, kind, unit, over)
     if not frame and not over and leaving[namePlate] then -- fading out: back in
         frame, leaving[namePlate] = leaving[namePlate], nil
         frame.leaving, frames[namePlate] = nil, frame
+        if frame.harvested then ResetHarvest(frame) end -- its finish cut short: back as it was
     end
     local fresh = not frame
     if not frame then
@@ -1297,15 +1305,18 @@ local function Update(unit)
         elseif hidden[unitFrame] then
             SetHidden(unitFrame, false)
         end
+        local hide = ns.db.combatHide and UnitAffectingCombat("player") or ns.db.instanceHide and IsInInstance()
         -- A gathered node loses its gathering icon as it goes: its finish plays out in its own look.
         local gathered = sparkles[namePlate]
-        if gathered and gathered.harvested then return end
+        if gathered and gathered.harvested then
+            if ns.db[gathered.kind] and not hide then return end
+            return HideSparkles(namePlate, true)
+        end
         local kind = SparkleKind(unit, unitFrame.SoftTargetFrame.Icon)
         -- The game shows the icon only on the interact target: a herb or ore that stops
         -- being it fades out, not taken for an other object.
         if kind == "others" and known[namePlate] then return HideSparkles(namePlate, true) end
         if kind ~= "others" then known[namePlate] = kind end
-        local hide = ns.db.combatHide and UnitAffectingCombat("player") or ns.db.instanceHide and IsInInstance()
         if ns.db[kind] and not hide then ShowSparkles(namePlate, kind, unit) else HideSparkles(namePlate, true) end
     else
         if hidden[unitFrame] then SetHidden(unitFrame, false) end

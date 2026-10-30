@@ -305,7 +305,10 @@ end
 ---------------------------------------------------------------------------
 -- Nodes missing from the English lists are learned when gathered, from the loot.
 
-local TRADE_GOODS, HERB, METAL_AND_STONE, GEM = 7, 9, 7, 3 -- item class/subclasses
+local TRADE_GOODS, HERB, METAL_AND_STONE = 7, 9, 7 -- item class/subclasses
+-- What else a herb or vein gives: other trade goods (Forever's gems are those), gems,
+-- quest items and junk. Anything else (gear, potions, ...) means it wasn't a node.
+local ALSO_LOOT = { [TRADE_GOODS] = true, [3] = true, [12] = true, [15] = true }
 local castTarget -- target of your last cast
 local lastSource -- GUID of the last looted object
 
@@ -327,7 +330,7 @@ local function LootKind()
             if kind and kind ~= this then return nil end
             kind = this
             gave[#gave + 1] = { item, icon }
-        elseif class ~= GEM then
+        elseif not ALSO_LOOT[class] then
             return nil
         end
     end
@@ -349,9 +352,9 @@ local function Learn()
     local name = SourceName(guid)
     castTarget = nil
     local kind, gave = LootKind()
+    if name and NodeKind(name) == "treasure" then kind = nil end -- a chest's bars or herbs
     turns.picked = kind -- (see Picked)
     if not (name and kind) then return end -- no name, or not a herb or ore
-    if NodeKind(name) == "treasure" then return end -- a chest's bars or herbs
     local key = Plain(name)
     local known = db.learned[key] or { seen = {}, most = 0 }
     known.kind = kind
