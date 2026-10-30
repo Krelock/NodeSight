@@ -15,6 +15,7 @@
 --   NodeSight.lua    defaults, the minimap scan, loading and events
 --   Sparkles.lua     sparkles on the herb or ore in front of you
 --   FarSparkles.lua  sparkles on far away herbs and ore (Beta)
+--   SparkleWindow.lua the sparkle window: on/off and the look for each kind, with a 3D preview
 --   WhatsNew.lua     the patch notes dialog
 --   Settings.lua     the settings pages
 --
@@ -28,7 +29,10 @@ local ipairs, pairs = ipairs, pairs
 local defaults = {
     herbs = false, -- sparkles on herbs
     ore = false, -- sparkles on ore
+    chests = false, -- sparkles on chests
+    quests = false, -- sparkles on quest objects
     others = false, -- sparkles on other objects
+    bobber = false, -- Beta: sparkles on your fishing bobber
     gameIcons = false, -- keep the game's interact icons while sparkles are on
     arrow = false, -- arrow to the nearest node
     arrowLocked = false, -- the arrow can't be dragged, and clicks go through it
@@ -57,10 +61,24 @@ local defaults = {
     leylines = true, -- Skyborne: leylines and elemental convergences, while the racial is ready
     worldMark = false, -- Beta: sparkles on far away herbs and ore
     dotScale = 100, -- the game's own dot size, in percent
-    sparkleColor = "ffffffff", -- sparkle tint, "aarrggbb" (white = none)
-    size = 100, -- sparkle area size
-    height = -60, -- sparkle area offset from the plate's bottom
-    count = 9, -- sparkles twinkling at once
+    -- Each kind's sparkles (Sparkles.lua's KEYS): style (Sparkles.lua's STYLES),
+    -- tint "aarrggbb" (white = none), area size, offset from the plate's bottom,
+    -- and how many at once. Herbs' keys have no prefix.
+    herbStyle = 1, sparkleColor = "ffffffff", size = 100, height = -60, count = 9,
+    oreStyle = 1, oreColor = "ffffffff", oreSize = 100, oreHeight = -60, oreCount = 9,
+    chestsStyle = 1, chestsColor = "ffffffff", chestsSize = 100, chestsHeight = -60, chestsCount = 9,
+    questsStyle = 1, questsColor = "ffffffff", questsSize = 100, questsHeight = -60, questsCount = 9,
+    othersStyle = 1, othersColor = "ffffffff", othersSize = 100, othersHeight = -60, othersCount = 9,
+    bobberStyle = 6, bobberColor = "ffffffff", bobberSize = 100, bobberHeight = 0, bobberCount = 9,
+    brightness = 100, -- sparkle alpha, in percent
+    reachLook = false, -- dimmer out of reach, a flash in reach
+    combatHide = false, -- no sparkles in combat
+    instanceHide = false, -- no sparkles in dungeons and raids
+    sparkleSound = false, -- a sound when something near you starts sparkling
+    gatherDim = true, -- sparkles fade back while you gather the node
+    grayTooHard = false, -- gray sparkles on herbs and ore above your skill
+    rareGlow = false, -- a gold glow around rare herbs and ore
+    harvest = 5, -- how a gathered node finishes (Sparkles.lua's HARVESTS: Fade away)
 }
 local db = defaults -- NodeSightDB once it's loaded
 ns.db = db -- shared with the other files
@@ -160,6 +178,7 @@ local rested = 0 -- scans started in a row while standing still
 local heard = {} -- recent finds, for the Sound setting
 local shownText
 local arrowOn = false
+local arrowAngle -- the arrow's rotation, set only when it changes
 local turning -- the minimap was rotating at the last scan
 -- Switch state: kind, map, x, y, scanned, picked (see Switch and Picked).
 local turns = {}
@@ -179,6 +198,7 @@ local function ApplyDetail()
 end
 
 local function Enabled()
+    if not Minimap.UpdateMouseoverAtPoint then return false end -- no pretend mouse to scan with (Retail)
     return db.scan and (db.arrow or db.mapIcons or db.sound or db.worldMark)
 end
 
@@ -203,7 +223,8 @@ end
 
 -- Moved more than 3 yards since the last empty scan?
 local function Moved(map, x, y, width, height)
-    if not map or map ~= emptyMap then return true end
+    if not map then return emptyMap ~= nil end -- no position (instances): moved only if there was one
+    if map ~= emptyMap then return true end
     local dx, dy = (x - emptyX) * width, (y - emptyY) * height
     return dx * dx + dy * dy > 9
 end
@@ -258,9 +279,10 @@ local function KindOf(name)
             if not issecretvalue(pet) and (not pet or ns.RareID(Plain(pet)) ~= id) then return "rares" end
         end
     end
-    -- Learned herbs and ore. Chests go by their names, so a learned "treasure" is passed over.
+    -- Learned herbs and ore. Chests go by their names: a chest is one whatever it gave.
     local known = db.learned and db.learned[Plain(name)]
-    local kind = known and known.kind ~= "treasure" and known.kind or NodeKind(name)
+    local listed = NodeKind(name)
+    local kind = listed ~= "treasure" and known and known.kind ~= "treasure" and known.kind or listed
     if RACIALS[kind] and not RacialReady(kind) then return nil end
     return kind
 end
@@ -329,6 +351,7 @@ local function Learn()
     local kind, gave = LootKind()
     turns.picked = kind -- (see Picked)
     if not (name and kind) then return end -- no name, or not a herb or ore
+    if NodeKind(name) == "treasure" then return end -- a chest's bars or herbs
     local key = Plain(name)
     local known = db.learned[key] or { seen = {}, most = 0 }
     known.kind = kind
@@ -675,6 +698,7 @@ local function ShowShape(icon, marker)
             icon.border:SetAtlas(oreRing.atlas)
         else
             icon.border:SetTexture(GOLD_BORDER)
+            icon.border:SetTexCoord(0, 1, 0, 1) -- SetTexture keeps the atlas's coords
         end
         SizeRing(icon)
     end
@@ -769,7 +793,11 @@ local function UpdateArrow()
         return
     end
     -- Bearings are clockwise from north; facing and texture rotation counterclockwise.
-    arrowTexture:SetRotation(-(target.world + facing))
+    local angle = -(target.world + facing)
+    if angle ~= arrowAngle then
+        arrowAngle = angle
+        arrowTexture:SetRotation(angle)
+    end
     if not arrowOn then
         arrowOn = true
         arrow:Show()
@@ -1229,6 +1257,7 @@ end
 
 -- Reuse the last split of a group for up to REFIT scans.
 local REFIT = 10
+local AROUND = { { 0, 0 }, { 6, 0 }, { -6, 0 }, { 0, 6 }, { 0, -6 } } -- a center and 4 points around it
 
 local function Known(name, keys, set)
     -- Only places inside this group.
@@ -1247,7 +1276,7 @@ local function Known(name, keys, set)
         if (marker.age or 0) >= REFIT then return nil end
         -- Its center and 4 points around it must still hit (one miss allowed).
         local missing = 0
-        for _, offset in ipairs({ { 0, 0 }, { 6, 0 }, { -6, 0 }, { 0, 6 }, { 0, -6 } }) do
+        for _, offset in ipairs(AROUND) do
             local gx = math.floor((marker.x + offset[1]) / STEP + 0.5)
             local gy = math.floor((marker.y + offset[2]) / STEP + 0.5)
             if not set[gx * 1000 + gy] then missing = missing + 1 end
@@ -1436,8 +1465,9 @@ local function OnUpdate(_, elapsed)
     if scan then
         ScanSome()
     else
-        -- Slower while standing still, except right after loot.
-        wait = wait - (still and hurry == 0 and elapsed / REST[rested] or elapsed)
+        -- Slower while standing still, except right after loot, and not on top of the
+        -- empty scans' backoff (held symbols keep "still" true with nothing found).
+        wait = wait - (still and hurry == 0 and empties == 0 and elapsed / REST[rested] or elapsed)
         if wait <= 0 then StartScan() end
     end
     Follow()
@@ -1575,12 +1605,28 @@ local OBJECT_TOOLTIP = Enum.TooltipDataType.Object -- a herb's or ore's own tool
 
 local function OnAddonLoaded()
     NodeSightDB = NodeSightDB or {}
+    ns.CarryOverLooks(NodeSightDB)
     for key, value in pairs(defaults) do
         if NodeSightDB[key] == nil then NodeSightDB[key] = value end
     end
     -- Fix saved values the settings can't produce.
-    NodeSightDB.sparkleColor = tostring(NodeSightDB.sparkleColor):match("^%x%x%x%x%x%x%x%x$") or defaults.sparkleColor
+    if type(NodeSightDB.styleLooks) ~= "table" then NodeSightDB.styleLooks = {} end -- each style's look, per kind (the sparkle window)
+    for _, kind in ipairs(ns.KINDS) do
+        local keys = ns.SPARKLE_KEYS[kind]
+        NodeSightDB[keys.color] = tostring(NodeSightDB[keys.color]):match("^%x%x%x%x%x%x%x%x$") or defaults[keys.color]
+        local two = NodeSightDB[keys.color2]
+        NodeSightDB[keys.color2] = two ~= nil and tostring(two):match("^%x%x%x%x%x%x%x%x$") or nil
+        if not ns.StyleFits(NodeSightDB[keys.style], kind) then NodeSightDB[keys.style] = defaults[keys.style] end
+        -- The look in use belongs to its style (one from before the window has no entry yet).
+        local looks = NodeSightDB.styleLooks
+        if type(looks[kind]) ~= "table" then looks[kind] = {} end
+        if looks[kind][NodeSightDB[keys.style]] == nil then
+            looks[kind][NodeSightDB[keys.style]] = { size = NodeSightDB[keys.size], height = NodeSightDB[keys.height],
+                count = NodeSightDB[keys.count], color = NodeSightDB[keys.color], color2 = NodeSightDB[keys.color2] }
+        end
+    end
     if not SHAPES[NodeSightDB.shape] then NodeSightDB.shape = defaults.shape end
+    if not ns.HARVESTS[NodeSightDB.harvest] then NodeSightDB.harvest = defaults.harvest end
     if not ICONS.rares[NodeSightDB.rareIcon] then NodeSightDB.rareIcon = defaults.rareIcon end
     if NodeSightDB.switchYards < 10 then NodeSightDB.switchYards = 10 end
     db = NodeSightDB
@@ -1614,13 +1660,14 @@ events:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 events:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player")
 events:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
 events:RegisterEvent("PLAYER_LOGOUT")
+events:RegisterEvent("SKILL_LINES_CHANGED")
 events:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
     if event == "ADDON_LOADED" then
         if arg1 == ADDON_NAME then
             events:UnregisterEvent("ADDON_LOADED")
             -- After an update, a /reload only loads the files the old .toc listed:
             -- stay off until the game is restarted.
-            if not (ns.Plain and ns.RareID and ns.Setup and world.Update and ns.ShowWhatsNew and ns.RegisterSettings) then
+            if not (ns.Plain and ns.RareID and ns.Setup and world.Update and ns.ShowSparkleWindow and ns.ShowWhatsNew and ns.RegisterSettings) then
                 events:UnregisterAllEvents()
                 return
             end
@@ -1633,7 +1680,7 @@ events:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         ns.Setup() -- after every loading screen
     elseif event == "NAME_PLATE_UNIT_REMOVED" then
         -- Free the plate's sparkle frame.
-        if next(ns.sparkles) then ns.HideSparkles(C_NamePlate.GetNamePlateForUnit(arg1)) end
+        if next(ns.sparkles) or next(ns.leaving) then ns.HideSparkles(C_NamePlate.GetNamePlateForUnit(arg1)) end
     elseif event == "UNIT_SPELLCAST_SENT" then
         NoteCast(arg2)
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
@@ -1648,6 +1695,10 @@ events:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         Picked()
     elseif event == "SPELL_UPDATE_COOLDOWN" then
         RacialsChanged()
+    elseif event == "SKILL_LINES_CHANGED" then
+        -- Herbalism or Mining went up: read them again, and gray sparkles may not be any more.
+        skills.herbs, skills.ore = nil, nil
+        ns.UpdateAll()
     elseif event == "PLAYER_STARTED_MOVING" or event == "MINIMAP_UPDATE_ZOOM" or event == "MINIMAP_UPDATE_TRACKING" then
         -- Moving, zooming or a tracking change ends the slowdown.
         local soon = event == "MINIMAP_UPDATE_TRACKING" and SWITCH_WAIT or WAIT
@@ -1655,9 +1706,11 @@ events:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         if wait > soon then wait = soon end
     elseif event == "PLAYER_REGEN_DISABLED" then
         world.Fight()
+        if db.combatHide then ns.UpdateAll() end
     else -- PLAYER_REGEN_ENABLED
         wait = 0 -- rescan now
         world.fight = nil
         if ns.SetupPending() then ns.Setup() end
+        if db.combatHide then ns.UpdateAll() end
     end
 end)

@@ -1,17 +1,30 @@
 -- NodeSight's settings: the main page plus Arrow, Symbols, Sparkles and Beta.
 
-local _, ns = ...
+local ADDON_NAME, ns = ...
 
 local ipairs = ipairs
 
 local defaults, SHAPES, world = ns.defaults, ns.SHAPES, ns.world
 local UpdateScanner, ApplyDotScale, ApplyArrowLock = ns.UpdateScanner, ns.ApplyDotScale, ns.ApplyArrowLock
 local ApplyArrowSize = ns.ApplyArrowSize
-local Setup, UpdateAll, ShowWhatsNew = ns.Setup, ns.UpdateAll, ns.ShowWhatsNew
+local ShowWhatsNew = ns.ShowWhatsNew
 
 ---------------------------------------------------------------------------
 -- Settings panel
 ---------------------------------------------------------------------------
+
+-- Blizzard's own check (InputUtil.IsGamepadUIEnabled); Retail may have neither.
+local function GamepadUI()
+    local style = C_InputInterfaceStyle and C_InputInterfaceStyle.GetCurrentStyle and C_InputInterfaceStyle.GetCurrentStyle()
+    return Enum.InputDeviceInterfaceType ~= nil and style == Enum.InputDeviceInterfaceType.Gamepad
+end
+
+-- The sparkle window errored on opening in this version; a new version tries it again.
+local function WindowFailed()
+    local version = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version")
+    if ns.db.sparkleWindowFailed ~= version then ns.db.sparkleWindowFailed = nil end
+    return ns.db.sparkleWindowFailed ~= nil
+end
 
 local function RegisterSettings()
     -- Rows go to the current page; Page() starts a subpage.
@@ -42,11 +55,6 @@ local function RegisterSettings()
         Settings.CreateSlider(category, Register(key, name, onChange), options, tooltip)
     end
 
-    -- Blizzard's color swatch; clicking it opens the color picker.
-    local function ColorSwatch(key, name, tooltip, onChange)
-        Settings.CreateColorSwatch(category, Register(key, name, onChange), tooltip)
-    end
-
     local function Dropdown(key, name, choices, tooltip, onChange)
         local function GetOptions()
             local container = Settings.CreateControlTextContainer()
@@ -54,13 +62,6 @@ local function RegisterSettings()
             return container:GetData()
         end
         Settings.CreateDropdown(category, Register(key, name, onChange), GetOptions, tooltip)
-    end
-
-    -- Added to the sparkle checkboxes' tooltips.
-    local NEEDS = " While any sparkles are on, NodeSight turns on Enable Interact Key, its icons for objects and targeting all around you (Options > Controls and Accessibility), and hides the game's own icon and name (unless Keep the game's icons is on). Turning all sparkles off puts your settings back."
-    local function SparklesChanged()
-        UpdateAll()
-        Setup()
     end
 
     -- What's New button, left of Blizzard's Defaults button and parented to it (so
@@ -151,37 +152,39 @@ local function RegisterSettings()
         "How closely the minimap is scanned: 3 is the most exact, 1 uses the least CPU but can place herbs poorly. The default is " .. defaults.scanDetail .. ". Needs Scan the minimap.",
         UpdateScanner)
 
+    -- The sparkles' settings are all in their own window, which opens with this page.
+    -- A controller can't reach that window, and its color picker and menus would run
+    -- Blizzard's gamepad code tainted, so with the gamepad UI on the page has
+    -- Blizzard's own rows for the basics instead (until a reload, if it's switched).
+    -- The same if the window failed to open.
     Page("Sparkles")
-    Checkbox("herbs", "Sparkles on herbs",
-        "Sparkles around the nearest herb." .. NEEDS,
-        SparklesChanged)
-    Checkbox("ore", "Sparkles on ore",
-        "Sparkles around the nearest ore (mining node)." .. NEEDS,
-        SparklesChanged)
-    Checkbox("others", "Sparkles on other objects",
-        "Sparkles around other objects with an interact icon, like chests and quest objects. Not mailboxes, chairs or doors." .. NEEDS,
-        SparklesChanged)
-    Checkbox("gameIcons", "Keep the game's icons",
-        "The game's own icon stays over the herb, ore, chest or corpse you can interact with while sparkles are on. Needs Sparkles on herbs, ore or other objects.",
-        SparklesChanged)
-    ColorSwatch("sparkleColor", "Sparkle color",
-        "The sparkles' tint. White shows them in their own colors.",
-        UpdateAll)
-    -- Writes the saved color directly: going through the setting would run Blizzard's
-    -- shared color row under our taint. Search tags off (false) for the same reason.
-    layout:AddInitializer(CreateSettingsButtonInitializer("Reset the sparkle color", RESET, function()
-        ns.db.sparkleColor = defaults.sparkleColor
-        UpdateAll()
-    end, "Resets sparkles back to their original color.", false))
-    Slider("size", "Sparkle area", 30, 200,
-        "How big the area around the herb or ore is that the sparkles twinkle in. The default is " .. defaults.size .. ".",
-        UpdateAll)
-    Slider("height", "Sparkle height", -100, 100,
-        "Moves the sparkles up or down, if they sit above or below the herb or ore. The default is " .. defaults.height .. ".",
-        UpdateAll)
-    Slider("count", "Number of sparkles", 1, 20,
-        "How many sparkles twinkle at once. The default is " .. defaults.count .. ".",
-        UpdateAll)
+    local sparklesPage = category
+    if GamepadUI() or WindowFailed() then
+        local function SparklesChanged() ns.UpdateAll() ns.RefreshFarSparkles() ns.Setup() end
+        local function LookChanged() ns.UpdateAll() ns.RefreshFarSparkles() end
+        for _, tab in ipairs(ns.SPARKLE_TABS) do
+            if tab.on then Checkbox(tab.key, tab.on, tab.tip .. ns.SPARKLE_NEEDS, SparklesChanged) end
+        end
+        Checkbox("gameIcons", "Keep the game's icons", "Keeps the game's own icon over things you can interact with.", SparklesChanged)
+        Slider("brightness", "Brightness", 10, 100, "How bright the sparkles are.", LookChanged)
+        Checkbox("reachLook", "Dimmer out of reach", "Dimmer when it's too far to gather. Flashes when you get in range.", LookChanged)
+        Checkbox("combatHide", "Hide in combat", "No sparkles while you're in combat.", LookChanged)
+        Checkbox("instanceHide", "Hide in instances", "No sparkles in dungeons and raids.", LookChanged)
+        Checkbox("grayTooHard", "Gray when your skill is too low", "Herbs and ore your skill is too low for sparkle gray.", LookChanged)
+        Checkbox("rareGlow", "Rare nodes stand out", "A gold glow on rare herbs and ore like Black Lotus and Truesilver.", LookChanged)
+        Checkbox("sparkleSound", "Sparkle sound", "Plays a soft sound when something near you starts sparkling.", LookChanged)
+        Checkbox("gatherDim", "Dim while gathering", "Sparkles fade while you gather so you can see the node.", LookChanged)
+        local finishes = {}
+        for i, finish in ipairs(ns.HARVESTS) do finishes[i] = finish.name end
+        Dropdown("harvest", "When gathered", finishes, "What the sparkles do when you loot it.", LookChanged)
+    else
+        -- Search tags off (false): addon code adding them taints the options' search.
+        layout:AddInitializer(CreateSettingsButtonInitializer("Sparkle window", "Open", ns.ShowSparkleWindow,
+            "All the sparkle settings, with a preview.", false))
+        EventRegistry:RegisterCallback("Settings.CategoryChanged", function(_, shown)
+            if shown == sparklesPage then ns.ShowSparkleWindow() end
+        end, sparklesPage)
+    end
 
     Page("Beta")
     Checkbox("rares", "Rares on the minimap (Beta)",

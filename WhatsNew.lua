@@ -11,6 +11,28 @@ local ipairs = ipairs
 local ShowWhatsNew
 do
     local WHATS_NEW = {
+        { version = "1.5.0",
+            { "New", {
+                { "Sparkle window.", "All the sparkle settings in one window, with a tab for each kind and a 3D preview of the node. It opens with the Sparkles page in Options" },
+                { "Sparkle styles (Twinkle by default).", "13 new styles made from the game's own art. Glints, Pollen, Star crown, Wisp, Light beam, Settling dust and Fireflies work on everything. Butterflies, Pickaxe sparks, Spilling coins, Quest mark, Glowing mark and Bubbles are made for herbs, ore, chests, quest objects and your bobber" },
+                { "A look for each kind.", "Herbs, ore, chests, quest objects, other objects and your bobber each have their own style, colors, area, height and count, and each style remembers how you left it. Your old look carries over" },
+                { "Second color and color sets.", "Sparkles switch between two colors, or pick a set of two that go well together" },
+                { "Sparkles on chests and quest objects.", "They have their own boxes now, on if you had Sparkles on other objects on" },
+                { "Sparkles on your fishing bobber (Beta) (off by default).", "Makes your bobber easier to spot on the water" },
+                { "New sparkle settings.", "Brightness, Dimmer out of reach, Hide in combat, Hide in instances, Gray when your skill is too low, Rare nodes stand out, Sparkle sound, Dim while gathering and When gathered. On the General tab of the sparkle window" },
+            } },
+            { "Changes", {
+                { "Sparkles page.", "The sparkle settings are in the sparkle window now. With the gamepad UI on, the page has the basic settings instead" },
+                { "Far away sparkles (Beta).", "They use the color and size of the herb or ore they're on" },
+            } },
+            { "Fixes", {
+                { "Gold ring symbols", "Could look wrong after turning off High visibility tin and iron" },
+                { "Switch between herbs and ore", "Standing still could leave minutes between scans" },
+                { "Dungeons", "The minimap scan no longer runs nonstop when there's nothing to find" },
+                { "Chests", "A chest that only gave bars could show up as ore" },
+                { "Far away sparkles (Beta)", "Sparkles could stay on screen after being turned off, and the game's map marker could stay hidden after an error" },
+            } },
+        },
         { version = "1.4.3",
             { "New", {
                 { "Arrow size (40 by default).", "How big the arrow is, from 20 to 100. Change it under Arrow" },

@@ -39,16 +39,23 @@ local UpdateScanner, Markers = ns.UpdateScanner, ns.Markers
 -- (world.Hop, world.Fit) and saved in NodeSightDB.cam.
 local world = ns.world
 
--- Starts ten sparkles in a frame.
-function world.Fill(frame)
-    local parts = frame.parts
+-- The look a marker's kind sparkles with: herbs', ore's, chests', or other objects'.
+local function LookOf(kind)
+    if kind == "herbs" or kind == "ore" or kind == "chests" or kind == "others" then return kind end -- already a look
+    return kind == "treasure" and "chests" or "others"
+end
+
+-- Starts ten sparkles in a frame, in the kind's color and size.
+function world.Fill(frame, kind)
+    frame.kind = LookOf(kind)
+    local parts, one, two = frame.parts, ns.SparkleColors(frame.kind)
     for i = 1, 10 do
         local part = parts[i]
         if not part then
             part = NewSparkle(frame)
             parts[i] = part
         end
-        ApplyColor(part)
+        ApplyColor(part, i % 2 == 0 and two or one)
         part.texture:Show()
         part.core:Show()
         if not part.group:IsPlaying() then part.group:Play() end
@@ -360,7 +367,7 @@ function world.Several(nav, now, busy)
                 if shown == 4 then break end
                 if not marker.hard and not marker.dim and marker.kind ~= "rares" and marker.map == map and marker.yards and marker.yards >= 12
                     and (at.mx - marker.mx) ^ 2 + (at.my - marker.my) ^ 2 > 2.5e-7
-                    and ns.db[(marker.kind == "herbs" or marker.kind == "ore") and marker.kind or "others"] then
+                    and ns.db[LookOf(marker.kind)] then
                     east, north = (marker.mx - px) * wide, (py - marker.my) * tall
                     local reach = math.sqrt(east * east + north * north)
                     local x, y = world.Project(reach, side + math.atan2(east, north) - way, down, zoom, pivot)
@@ -379,7 +386,7 @@ function world.Several(nav, now, busy)
                         frame:SetSize(frame.wide, frame.tall)
                         frame:ClearAllPoints()
                         frame:SetPoint("CENTER", UIParent, "CENTER", x * focal / scale, y * focal / scale)
-                        if not frame:IsShown() then world.Fill(frame) end
+                        if not frame:IsShown() or frame.kind ~= LookOf(marker.kind) then world.Fill(frame, marker.kind) end
                     end
                 end
             end
@@ -444,8 +451,8 @@ function world.Update()
     -- With that kind's Sparkles setting on, show sparkles and hide Blizzard's
     -- marker (alpha 0 after its UpdateAlpha); otherwise just the marker.
     at = world.at
-    local sparkly = at and ns.db[(at.kind == "herbs" or at.kind == "ore") and at.kind or "others"] or false
-    world.hide = sparkly
+    local sparkly = at and ns.db[LookOf(at.kind)] or false
+    world.hide = sparkly and not world.broken -- with no sparkles possible, Blizzard's marker stays
     if world.hide and not world.hooked and SuperTrackedFrame and SuperTrackedFrame.UpdateAlpha then
         world.hooked = true
         hooksecurefunc(SuperTrackedFrame, "UpdateAlpha", function(marker)
@@ -457,9 +464,10 @@ function world.Update()
     local distance = nav and C_Navigation.GetDistance()
     local seen = nav and distance and not issecretvalue(distance) and distance > 0
         and C_Navigation.HasValidScreenPosition() and not C_Navigation.WasClampedToScreen()
+    -- Measuring the camera; once it ends (or is called off), on as usual this frame.
+    if world.hop then world.Hop(nav, seen, busy) end
     if world.hop then
-        -- measuring the camera
-        world.Hop(nav, seen, busy)
+        -- still measuring
     elseif seen then
         local frame = world.frame
         if not frame then
@@ -533,7 +541,8 @@ function world.Update()
             end
             world.nav = nav
         end
-        if not frame:IsShown() then world.Fill(frame) end
+        local kind = world.at and world.at.kind
+        if not frame:IsShown() or frame.kind ~= LookOf(kind) then world.Fill(frame, kind) end
         world.Several(nav, now, busy)
     else
         if world.frame and world.frame:IsShown() then
@@ -546,6 +555,14 @@ function world.Update()
         end
         world.side, world.shown = nil, 0
         world.Clear()
+    end
+end
+
+-- A look changed in the sparkle window: the far sparkles on screen take it now.
+function ns.RefreshFarSparkles()
+    if world.frame and world.frame:IsShown() then world.Fill(world.frame, world.frame.kind) end
+    for _, frame in ipairs(world.others) do
+        if frame:IsShown() then world.Fill(frame, frame.kind) end
     end
 end
 

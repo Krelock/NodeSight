@@ -528,7 +528,7 @@ local professions = {} -- localized profession names
 
 -- Herbalism or Mining skill including bonuses, or nil.
 local function GatherSkill(kind)
-    local info = C_SkillInfo and C_SkillInfo.GetSkillLineInfoByID(SKILL_LINE[kind])
+    local info = C_SkillInfo and C_SkillInfo.GetSkillLineInfoByID and C_SkillInfo.GetSkillLineInfoByID(SKILL_LINE[kind])
     if not info or issecretvalue(info) then return nil end
     local rank, bonus = info.rank, info.modifier
     if issecretvalue(rank) or issecretvalue(bonus) or not rank then return nil end
@@ -558,5 +558,6 @@ end
 
 -- Used by NodeSight.lua.
 ns.Plain, ns.NodeKind, ns.NodeIcon = Plain, NodeKind, NodeIcon
+ns.NodeKey = Key
 ns.TREASURE, ns.RARES, ns.FRIENDLY, ns.InZone = TREASURE, RARES, FRIENDLY, InZone
 ns.TOO_HARD, ns.skills, ns.professions, ns.TooHard, ns.NodeSkill = TOO_HARD, skills, professions, TooHard, NodeSkill
