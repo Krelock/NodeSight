@@ -110,9 +110,12 @@ function world.Level(marker)
     if marker.far or not (left and bottom and Minimap:IsVisible()) or InCombatLockdown() then return world.level end
     local scale = Minimap:GetEffectiveScale()
     Minimap:SetUsingSoftCursor(true)
-    Minimap:UpdateMouseoverAtPoint((left + marker.x) * scale, (bottom + marker.y) * scale)
-    local data = C_TooltipInfo.GetMinimapMouseover()
+    local ok, data = pcall(function()
+        Minimap:UpdateMouseoverAtPoint((left + marker.x) * scale, (bottom + marker.y) * scale)
+        return C_TooltipInfo.GetMinimapMouseover()
+    end)
     Minimap:SetUsingSoftCursor(false)
+    if not ok then error(data, 0) end -- after letting go of the pretend mouse
     local lines = data and not issecretvalue(data) and data.lines
     if not lines or issecretvalue(lines) then return world.level end
     for _, line in ipairs(lines) do
