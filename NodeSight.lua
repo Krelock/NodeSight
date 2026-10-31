@@ -1466,7 +1466,13 @@ local world = { others = {} }
 -- Every frame: the scan or its wait, then the places, arrow and far sparkles.
 local function OnUpdate(_, elapsed)
     if scan then
-        ScanSome()
+        -- A failed probe would fail again every frame, with the pretend mouse left on:
+        -- report it once, let go of the mouse and wait a long pause (moving, loot or a
+        -- fight's end try again sooner, as after any scan).
+        if not xpcall(ScanSome, geterrorhandler()) then
+            pcall(Minimap.SetUsingSoftCursor, Minimap, false)
+            scan, wait, rested = nil, WAIT * SLEEP, 0
+        end
     else
         -- Slower while standing still, except right after loot, and not on top of the
         -- empty scans' backoff (held symbols keep "still" true with nothing found).
