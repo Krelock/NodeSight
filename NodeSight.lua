@@ -1481,7 +1481,12 @@ local function OnUpdate(_, elapsed)
     end
     Follow()
     UpdateArrow()
-    world.Update()
+    -- A failed far marker would fail again every frame: report it once, hide its sparkles
+    -- and stop it until the next reload (world.Update then only puts your map pin back).
+    if not xpcall(world.Update, geterrorhandler()) and not world.stopped then
+        world.stopped, world.hide = true, false
+        pcall(world.Out)
+    end
 end
 
 -- After a loading screen, old places are stale.
