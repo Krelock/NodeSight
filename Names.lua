@@ -12,7 +12,7 @@ local ipairs = ipairs
 
 -- Herbs are matched by the end of the name, ore by "vein" or "deposit" (or ORE_OTHER).
 -- Names with digits, ":" or "/" are quest progress ("Peacebloom 3/8"), not nodes.
-local HERB_OTHER = { "doom weed", "gloom weed", "moonroot" } -- no item icon: plain herb symbol
+local HERB_OTHER = { "doom weed", "gloom weed", "moonroot", "nightmare moss", "dreamroot", "star lotus" } -- no item icon: plain herb symbol
 local ORE_OTHER = { "chunk of amber", "obsidian chunk", "moonstone formation" } -- no vein or deposit
 -- Find Treasure chests, by the end of the name (crates and sacks are quest things too).
 local TREASURE = { "chest", "footlocker", "strongbox", "lockbox", "coffer", icon = "Interface\\Icons\\racial_dwarf_findtreasure" }
