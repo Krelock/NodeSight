@@ -110,9 +110,12 @@ function world.Level(marker)
     if marker.far or not (left and bottom and Minimap:IsVisible()) or InCombatLockdown() then return world.level end
     local scale = Minimap:GetEffectiveScale()
     Minimap:SetUsingSoftCursor(true)
-    Minimap:UpdateMouseoverAtPoint((left + marker.x) * scale, (bottom + marker.y) * scale)
-    local data = C_TooltipInfo.GetMinimapMouseover()
+    local ok, data = pcall(function()
+        Minimap:UpdateMouseoverAtPoint((left + marker.x) * scale, (bottom + marker.y) * scale)
+        return C_TooltipInfo.GetMinimapMouseover()
+    end)
     Minimap:SetUsingSoftCursor(false)
+    if not ok then error(data, 0) end -- after letting go of the pretend mouse
     local lines = data and not issecretvalue(data) and data.lines
     if not lines or issecretvalue(lines) then return world.level end
     for _, line in ipairs(lines) do
@@ -420,10 +423,19 @@ end
 
 -- Every frame: move the pin to the target and the sparkles to the marker.
 function world.Update()
+    local busy = world.fight or InCombatLockdown() or (WorldMapFrame and WorldMapFrame:IsShown())
+    -- Stopped after an error (see OnUpdate in NodeSight.lua): off until the next reload,
+    -- but your own map pin comes back once it's safe to touch (not busy).
+    if world.stopped then
+        if world.at and not busy then
+            world.at = nil -- only once, even if putting it back fails
+            world.Back()
+        end
+        return
+    end
     -- Off and nothing left to clean up.
     if not ns.db.worldMark and not world.at and not world.hop then return end
     local target = ns.db.worldMark and world.Pick()
-    local busy = world.fight or InCombatLockdown() or (WorldMapFrame and WorldMapFrame:IsShown())
     local at = world.at
     if busy then
         -- leave the pin alone
@@ -545,17 +557,22 @@ function world.Update()
         if not frame:IsShown() or frame.kind ~= LookOf(kind) then world.Fill(frame, kind) end
         world.Several(nav, now, busy)
     else
-        if world.frame and world.frame:IsShown() then
-            world.frame:Hide()
-            world.nav = nil
-            for _, part in ipairs(world.frame.parts) do
-                part.group:Stop()
-                part.coreGroup:Stop()
-            end
-        end
-        world.side, world.shown = nil, 0
-        world.Clear()
+        world.Out()
     end
+end
+
+-- Sparkles out: hides them on the marker and on other nodes, their animations stopped.
+function world.Out()
+    if world.frame and world.frame:IsShown() then
+        world.frame:Hide()
+        world.nav = nil
+        for _, part in ipairs(world.frame.parts) do
+            part.group:Stop()
+            part.coreGroup:Stop()
+        end
+    end
+    world.side, world.shown = nil, 0
+    world.Clear()
 end
 
 -- A look changed in the sparkle window: the far sparkles on screen take it now.

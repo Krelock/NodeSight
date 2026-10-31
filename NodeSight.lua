@@ -1465,17 +1465,37 @@ local world = { others = {} }
 
 -- Every frame: the scan or its wait, then the places, arrow and far sparkles.
 local function OnUpdate(_, elapsed)
+    local failed
     if scan then
-        ScanSome()
+        -- A failed probe would fail again every frame, with the pretend mouse left on:
+        -- report it once and let go of the mouse (the long pause follows below).
+        if not xpcall(ScanSome, geterrorhandler()) then
+            pcall(Minimap.SetUsingSoftCursor, Minimap, false)
+            failed = true
+        end
     else
         -- Slower while standing still, except right after loot, and not on top of the
         -- empty scans' backoff (held symbols keep "still" true with nothing found).
         wait = wait - (still and hurry == 0 and empties == 0 and elapsed / REST[rested] or elapsed)
         if wait <= 0 then StartScan() end
     end
-    Follow()
-    UpdateArrow()
-    world.Update()
+    -- A failed symbol or arrow update would fail again every frame: report it once and
+    -- clear the symbols, so there is nothing to update until a scan finds them again.
+    if not (xpcall(Follow, geterrorhandler()) and xpcall(UpdateArrow, geterrorhandler())) then
+        markers = {}
+        pcall(ShowMarkers)
+        pcall(UpdateArrow) -- no target left: hides the arrow
+        failed = true
+    end
+    -- After a failure: drop the scan and wait a long pause (moving, loot or a fight's
+    -- end try again sooner, as after any scan).
+    if failed then scan, wait, rested = nil, WAIT * SLEEP, 0 end
+    -- A failed far marker would fail again every frame: report it once, hide its sparkles
+    -- and stop it until the next reload (world.Update then only puts your map pin back).
+    if not xpcall(world.Update, geterrorhandler()) and not world.stopped then
+        world.stopped, world.hide = true, false
+        pcall(world.Out)
+    end
 end
 
 -- After a loading screen, old places are stale.
