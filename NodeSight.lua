@@ -12,6 +12,7 @@
 --   Zones.lua        map and instance IDs of the rares' home zones
 --   Names.lua        node names, icons and skill levels
 --   RareNames.lua    rare names in the client's language, asked from the client
+--   MinimapShape.lua the minimap's shape: round, square or mixed, maybe cropped at the top and bottom
 --   NodeSight.lua    defaults, the minimap scan, loading and events
 --   Sparkles.lua     sparkles on the herb or ore in front of you
 --   FarSparkles.lua  sparkles on far away herbs and ore (Beta)
@@ -53,6 +54,7 @@ local defaults = {
     sound = false, -- sound when something new shows up
     scan = true, -- the minimap scan
     scanDetail = 2, -- 3 full, 2 lighter, 1 lightest
+    minimapShape = 1, -- 1 automatic (asks your UI addon), 2 round, 3 square
     switchFinders = false, -- Find Herbs and Find Minerals in turn
     switchYards = 15, -- yards between switches (10 at least)
     combatScan = true, -- keep scanning in combat
@@ -1033,7 +1035,7 @@ local function NewJob(name, keys)
     for fx = math.ceil((x0 - STEP) / FINE), math.floor((x1 + STEP) / FINE) do
         for fy = math.ceil((y0 - STEP) / FINE), math.floor((y1 + STEP) / FINE) do
             local dx, dy = fx * FINE - half, fy * FINE - half
-            if fx >= 0 and fy >= 0 and dx * dx + dy * dy <= half * half then
+            if fx >= 0 and fy >= 0 and ns.InShape(dx, dy, half, scan.quarters) then
                 list[#list + 1] = fx * 1000 + fy
                 probed[fx * 1000 + fy] = true
             end
@@ -1059,12 +1061,15 @@ local function Follow()
     local radius = C_Minimap.GetViewRadius()
     local facing = turning and PlayerFacing() -- only needed when rotating
     if not map or not radius or issecretvalue(radius) or (turning and not facing) then return end
-    -- Nothing moved.
-    if map == lastMap and x == lastX and y == lastY and radius == lastRadius and (not turning or facing == lastFacing) then
+    local quarters = ns.MinimapQuarters()
+    -- Nothing moved, and the shape is the same.
+    if map == lastMap and x == lastX and y == lastY and radius == lastRadius and (not turning or facing == lastFacing)
+        and markers.quarters == quarters then
         still = true
         return
     end
     lastMap, lastX, lastY, lastFacing, lastRadius = map, x, y, facing, radius
+    markers.quarters = quarters -- like lastMap, but kept on the list: no new file-level local (Lua allows 200)
     local half = Minimap:GetWidth() / 2
     local sorted, last = true, 0
     for _, marker in ipairs(markers) do
@@ -1075,7 +1080,7 @@ local function Follow()
             marker.distance = marker.yards / radius * half
             local way = turning and marker.world + facing or marker.world -- clockwise from the minimap's top
             marker.x, marker.y = half + marker.distance * math.sin(way), half + marker.distance * math.cos(way)
-            marker.far = marker.distance > half
+            marker.far = not ns.InShape(marker.x - half, marker.y - half, half, quarters)
         end
         if marker.distance < last then sorted = false end
         last = marker.distance
@@ -1285,16 +1290,17 @@ local function StartScan()
     wait = WAIT * math.min(SLEEP, empties <= 6 and 1 + empties or 7 * 2 ^ (empties - 6))
     rested = still and hurry == 0 and math.min(rested + 1, #REST) or 0
     local width = Minimap:GetWidth()
-    if gridWidth ~= width then
-        gridWidth, grid = width, {}
+    local quarters = ns.MinimapQuarters()
+    if gridWidth ~= width or grid.quarters ~= quarters then -- new size or shape
+        gridWidth, grid = width, { quarters = quarters }
         for x = 0, math.floor(width / STEP) do
             for y = 0, math.floor(width / STEP) do
                 local dx, dy = x * STEP - width / 2, y * STEP - width / 2
-                if dx * dx + dy * dy <= width * width / 4 then grid[#grid + 1] = x * 1000 + y end
+                if ns.InShape(dx, dy, width / 2, quarters) then grid[#grid + 1] = x * 1000 + y end
             end
         end
     end
-    scan = { points = grid, next = 1, hits = {} }
+    scan = { points = grid, next = 1, hits = {}, quarters = quarters }
 end
 
 -- Moves the fake mouse to x, y and records the names the tooltip shows.
@@ -1371,11 +1377,10 @@ end
 
 -- Distance from x, y to the dot's edge in direction dx, dy (up to reach), or nil.
 local function Edge(left, bottom, scale, name, x, y, dx, dy, reach)
-    local px, py, rim = x - gridWidth / 2, y - gridWidth / 2, gridWidth / 2 - 1
-    local out = px * px + py * py - rim * rim
-    if out >= 0 then return nil end
-    local along = px * dx + py * dy
-    local inside, outside = 0, math.min(reach, math.sqrt(along * along - out) - along) -- stop at the rim
+    local rim = gridWidth / 2 - 1
+    local limit = ns.RimDistance(x - gridWidth / 2, y - gridWidth / 2, dx, dy, rim, scan.quarters)
+    if not limit or limit <= 0 then return nil end
+    local inside, outside = 0, math.min(reach, limit) -- stop at the rim of the minimap's shape
     if Under(left, bottom, scale, x + dx * outside, y + dy * outside, name) then return nil end
     for _ = 1, HALVINGS do
         local far = (inside + outside) / 2
@@ -1707,6 +1712,7 @@ local function OnAddonLoaded()
     end
     if not SHAPES[NodeSightDB.shape] then NodeSightDB.shape = defaults.shape end
     if not SKILL.looks[NodeSightDB.skillLook] then NodeSightDB.skillLook = defaults.skillLook end
+    if not ns.MAP_SHAPES[NodeSightDB.minimapShape] then NodeSightDB.minimapShape = defaults.minimapShape end
     if not ns.HARVESTS[NodeSightDB.harvest] then NodeSightDB.harvest = defaults.harvest end
     if not ICONS.rares[NodeSightDB.rareIcon] then NodeSightDB.rareIcon = defaults.rareIcon end
     if NodeSightDB.switchYards < 10 then NodeSightDB.switchYards = 10 end
@@ -1748,7 +1754,7 @@ events:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
             events:UnregisterEvent("ADDON_LOADED")
             -- After an update, a /reload only loads the files the old .toc listed:
             -- stay off until the game is restarted.
-            if not (ns.Plain and ns.RareID and ns.Setup and world.Update and ns.ShowSparkleWindow and ns.ShowWhatsNew and ns.RegisterSettings) then
+            if not (ns.Plain and ns.RareID and ns.MinimapQuarters and ns.Setup and world.Update and ns.ShowSparkleWindow and ns.ShowWhatsNew and ns.RegisterSettings) then
                 events:UnregisterAllEvents()
                 return
             end
