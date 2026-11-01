@@ -12,7 +12,7 @@
 --   Zones.lua        map and instance IDs of the rares' home zones
 --   Names.lua        node names, icons and skill levels
 --   RareNames.lua    rare names in the client's language, asked from the client
---   MinimapShape.lua the minimap's shape: round, square or mixed
+--   MinimapShape.lua the minimap's shape: round, square or mixed, maybe cropped at the top and bottom
 --   NodeSight.lua    defaults, the minimap scan, loading and events
 --   Sparkles.lua     sparkles on the herb or ore in front of you
 --   FarSparkles.lua  sparkles on far away herbs and ore (Beta)
