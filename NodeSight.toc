@@ -18,6 +18,7 @@ Locales\zhTW.lua
 Zones.lua
 Names.lua
 RareNames.lua
+MinimapShape.lua
 NodeSight.lua
 Sparkles.lua
 FarSparkles.lua
