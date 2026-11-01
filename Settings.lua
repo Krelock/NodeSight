@@ -151,6 +151,9 @@ local function RegisterSettings()
     Slider("scanDetail", "Scan detail", 1, 3,
         "How closely the minimap is scanned: 3 is the most exact, 1 uses the least CPU but can place herbs poorly. The default is " .. defaults.scanDetail .. ". Needs Scan the minimap.",
         UpdateScanner)
+    Dropdown("minimapShape", "Minimap shape", ns.MAP_SHAPES,
+        "Automatic asks your UI addon whether the minimap is square. Choose Square if your minimap is square but herbs and ore in its corners don't show up. Needs Scan the minimap.",
+        UpdateScanner)
 
     -- The sparkles' settings are all in their own window, which opens with this page.
     -- A controller can't reach that window, and its color picker and menus would run

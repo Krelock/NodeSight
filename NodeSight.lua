@@ -54,6 +54,7 @@ local defaults = {
     sound = false, -- sound when something new shows up
     scan = true, -- the minimap scan
     scanDetail = 2, -- 3 full, 2 lighter, 1 lightest
+    minimapShape = 1, -- 1 automatic (asks your UI addon), 2 round, 3 square
     switchFinders = false, -- Find Herbs and Find Minerals in turn
     switchYards = 15, -- yards between switches (10 at least)
     combatScan = true, -- keep scanning in combat
@@ -1711,6 +1712,7 @@ local function OnAddonLoaded()
     end
     if not SHAPES[NodeSightDB.shape] then NodeSightDB.shape = defaults.shape end
     if not SKILL.looks[NodeSightDB.skillLook] then NodeSightDB.skillLook = defaults.skillLook end
+    if not ns.MAP_SHAPES[NodeSightDB.minimapShape] then NodeSightDB.minimapShape = defaults.minimapShape end
     if not ns.HARVESTS[NodeSightDB.harvest] then NodeSightDB.harvest = defaults.harvest end
     if not ICONS.rares[NodeSightDB.rareIcon] then NodeSightDB.rareIcon = defaults.rareIcon end
     if NodeSightDB.switchYards < 10 then NodeSightDB.switchYards = 10 end

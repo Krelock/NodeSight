@@ -22,8 +22,11 @@ local minimapShapes = {
     ["TRICORNER-BOTTOMRIGHT"] = {true, true, true, false},
 }
 
--- The shape GetMinimapShape() names. Round without an answer.
+-- The setting's shape, or on Automatic GetMinimapShape's. Round without an answer.
 function ns.MinimapQuarters()
+    local forced = ns.db.minimapShape
+    if forced == 2 then return minimapShapes.ROUND end
+    if forced == 3 then return minimapShapes.SQUARE end
     if not GetMinimapShape then return minimapShapes.ROUND end
     local ok, shape = pcall(GetMinimapShape)
     return ok and minimapShapes[shape] or minimapShapes.ROUND
@@ -47,3 +50,5 @@ function ns.RimDistance(px, py, dx, dy, rim, quarters)
     if quarters[q] then return math.sqrt(math.max(0, along * along - (px * px + py * py - rim * rim))) - along end
     return rim - along
 end
+
+ns.MAP_SHAPES = { "Automatic", "Round", "Square" } -- the Minimap shape setting's choices
