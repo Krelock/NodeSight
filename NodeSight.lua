@@ -48,7 +48,7 @@ local defaults = {
     shape = 3, -- 1 square, 2 round, 3 round with a gold ring, 4 with a slim one
     oreRings = false, -- green and rust rings for tin and iron
     iconSize = 11, -- symbol size
-    hard = true, -- red symbols for nodes above your skill
+    skillLook = 1, -- how symbols show your skill (SKILL.looks): red when too low
     clearNear = false, -- symbols see-through over your own arrow
     sound = false, -- sound when something new shows up
     scan = true, -- the minimap scan
@@ -138,6 +138,22 @@ local SKIP_YARDS = 5
 -- See-through near you: the game draws your own arrow under addons' textures, so a
 -- symbol over it (half its size plus this many minimap units from the middle) gets this alpha.
 local PLAYER_ARROW, CLEAR = 8, 0.35
+local CAVE = 0.4 -- alpha of a herb or ore in a cave
+-- Skill colors: how a symbol shows your skill against its node. Ring and gem use the
+-- profession window's colors for a skill-up. The gems are the original game's; it
+-- has no orange one, so the yellow one is tinted.
+local SKILL = {
+    looks = { "Red when too low", "Colored ring", "Colored gem", "Off" },
+    RED = 1, RING = 2, GEM = 3, OFF = 4,
+    gems = { "Interface\\Common\\Indicator-Red", "Interface\\Common\\Indicator-Yellow", "Interface\\Common\\Indicator-Yellow",
+        "Interface\\Common\\Indicator-Green", "Interface\\Common\\Indicator-Gray" },
+    orange = { 1, 0.55, 0.3 },
+    gem = 0.76, gemAt = 0.43, -- gem size, and its offset to the lower right, per symbol size
+}
+function SKILL.Color(level) -- 1 too hard to 5 no skill-up (SkillLevel)
+    return level == 1 and RED_FONT_COLOR or level == 2 and DIFFICULT_DIFFICULTY_COLOR or level == 3 and FAIR_DIFFICULTY_COLOR
+        or level == 4 and EASY_DIFFICULTY_COLOR or TRIVIAL_DIFFICULTY_COLOR
+end
 -- Grid points are keyed x * 1000 + y; these are the offsets of the 8 neighbours.
 local AROUND = { -1001, -1000, -999, -1, 1, 999, 1000, 1001 }
 local AROUND4 = { -1000, -1, 1, 1000 } -- and the 4 direct ones
@@ -232,7 +248,7 @@ end
 -- From Names.lua.
 local Plain, NodeKind, NodeIcon = ns.Plain, ns.NodeKind, ns.NodeIcon
 local TREASURE, RARES, FRIENDLY = ns.TREASURE, ns.RARES, ns.FRIENDLY
-local TOO_HARD, skills, professions, TooHard, NodeSkill = ns.TOO_HARD, ns.skills, ns.professions, ns.TooHard, ns.NodeSkill
+local TOO_HARD, skills, professions, TooHard, SkillLevel = ns.TOO_HARD, ns.skills, ns.professions, ns.TooHard, ns.SkillLevel
 
 ---------------------------------------------------------------------------
 -- Node kinds
@@ -502,16 +518,12 @@ local SKILL_WAIT = 1
 local skillsRead = 0 -- last skill refresh
 local said = {} -- lines added this frame
 
--- The line and its color. A skill-up always, likely, unlikely, never: 25, 50 and
--- 100 points above what the node needs.
+-- The line and its color.
 local function Requirement(name)
     local kind = KindOf(name)
-    local need, skill = NodeSkill(name, kind) -- nothing for chests, rares and the like
-    if not skill or not professions[kind] then return nil end
-    local over = skill - need
-    local color = over < 0 and RED_FONT_COLOR or over < 25 and DIFFICULT_DIFFICULTY_COLOR
-        or over < 50 and FAIR_DIFFICULTY_COLOR or over < 100 and EASY_DIFFICULTY_COLOR or TRIVIAL_DIFFICULTY_COLOR
-    return ITEM_MIN_SKILL:format(professions[kind], need), color
+    local level, need = SkillLevel(name, kind) -- nothing for chests, rares and the like
+    if not level or not professions[kind] then return nil end
+    return ITEM_MIN_SKILL:format(professions[kind], need), SKILL.Color(level)
 end
 
 local function FreshSkills()
@@ -563,7 +575,7 @@ end
 -- New symbol texture (sized later by ApplySize).
 local function NewIcon()
     local texture = mapFrame:CreateTexture(nil, "OVERLAY")
-    return { texture = texture, hard = false, dim = false }
+    return { texture = texture, hard = false }
 end
 
 -- Circle mask for a symbol or its ring.
@@ -621,10 +633,18 @@ local function SizeRing(icon)
     icon.border:SetPoint("TOPLEFT", icon.texture, "CENTER", GOLD_X * scale, GOLD_Y * scale)
 end
 
+-- The gem sits on the symbol's lower right.
+local function SizeGem(icon)
+    local size, at = icon.size * SKILL.gem, icon.size * SKILL.gemAt
+    icon.gem:SetSize(size, size)
+    icon.gem:SetPoint("CENTER", icon.texture, "CENTER", at, -at)
+end
+
 local function ApplySize(icon)
     icon.size = db.iconSize
     icon.texture:SetSize(icon.size, icon.size)
     if icon.border then SizeRing(icon) end
+    if icon.gem then SizeGem(icon) end
 end
 
 -- Applies a shape; the mask and ring are created on first use.
@@ -692,8 +712,15 @@ local function ShowShape(icon, marker)
     -- Rare symbols keep Blizzard's own look: square, no ring.
     local shape = marker.kind == "rares" and 1 or db.shape
     if icon.shape ~= shape then ApplyShape(icon, shape) end
-    -- High visibility tin and iron: swap the gold ring for the tinted one.
-    local tint = icon.ring and db.oreRings and oreRing.ok and oreRing.tints[marker.file] or false
+    -- Colored ring or gem: the node's skill-up chance, once per marker.
+    local look = db.skillLook
+    if marker.level == nil and (look == SKILL.RING or look == SKILL.GEM) then
+        marker.level = SkillLevel(marker.name, marker.kind) or false
+    end
+    -- High visibility tin and iron: swap the gold ring for the tinted one, unless the
+    -- ring shows your skill.
+    local tint = icon.ring and db.oreRings and not (look == SKILL.RING and marker.level)
+        and oreRing.ok and oreRing.tints[marker.file] or false
     local swap = not icon.tint ~= not tint -- tin to iron is just a new tint
     icon.tint = tint
     if swap then
@@ -708,39 +735,57 @@ local function ShowShape(icon, marker)
     if icon.ring and icon.cut ~= RingCut(shape) then CutRing(icon) end
 end
 
--- A symbol's look: red, gray in a cave, see-through over your arrow. After a color
--- change the alpha is set again, not left to what the color did to it.
+-- A symbol's look: Skill colors, faded in a cave, see-through over your arrow. After
+-- a color change the alpha is set again, not left to what the color did to it.
 local function ShowLook(icon, marker)
-    -- Red if too hard; dimmed and desaturated in a cave (ore icons are already gray).
-    local hard = (db.hard and marker.hard) or false
-    if icon.hard ~= hard or icon.dim ~= marker.dim then
-        icon.hard, icon.dim = hard, marker.dim
-        local shade = icon.dim and 0.5 or 1
+    local look = db.skillLook
+    local hard = (look == SKILL.RED and marker.hard) or false
+    if icon.hard ~= hard then
+        icon.hard = hard
         if hard then
-            icon.texture:SetVertexColor(TOO_HARD[1] * shade, TOO_HARD[2] * shade, TOO_HARD[3] * shade)
+            icon.texture:SetVertexColor(TOO_HARD[1], TOO_HARD[2], TOO_HARD[3])
         else
-            icon.texture:SetVertexColor(shade, shade, shade)
+            icon.texture:SetVertexColor(1, 1, 1)
         end
-        icon.texture:SetDesaturated(icon.dim)
         icon.alpha = nil -- set again below
     end
-    -- The ring gets the cave look or the ore tint. Done here because ApplyShape may
-    -- have just created or re-shown it.
-    local look = icon.dim or icon.tint or false
-    if icon.ring and (icon.ringLook or false) ~= look then
-        icon.ringLook = look
-        if icon.tint and not icon.dim then
+    -- The ring: the skill's color in grays tinted, the ore tint, or gold. Done here
+    -- because ApplyShape may have just created or re-shown it.
+    local level = look == SKILL.RING and marker.level
+    local ringLook = level or icon.tint or false
+    if icon.ring and (icon.ringLook or false) ~= ringLook then
+        icon.ringLook = ringLook
+        if level then
+            icon.ring:SetDesaturated(true)
+            icon.ring:SetVertexColor(SKILL.Color(level):GetRGB())
+        elseif icon.tint then
             icon.ring:SetVertexColor(icon.tint[1], icon.tint[2], icon.tint[3])
             icon.ring:SetDesaturation(oreRing.gray)
         else
-            local shade = icon.dim and 0.5 or 1
-            icon.ring:SetVertexColor(shade, shade, shade)
-            icon.ring:SetDesaturated(icon.dim)
+            icon.ring:SetVertexColor(1, 1, 1)
+            icon.ring:SetDesaturated(false)
         end
         icon.ringAlpha = nil
     end
-    -- See-through near you: while over your own arrow.
-    local alpha = db.clearNear and marker.distance < icon.size / 2 + PLAYER_ARROW and CLEAR or 1
+    -- The gem, made on first use.
+    level = look == SKILL.GEM and marker.level or false
+    if level and not icon.gem then
+        icon.gem = mapFrame:CreateTexture(nil, "OVERLAY", nil, 2)
+        SizeGem(icon)
+    end
+    if icon.gem and icon.gemLevel ~= level then
+        icon.gemLevel = level
+        if level then
+            icon.gem:SetTexture(SKILL.gems[level])
+            local tint = level == 2 and SKILL.orange
+            if tint then icon.gem:SetVertexColor(tint[1], tint[2], tint[3]) else icon.gem:SetVertexColor(1, 1, 1) end
+            icon.gemAlpha = nil
+        end
+        icon.gem:SetShown(level ~= false)
+    end
+    -- Faded in a cave; see-through while over your own arrow.
+    local alpha = marker.dim and CAVE or 1
+    if db.clearNear and marker.distance < icon.size / 2 + PLAYER_ARROW then alpha = math.min(alpha, CLEAR) end
     if icon.alpha ~= alpha then
         icon.alpha = alpha
         icon.texture:SetAlpha(alpha)
@@ -748,6 +793,10 @@ local function ShowLook(icon, marker)
     if icon.ring and icon.ringAlpha ~= alpha then
         icon.ringAlpha = alpha
         icon.ring:SetAlpha(alpha)
+    end
+    if icon.gem and icon.gemLevel and icon.gemAlpha ~= alpha then
+        icon.gemAlpha = alpha
+        icon.gem:SetAlpha(alpha)
     end
 end
 
@@ -781,6 +830,10 @@ local function ShowMarkers()
             icon.shown = false
             icon.texture:Hide()
             if icon.ring then icon.ring:Hide() end
+            if icon.gem then
+                icon.gem:Hide()
+                icon.gemLevel = nil
+            end
         end
     end
 end
@@ -1093,7 +1146,8 @@ local function FinishScan()
                 local distance = math.sqrt(dx * dx + dy * dy)
                 local said = hits[name] -- (see Record)
                 local marker = {
-                    name = name, kind = kind, file = IconOf(name, kind), hard = (db.hard or db.arrow or db.sound or db.worldMark) and TooHard(name, kind),
+                    name = name, kind = kind, file = IconOf(name, kind),
+                    hard = (db.skillLook == SKILL.RED or db.arrow or db.sound or db.worldMark) and TooHard(name, kind),
                     x = x, y = y, distance = distance, age = place.age, exact = place.exact,
                     yards = radius and distance / (width / 2) * radius,
                     world = rotating and bearing - facing or bearing,
@@ -1477,7 +1531,7 @@ local function OnUpdate(_, elapsed)
         -- Slower while standing still, except right after loot, and not on top of the
         -- empty scans' backoff (held symbols keep "still" true with nothing found).
         wait = wait - (still and hurry == 0 and empties == 0 and elapsed / REST[rested] or elapsed)
-        if wait <= 0 then StartScan() end
+        if wait <= 0 and not xpcall(StartScan, geterrorhandler()) then failed = true end
     end
     -- A failed symbol or arrow update would fail again every frame: report it once and
     -- clear the symbols, so there is nothing to update until a scan finds them again.
@@ -1617,6 +1671,7 @@ end
 
 -- What the other files use of this one.
 ns.defaults, ns.SHAPES, ns.world = defaults, SHAPES, world
+ns.SKILL_LOOKS = SKILL.looks
 ns.Clean, ns.MapPosition, ns.PlayerFacing = Clean, MapPosition, PlayerFacing
 ns.UpdateScanner, ns.ApplyDotScale, ns.ApplyArrowLock = UpdateScanner, ApplyDotScale, ApplyArrowLock
 ns.ApplyArrowSize = ApplyArrowSize
@@ -1629,6 +1684,8 @@ local OBJECT_TOOLTIP = Enum.TooltipDataType.Object -- a herb's or ore's own tool
 local function OnAddonLoaded()
     NodeSightDB = NodeSightDB or {}
     ns.CarryOverLooks(NodeSightDB)
+    -- Red symbols turned off, from before Skill colors: Off.
+    if NodeSightDB.skillLook == nil and NodeSightDB.hard == false then NodeSightDB.skillLook = SKILL.OFF end
     for key, value in pairs(defaults) do
         if NodeSightDB[key] == nil then NodeSightDB[key] = value end
     end
@@ -1649,6 +1706,7 @@ local function OnAddonLoaded()
         end
     end
     if not SHAPES[NodeSightDB.shape] then NodeSightDB.shape = defaults.shape end
+    if not SKILL.looks[NodeSightDB.skillLook] then NodeSightDB.skillLook = defaults.skillLook end
     if not ns.HARVESTS[NodeSightDB.harvest] then NodeSightDB.harvest = defaults.harvest end
     if not ICONS.rares[NodeSightDB.rareIcon] then NodeSightDB.rareIcon = defaults.rareIcon end
     if NodeSightDB.switchYards < 10 then NodeSightDB.switchYards = 10 end

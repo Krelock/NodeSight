@@ -4,7 +4,7 @@
 -- NodeSight.lua). Rares are listed by NPC ID: RareNames.lua asks the client for
 -- their names, and Zones.lua holds the IDs of their home zones.
 --
--- In order: InZone, NodeKind, NodeIcon, TooHard, NodeSkill.
+-- In order: InZone, NodeKind, NodeIcon, TooHard, NodeSkill, SkillLevel.
 
 local _, ns = ...
 
@@ -556,8 +556,19 @@ local function NodeSkill(name, kind)
     return need, skills[kind]
 end
 
+-- Your chance of a skill-up from a herb or ore, as the profession window colors it:
+-- 1 too hard, then 2 to 5 at 25, 50 and 100 points over what it needs. Also returns
+-- what it needs. nil if either isn't known.
+local function SkillLevel(name, kind)
+    local need, skill = NodeSkill(name, kind)
+    if not skill then return nil end
+    local over = skill - need
+    return over < 0 and 1 or over < 25 and 2 or over < 50 and 3 or over < 100 and 4 or 5, need
+end
+
 -- Used by NodeSight.lua.
 ns.Plain, ns.NodeKind, ns.NodeIcon = Plain, NodeKind, NodeIcon
 ns.NodeKey = Key
 ns.TREASURE, ns.RARES, ns.FRIENDLY, ns.InZone = TREASURE, RARES, FRIENDLY, InZone
-ns.TOO_HARD, ns.skills, ns.professions, ns.TooHard, ns.NodeSkill = TOO_HARD, skills, professions, TooHard, NodeSkill
+ns.TOO_HARD, ns.skills, ns.professions, ns.TooHard, ns.SkillLevel = TOO_HARD, skills, professions, TooHard, SkillLevel
+ns.NodeSkill = NodeSkill

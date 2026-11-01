@@ -423,6 +423,8 @@ end
 
 -- Every frame: move the pin to the target and the sparkles to the marker.
 function world.Update()
+    -- Off and nothing left to clean up.
+    if not ns.db.worldMark and not world.at and not world.hop then return end
     local busy = world.fight or InCombatLockdown() or (WorldMapFrame and WorldMapFrame:IsShown())
     -- Stopped after an error (see OnUpdate in NodeSight.lua): off until the next reload,
     -- but your own map pin comes back once it's safe to touch (not busy).
@@ -433,8 +435,6 @@ function world.Update()
         end
         return
     end
-    -- Off and nothing left to clean up.
-    if not ns.db.worldMark and not world.at and not world.hop then return end
     local target = ns.db.worldMark and world.Pick()
     local at = world.at
     if busy then

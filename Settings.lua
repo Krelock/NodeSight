@@ -127,8 +127,8 @@ local function RegisterSettings()
         ApplyArrowSize)
 
     Page("Symbols")
-    Checkbox("hard", "Red symbols when too low",
-        "A herb or ore you don't have the skill for yet has a red symbol. Needs Herb and ore symbols.",
+    Dropdown("skillLook", "Skill colors", ns.SKILL_LOOKS,
+        "How a herb's or ore's symbol shows your skill. Red when too low: a red symbol for one you don't have the skill for yet. Colored ring and Colored gem: the profession window's colors, red when too low, then orange, yellow, green and gray as a skill-up gets less likely. Colored ring needs Symbol shape at Round, gold ring or Round, slim gold ring. Needs Herb and ore symbols.",
         UpdateScanner)
     Checkbox("clearNear", "See-through near you",
         "A symbol over your own arrow on the minimap is see-through, so you still see which way you face. Needs Herb and ore symbols.",
@@ -140,7 +140,7 @@ local function RegisterSettings()
         "The shape of the herb and ore symbols on the minimap. Needs Scan the minimap.",
         UpdateScanner)
     Checkbox("oreRings", "High visibility tin and iron",
-        "Tin and iron look alike on the minimap: with this on, tin gets a green ring and iron a rust one. Needs Symbol shape at Round, gold ring or Round, slim gold ring.",
+        "Tin and iron look alike on the minimap: with this on, tin gets a green ring and iron a rust one. Needs Symbol shape at Round, gold ring or Round, slim gold ring. With Skill colors at Colored ring, the skill's color goes first.",
         UpdateScanner)
     Slider("iconSize", "Symbol size", 8, 24,
         "How big the herb and ore symbols on the minimap are. The default is " .. defaults.iconSize .. ". Needs Herb and ore symbols.",

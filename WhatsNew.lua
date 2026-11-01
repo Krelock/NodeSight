@@ -11,6 +11,19 @@ local ipairs = ipairs
 local ShowWhatsNew
 do
     local WHATS_NEW = {
+        { version = "1.5.1",
+            { "New", {
+                { "Colored ring and Colored gem (Red when too low by default).", "Symbols can show your chance of a skill-up in the profession window's colors: red when your skill is too low, then orange, yellow, green and gray. Pick one in Skill colors under Symbols" },
+            } },
+            { "Changes", {
+                { "Skill colors.", "The Red symbols when too low checkbox is now a dropdown: Red when too low, Colored ring, Colored gem or Off. If you had it off, it stays off" },
+                { "Herbs and ore in caves.", "Their symbols fade out now instead of turning dark gray" },
+            } },
+            { "Fixes", {
+                "Nightmare Moss, Dreamroot and Star Lotus never got a symbol. Thanks to tester617 for this on GitHub",
+                "An error in the minimap scan, the symbols, the arrow or Far away sparkles (Beta) could repeat on every frame. Now it shows once, and Far away sparkles stay off until a /reload. Thanks to tester617 for this on GitHub",
+            } },
+        },
         { version = "1.5.0",
             { "New", {
                 { "Sparkle window.", "All the sparkle settings in one window, with a tab for each kind and a 3D preview of the node. It opens with the Sparkles page in Options" },
