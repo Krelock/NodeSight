@@ -14,6 +14,7 @@
 --   RareNames.lua    rare names in the client's language, asked from the client
 --   MinimapShape.lua the minimap's shape: round, square or mixed, maybe cropped at the top and bottom
 --   NodeSight.lua    defaults, the minimap scan, loading and events
+--   Switch.lua       mutes the click of a finder switch
 --   Sparkles.lua     sparkles on the herb or ore in front of you
 --   FarSparkles.lua  sparkles on far away herbs and ore (Beta)
 --   SparkleWindow.lua the sparkle window: on/off and the look for each kind, with a 3D preview
@@ -445,32 +446,6 @@ local function Finders()
     return on, off
 end
 
--- A switch plays the game's UI click. That file is shared by most UI buttons,
--- so it's muted only from just before the switch until the cast is through
--- (or MUTE_MAX at most).
-local SWITCH_SOUND = 567407 -- sound/interface/uchatscrollbutton.ogg
-local MUTE_MAX, MUTE_TAIL = 0.6, 0.1 -- seconds (switches are over a second apart)
-local muted = false
-
-local function Unmute()
-    if not muted then return end
-    UnmuteSoundFile(SWITCH_SOUND)
-    muted = false
-end
-
-local function Mute()
-    muted = true
-    MuteSoundFile(SWITCH_SOUND)
-    C_Timer.After(MUTE_MAX, Unmute)
-end
-
--- Your cast went through: if it was the switch, its sound has played.
-local function CastDone(spellID)
-    if not muted or issecretvalue(spellID) then return end
-    local kind = FINDERS[spellID]
-    if kind == "herbs" or kind == "ore" then C_Timer.After(MUTE_TAIL, Unmute) end
-end
-
 -- Switches finder after switchYards; true if it did.
 local function Switch()
     local kind, other = Finders()
@@ -486,7 +461,7 @@ local function Switch()
     local dx, dy = (x - turns.x) * width, (y - turns.y) * height
     if not turns.scanned or dx * dx + dy * dy < db.switchYards ^ 2 then return false end
     turns.x, turns.y, turns.scanned = x, y, false
-    Mute()
+    ns.Mute()
     C_Minimap.SetTracking(other, true)
     return true
 end
@@ -1709,6 +1684,7 @@ end
 
 -- What the other files use of this one.
 ns.defaults, ns.SHAPES, ns.world = defaults, SHAPES, world
+ns.FINDERS = FINDERS
 ns.SKILL_LOOKS = SKILL.looks
 ns.Clean, ns.MapPosition, ns.PlayerFacing = Clean, MapPosition, PlayerFacing
 ns.UpdateScanner, ns.ApplyDotScale, ns.ApplyArrowLock = UpdateScanner, ApplyDotScale, ApplyArrowLock
@@ -1778,8 +1754,6 @@ events:RegisterEvent("MINIMAP_UPDATE_ZOOM")
 events:RegisterEvent("MINIMAP_UPDATE_TRACKING")
 events:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 events:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player")
-events:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
-events:RegisterEvent("PLAYER_LOGOUT")
 events:RegisterEvent("SKILL_LINES_CHANGED")
 events:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
     if event == "ADDON_LOADED" then
@@ -1787,7 +1761,7 @@ events:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
             events:UnregisterEvent("ADDON_LOADED")
             -- After an update, a /reload only loads the files the old .toc listed:
             -- stay off until the game is restarted.
-            if not (ns.Plain and ns.RareID and ns.MinimapQuarters and ns.Setup and world.Update and ns.ShowSparkleWindow and ns.ShowWhatsNew and ns.RegisterSettings) then
+            if not (ns.Plain and ns.RareID and ns.MinimapQuarters and ns.Mute and ns.Setup and world.Update and ns.ShowSparkleWindow and ns.ShowWhatsNew and ns.RegisterSettings) then
                 events:UnregisterAllEvents()
                 return
             end
@@ -1803,10 +1777,6 @@ events:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         if next(ns.sparkles) or next(ns.leaving) then ns.HideSparkles(C_NamePlate.GetNamePlateForUnit(arg1)) end
     elseif event == "UNIT_SPELLCAST_SENT" then
         NoteCast(arg2)
-    elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
-        CastDone(arg3)
-    elseif event == "PLAYER_LOGOUT" then
-        Unmute() -- also on a /reload: the timers end with the UI
     elseif event == "LOOT_READY" then
         Learn()
     elseif event == "LOOT_CLOSED" then
