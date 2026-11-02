@@ -14,7 +14,7 @@
 --   RareNames.lua    rare names in the client's language, asked from the client
 --   MinimapShape.lua the minimap's shape: round, square or mixed, maybe cropped at the top and bottom
 --   NodeSight.lua    defaults, the minimap scan, loading and events
---   Switch.lua       mutes the click of a finder switch
+--   Switch.lua       the finder switch: when to switch, and the mute of its click
 --   Sparkles.lua     sparkles on the herb or ore in front of you
 --   FarSparkles.lua  sparkles on far away herbs and ore (Beta)
 --   SparkleWindow.lua the sparkle window: on/off and the look for each kind, with a 3D preview
@@ -58,7 +58,10 @@ local defaults = {
     scanDetail = 2, -- 3 full, 2 lighter, 1 lightest
     minimapShape = 1, -- 1 automatic (asks your UI addon), 2 round, 3 square
     switchFinders = false, -- Find Herbs and Find Minerals in turn
-    switchYards = 15, -- yards between switches (10 at least)
+    switchMeasure = 1, -- how the distance between switches is measured: 1 percent, 2 yards, 3 seconds
+    switchPercent = 40, -- distance between switches, in percent of the minimap's view radius
+    switchDistanceYards = 60, -- distance between switches in yards
+    switchSeconds = 8, -- seconds on the move between switches
     combatScan = true, -- keep scanning in combat
     rares = true, -- rare beasts and humanoids (Beta)
     rareIcon = 2, -- which of ICONS.rares
@@ -200,7 +203,7 @@ local shownText
 local arrowOn = false
 local arrowAngle -- the arrow's rotation, set only when it changes
 local turning -- the minimap was rotating at the last scan
--- Switch state: kind, map, x, y, scanned, picked (see Switch and Picked).
+-- Switch state: kind, scanned, picked (see ns.TrySwitch and Picked).
 local turns = {}
 local racialWasReady = false -- a Skyborne racial was ready at the last cooldown change
 local racialShown = false -- the last scan found a leyline or convergence
@@ -420,8 +423,8 @@ end
 -- Switching finders
 ---------------------------------------------------------------------------
 -- The minimap shows one finder's dots at a time. The Switch setting toggles
--- Find Herbs and Find Minerals as you move, keeping the other kind's symbols
--- meanwhile (marker.held).
+-- Find Herbs and Find Minerals as you move (Switch.lua decides when), keeping the other
+-- kind's symbols meanwhile (marker.held).
 local SWITCH_WAIT = 1 -- seconds from a switch to the next scan
 local PICK_REACH = 10 -- yards: looting removes a held symbol this close
 
@@ -446,23 +449,20 @@ local function Finders()
     return on, off
 end
 
--- Switches finder after switchYards; true if it did.
-local function Switch()
+-- Switches finder between scans, once one of the current kind is done and
+-- ns.SwitchReady agrees; true if it did.
+function ns.TrySwitch()
+    if scan or not Minimap:IsVisible() then return false end
     local kind, other = Finders()
-    turns.kind = kind
-    if InCombatLockdown() then return false end -- costs a global cooldown
-    if not (kind and other and C_Minimap.SetTracking) then return false end
-    local map, x, y, width, height = MapPosition()
-    if not map then return false end
-    if map ~= turns.map then -- new map: start counting here
-        turns.map, turns.x, turns.y = map, x, y
-        return false
-    end
-    local dx, dy = (x - turns.x) * width, (y - turns.y) * height
-    if not turns.scanned or dx * dx + dy * dy < db.switchYards ^ 2 then return false end
-    turns.x, turns.y, turns.scanned = x, y, false
+    if not (kind and other and C_Minimap.SetTracking and turns.scanned) then return false end
+    local target = kind == "herbs" and "ore" or "herbs"
+    if not ns.SwitchReady(target) then return false end
     ns.Mute()
+    ns.switch.pending = { kind = target, at = GetTime() } -- before SetTracking, which may fire its event
     C_Minimap.SetTracking(other, true)
+    wait = SWITCH_WAIT -- wait for the other finder's dots
+    if hurry == 0 then hurry = 1 end
+    turns.scanned = false
     return true
 end
 
@@ -1281,11 +1281,7 @@ local function StartScan()
     -- No scan in combat unless Scan in combat is on.
     if InCombatLockdown() and not db.combatScan then return end
     if empties > 0 and Moved(MapPosition()) then empties = 0 end
-    if db.switchFinders and Switch() then -- wait for the other finder's dots
-        wait = SWITCH_WAIT
-        if hurry == 0 then hurry = 1 end
-        return
-    end
+    if db.switchFinders then turns.kind = Finders() end -- also after a switch by hand
     if not FinderOn() then -- nothing to find: check again later
         wait = NO_FINDER
         if markers[1] then
@@ -1530,7 +1526,7 @@ end
 -- The far sparkles (Beta): FarSparkles.lua fills this table.
 local world = { others = {} }
 
--- Every frame: the scan or its wait, then the places, arrow and far sparkles.
+-- Every frame: the scan or its wait, then the places, arrow, far sparkles and the switch's way.
 local function OnUpdate(_, elapsed)
     local failed
     if scan then
@@ -1562,6 +1558,11 @@ local function OnUpdate(_, elapsed)
     if not xpcall(world.Update, geterrorhandler()) and not world.stopped then
         world.stopped, world.hide = true, false
         pcall(world.Out)
+    end
+    -- An error in the switch would repeat every frame: report it once and stop it until
+    -- the next reload.
+    if db.switchFinders and not ns.switch.stopped and not xpcall(ns.SwitchUpdate, geterrorhandler()) then
+        ns.switch.stopped = true
     end
 end
 
@@ -1613,6 +1614,7 @@ local function UpdateScanner()
     eased, quiet = 0, 0
     ApplyDetail()
     local on = Enabled()
+    ns.SwitchEvents(on and db.switchFinders == true)
     tracker:SetScript("OnUpdate", on and OnUpdate or nil)
     scan, wait, empties, rested = nil, 0, 0, 0
     if not on then markers = {} end
@@ -1689,6 +1691,7 @@ ns.SKILL_LOOKS = SKILL.looks
 ns.Clean, ns.MapPosition, ns.PlayerFacing = Clean, MapPosition, PlayerFacing
 ns.UpdateScanner, ns.ApplyDotScale, ns.ApplyArrowLock = UpdateScanner, ApplyDotScale, ApplyArrowLock
 ns.ApplyArrowSize = ApplyArrowSize
+ns.turns, ns.SWITCH_WAIT, ns.Finders = turns, SWITCH_WAIT, Finders
 -- A getter, since each scan replaces the list.
 function ns.Markers() return markers end
 
@@ -1722,9 +1725,15 @@ local function OnAddonLoaded()
     if not SHAPES[NodeSightDB.shape] then NodeSightDB.shape = defaults.shape end
     if not SKILL.looks[NodeSightDB.skillLook] then NodeSightDB.skillLook = defaults.skillLook end
     if not ns.MAP_SHAPES[NodeSightDB.minimapShape] then NodeSightDB.minimapShape = defaults.minimapShape end
+    if not ns.SWITCH_MEASURES[NodeSightDB.switchMeasure] then NodeSightDB.switchMeasure = defaults.switchMeasure end
+    -- A hand-edited distance: a number in its slider's range, else the default.
+    for key, range in pairs(ns.SWITCH_RANGES) do
+        local value = tonumber(NodeSightDB[key]) or defaults[key]
+        NodeSightDB[key] = math.max(range[1], math.min(range[2], value))
+    end
     if not ns.HARVESTS[NodeSightDB.harvest] then NodeSightDB.harvest = defaults.harvest end
     if not ICONS.rares[NodeSightDB.rareIcon] then NodeSightDB.rareIcon = defaults.rareIcon end
-    if NodeSightDB.switchYards < 10 then NodeSightDB.switchYards = 10 end
+    NodeSightDB.switchYards = nil -- (replaced by switchPercent)
     db = NodeSightDB
     ns.db = db
     NewScanner()
