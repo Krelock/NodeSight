@@ -139,12 +139,29 @@ function world.Set(at)
     C_SuperTrack.SetSuperTrackedUserWaypoint(true)
 end
 
--- Restores your own pin and tracked quest.
+-- Restores your own pin (tracked if it was) and tracked quest.
 function world.Back()
     if world.pin then C_Map.SetUserWaypoint(world.pin) else C_Map.ClearUserWaypoint() end
-    C_SuperTrack.SetSuperTrackedUserWaypoint(false)
+    C_SuperTrack.SetSuperTrackedUserWaypoint(world.tracked == true)
     if world.quest and world.quest ~= 0 then C_SuperTrack.SetSuperTrackedQuestID(world.quest) end
     world.at, world.pin, world.quest = nil, nil, nil
+end
+
+-- Is the map pin still on the marked node?
+function world.OnNode()
+    local at = world.at
+    local spot = C_Map.GetUserWaypointPositionForMap(at.map)
+    return spot and (spot.x - at.mx) ^ 2 + (spot.y - at.my) ^ 2 <= 2.5e-7 or false
+end
+
+-- Fades a sparkle frame in over FADE seconds from `from`.
+local FADE = 0.4
+function world.FadeIn(frame, now, from)
+    local alpha = math.min(1, (now - (from or 0)) / FADE)
+    if alpha < 1 or frame.fading then
+        frame:SetAlpha(alpha)
+        frame.fading = alpha < 1
+    end
 end
 
 -- Combat starts: remove the pin now, since nothing can change during the fight.
@@ -389,7 +406,9 @@ function world.Several(nav, now, busy)
                         frame:SetSize(frame.wide, frame.tall)
                         frame:ClearAllPoints()
                         frame:SetPoint("CENTER", UIParent, "CENTER", x * focal / scale, y * focal / scale)
+                        if not frame:IsShown() then frame.fade = now end
                         if not frame:IsShown() or frame.kind ~= LookOf(marker.kind) then world.Fill(frame, marker.kind) end
+                        world.FadeIn(frame, now, frame.fade)
                     end
                 end
             end
@@ -435,7 +454,20 @@ function world.Update()
         end
         return
     end
-    local target = ns.db.worldMark and world.Pick()
+    -- You set a pin or tracked something while a node was marked: leave it to you,
+    -- and mark nothing until the game tracks nothing.
+    if world.at and not busy and not world.hop then
+        local onNode = world.OnNode()
+        if not onNode or not C_SuperTrack.IsSuperTrackingUserWaypoint() then
+            -- Only the tracking changed: your old pin goes back on the map.
+            if onNode then
+                if world.pin then C_Map.SetUserWaypoint(world.pin) else C_Map.ClearUserWaypoint() end
+            end
+            world.at, world.pin, world.quest, world.yours = nil, nil, nil, true
+        end
+    end
+    if world.yours and not busy and not C_SuperTrack.IsSuperTrackingAnything() then world.yours = nil end
+    local target = ns.db.worldMark and not world.yours and world.Pick()
     local at = world.at
     if busy then
         -- leave the pin alone
@@ -443,7 +475,10 @@ function world.Update()
         -- moved more than ~3 yards
         if not at or at.map ~= target.map or (at.mx - target.mx) ^ 2 + (at.my - target.my) ^ 2 > 2.5e-7 then
             if C_Map.CanSetUserWaypointOnMap(target.map) then
-                if not at then world.pin, world.quest = C_Map.GetUserWaypoint(), C_SuperTrack.GetSuperTrackedQuestID() end
+                if not at then
+                    world.pin, world.quest = C_Map.GetUserWaypoint(), C_SuperTrack.GetSuperTrackedQuestID()
+                    world.tracked = C_SuperTrack.IsSuperTrackingUserWaypoint()
+                end
                 -- Same herb, slightly better position: keep its state.
                 local same = at and at.map == target.map and at.name == target.name
                     and (at.mx - target.mx) ^ 2 + (at.my - target.my) ^ 2 <= 6.25e-6
@@ -453,6 +488,7 @@ function world.Update()
                     world.level, world.asked, world.under, world.heat, world.low = nil, nil, nil, nil, nil
                     world.plain, world.clear, world.blip, world.was = nil, nil, nil, nil
                     world.taken = GetTime()
+                    world.fade = world.taken -- the new node's sparkles fade in
                 end
             end
         end
@@ -554,7 +590,9 @@ function world.Update()
             world.nav = nav
         end
         local kind = world.at and world.at.kind
+        if not frame:IsShown() then world.fade = now end
         if not frame:IsShown() or frame.kind ~= LookOf(kind) then world.Fill(frame, kind) end
+        world.FadeIn(frame, now, world.fade)
         world.Several(nav, now, busy)
     else
         world.Out()
@@ -586,6 +624,7 @@ end
 -- Setting changed: turn In-Game Navigation on with it (off by default in WoW
 -- Forever) and restore it when turned off.
 function world.Changed()
+    world.yours = nil
     if ns.db.worldMark then
         local now = C_CVar.GetCVar("showInGameNavigation")
         if now ~= "1" then
