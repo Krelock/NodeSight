@@ -147,13 +147,6 @@ function world.Back()
     world.at, world.pin, world.quest = nil, nil, nil
 end
 
--- Is the map pin still on the marked node?
-function world.OnNode()
-    local at = world.at
-    local spot = C_Map.GetUserWaypointPositionForMap(at.map)
-    return spot and (spot.x - at.mx) ^ 2 + (spot.y - at.my) ^ 2 <= 2.5e-7 or false
-end
-
 -- Fades a sparkle frame in over FADE seconds from `from`.
 local FADE = 0.4
 function world.FadeIn(frame, now, from)
@@ -454,20 +447,7 @@ function world.Update()
         end
         return
     end
-    -- You set a pin or tracked something while a node was marked: leave it to you,
-    -- and mark nothing until the game tracks nothing.
-    if world.at and not busy and not world.hop then
-        local onNode = world.OnNode()
-        if not onNode or not C_SuperTrack.IsSuperTrackingUserWaypoint() then
-            -- Only the tracking changed: your old pin goes back on the map.
-            if onNode then
-                if world.pin then C_Map.SetUserWaypoint(world.pin) else C_Map.ClearUserWaypoint() end
-            end
-            world.at, world.pin, world.quest, world.yours = nil, nil, nil, true
-        end
-    end
-    if world.yours and not busy and not C_SuperTrack.IsSuperTrackingAnything() then world.yours = nil end
-    local target = ns.db.worldMark and not world.yours and world.Pick()
+    local target = ns.db.worldMark and world.Pick()
     local at = world.at
     if busy then
         -- leave the pin alone
@@ -624,7 +604,6 @@ end
 -- Setting changed: turn In-Game Navigation on with it (off by default in WoW
 -- Forever) and restore it when turned off.
 function world.Changed()
-    world.yours = nil
     if ns.db.worldMark then
         local now = C_CVar.GetCVar("showInGameNavigation")
         if now ~= "1" then

@@ -11,6 +11,17 @@ local ipairs = ipairs
 local ShowWhatsNew
 do
     local WHATS_NEW = {
+        { version = "1.5.2",
+            { "New", {
+                { "Minimap shape (Automatic by default).", "Herbs and ore in the corners of a square minimap get symbols now: NodeSight asks your UI addon (EllesmereUI included) for the shape. If the corners stay empty, choose Square in Minimap shape under Symbols. Thanks to tester617 for this on GitHub" },
+            } },
+            { "Changes", {
+                { "Far away sparkles (Beta).", "A new herb's sparkles fade in instead of popping up" },
+            } },
+            { "Fixes", {
+                "Far away sparkles (Beta): your own map pin came back untracked after a herb was marked, even if you were tracking it",
+            } },
+        },
         { version = "1.5.1",
             { "New", {
                 { "Colored ring and Colored gem (Red when too low by default).", "Symbols can show your chance of a skill-up in the profession window's colors: red when your skill is too low, then orange, yellow, green and gray. Pick one in Skill colors under Symbols" },
