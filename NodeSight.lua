@@ -14,7 +14,7 @@
 --   RareNames.lua    rare names in the client's language, asked from the client
 --   MinimapShape.lua the minimap's shape: round, square or mixed, maybe cropped at the top and bottom
 --   NodeSight.lua    defaults, the minimap scan, loading and events
---   Switch.lua       the finder switch: when to switch, and the mute of its click
+--   Switch.lua       the finder switch: when to switch, whether it worked, and the mute of its click
 --   Sparkles.lua     sparkles on the herb or ore in front of you
 --   FarSparkles.lua  sparkles on far away herbs and ore (Beta)
 --   SparkleWindow.lua the sparkle window: on/off and the look for each kind, with a 3D preview

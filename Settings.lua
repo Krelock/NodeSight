@@ -8,7 +8,7 @@ local defaults, SHAPES, world = ns.defaults, ns.SHAPES, ns.world
 local UpdateScanner, ApplyDotScale, ApplyArrowLock = ns.UpdateScanner, ns.ApplyDotScale, ns.ApplyArrowLock
 local ApplyArrowSize = ns.ApplyArrowSize
 local ShowWhatsNew = ns.ShowWhatsNew
-local SwitchDistance, SWITCH_REACH = ns.SwitchDistance, ns.SWITCH_REACH
+local SwitchDistance, SwitchReset, SWITCH_REACH = ns.SwitchDistance, ns.SwitchReset, ns.SWITCH_REACH
 
 ---------------------------------------------------------------------------
 -- Settings panel
@@ -125,7 +125,9 @@ local function RegisterSettings()
         "Shows the skill a herb or ore needs in its tooltip.",
         function() end) -- (tooltips are built again each time they show)
     local findersTip = "Switches between Find Herbs and Find Minerals. You need both trained and one active to start."
-    local finders = Checkbox("switchFinders", "Switch between herbs and ore", findersTip, UpdateScanner)
+    -- Toggling the switch also ends a stop after failed switches; other settings keep it.
+    local finders = Checkbox("switchFinders", "Switch between herbs and ore", findersTip,
+        function() SwitchReset() UpdateScanner() end)
 
     -- Every kind of sparkle at once, like the Sparkle window's "Sparkles on everything".
     local function AllOn()

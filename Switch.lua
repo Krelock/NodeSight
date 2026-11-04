@@ -1,4 +1,4 @@
--- NodeSight's finder switch: when to switch Find Herbs and Find Minerals, and the mute of its click.
+-- NodeSight's finder switch: when to switch Find Herbs and Find Minerals, whether it worked, and the mute of its click.
 
 local _, ns = ...
 
@@ -44,6 +44,8 @@ local switch = {
     castAt = nil, -- time of the latest own cast event or dismount
     mounted = false, -- IsMounted() at the last mount event or loading screen
     hoverAt = nil, -- time of the last UPDATE_MOUSEOVER_UNIT
+    failures = 0, -- failed switches in a row
+    stoppedUntil = nil, -- end of the stop after two failures
     measure = nil, -- switchMeasure the way was counted in
 }
 ns.switch = switch
@@ -51,6 +53,12 @@ ns.switch = switch
 local TICK = 0.25 -- seconds between ticks
 local MAX_STEP = 1 -- seconds of way a tick counts at most, so a frame stall isn't walked
 local SPEEDS = { walking = 7, mounted = 11.2 } -- yards a second until the game tells
+local STOP = 60 -- seconds without switching after two failed switches in a row
+
+-- Ends the stop after failed switches (not the one after an error).
+function ns.SwitchReset()
+    switch.failures, switch.stoppedUntil = 0, nil
+end
 
 -- A value the game returned is set: not nil or false, and a secret counts as unset.
 local function IsSet(value)
@@ -375,6 +383,7 @@ end
 
 -- Whether to switch to kind now; each check says why not.
 function ns.SwitchReady(kind)
+    if switch.stoppedUntil and GetTime() < switch.stoppedUntil then return false end -- after two failed switches
     -- In combat (a switch costs a global cooldown) or not moving on your own (a secret counts as standing).
     if InCombatLockdown() or not Moving() then return false end
     if not Allowed() then return false end -- not on for this area, or not mounted if only while mounted
@@ -401,6 +410,19 @@ function ns.SwitchReady(kind)
     return not (enemy and Near("mouseover", yards, attackable))
 end
 
+-- A second after a switch: did its kind come on? Without exactly one finder on, no verdict.
+local function Verdict(now)
+    local kind = ns.Finders()
+    if kind then switch.kind = kind end -- so a late tracking event isn't taken for one by hand
+    if kind == switch.pending.kind then
+        switch.failures = 0
+    elseif kind then
+        switch.failures = switch.failures + 1
+        if switch.failures >= 2 then switch.stoppedUntil, switch.failures = now + STOP, 0 end
+    end
+    switch.pending = nil
+end
+
 -- Every frame with the switch on: adds the way (yards or seconds) since the last tick where
 -- switching is allowed, and switches once it reaches the goal.
 function ns.SwitchUpdate()
@@ -416,10 +438,7 @@ function ns.SwitchUpdate()
         ns.SwitchMeasureChanged()
         switch.measure = ns.db.switchMeasure
     end
-    if switch.pending and now >= switch.pending.at + ns.SWITCH_WAIT then
-        switch.pending = nil
-        switch.kind = ns.Finders() or switch.kind -- so a late tracking event isn't taken for one by hand
-    end
+    if switch.pending and now >= switch.pending.at + ns.SWITCH_WAIT then Verdict(now) end
     if Moving() and Allowed() then
         local counted = math.min(step, MAX_STEP)
         switch.way = switch.way + (ns.db.switchMeasure == 3 and counted or counted * Speed())
@@ -476,6 +495,7 @@ local function Handle(event, arg3, arg4)
         local mounted = IsSet(IsMounted())
         if switch.mounted and not mounted then switch.castAt = GetTime() end -- dismounted
         switch.mounted = mounted
+        ns.SwitchReset() -- mounting or dismounting ends a stop
     elseif SPELLBOOK[event] then
         ladderDirty = true
     elseif event == "UPDATE_MOUSEOVER_UNIT" then
@@ -484,12 +504,16 @@ local function Handle(event, arg3, arg4)
         -- Another herbs or ore finder, and not NodeSight's switch: one by hand. The next needs a
         -- scan of that kind and a new way. Other tracking changes (creatures, treasure) don't count.
         local kind = ns.Finders()
-        if not switch.pending and kind ~= switch.kind then ns.turns.scanned, switch.way = false, 0 end
+        if not switch.pending and kind ~= switch.kind then
+            ns.turns.scanned, switch.way = false, 0
+            ns.SwitchReset()
+        end
         switch.kind = kind
     elseif event == "PLAYER_ENTERING_WORLD" then
         switch.way, switch.lastTick = 0, nil -- a loading screen is no way
         switch.kind = ns.Finders() -- the finder may have changed meanwhile
         switch.mounted = IsSet(IsMounted()) -- it may have changed meanwhile (a secret counts as not mounted)
+        ns.SwitchReset()
         ladderDirty = true -- your spells' reach may have changed
     end
 end
