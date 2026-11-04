@@ -8,7 +8,7 @@ local defaults, SHAPES, world = ns.defaults, ns.SHAPES, ns.world
 local UpdateScanner, ApplyDotScale, ApplyArrowLock = ns.UpdateScanner, ns.ApplyDotScale, ns.ApplyArrowLock
 local ApplyArrowSize = ns.ApplyArrowSize
 local ShowWhatsNew = ns.ShowWhatsNew
-local SwitchDistance = ns.SwitchDistance
+local SwitchDistance, SWITCH_REACH = ns.SwitchDistance, ns.SWITCH_REACH
 
 ---------------------------------------------------------------------------
 -- Settings panel
@@ -43,6 +43,12 @@ local function Percent(value)
     local yards = SwitchDistance(value)
     if yards then return ("%d %% (%d yd)"):format(value, math.floor(yards + 0.5)) end
     return ("%d %%"):format(value)
+end
+
+-- A pause slider's label: Off at 0.
+local function Off(value)
+    if value == 0 then return "Off" end
+    return tostring(value)
 end
 
 local function RegisterSettings()
@@ -234,6 +240,21 @@ local function RegisterSettings()
     zoom:SetScript("OnEvent", function()
         if SettingsPanel and SettingsPanel:IsShown() then percent:NotifyUpdate() end
     end)
+    Checkbox("switchPauseBusy", "Pause while casting, looting or with a spell or item on the cursor",
+        "Switching pauses while you cast, gather or loot, and while a spell waits for a target or something is on your cursor. Needs Switch between herbs and ore.",
+        UpdateScanner)
+    Slider("switchEnemyYards", "Pause with an enemy targeted within about (yards)", 0, 60,
+        "Switching pauses while a living enemy is targeted within this distance, and for a second after your mouse moves onto one. Distances are about: without an exact distance from the game, NodeSight checks up to " .. SWITCH_REACH .. " yards, farther if one of your own spells reaches farther. Needs Switch between herbs and ore.",
+        UpdateScanner, 1, Off)
+    Checkbox("switchPauseStealth", "Pause while stealthed",
+        "Switching pauses while you're stealthed. Needs Switch between herbs and ore.",
+        UpdateScanner)
+    Slider("switchNearYards", "Pause near a herb or ore (yards)", 0, 40,
+        "Switching pauses this close to a herb or ore with a symbol, so you can walk up and gather it. Needs Switch between herbs and ore.",
+        UpdateScanner, 1, Off)
+    Slider("switchAfterCast", "Pause after your own spells (seconds)", 0, 10,
+        "Switching pauses this long after your own spells end, and after you dismount, so the switch's global cooldown doesn't get in your way. Needs Switch between herbs and ore.",
+        UpdateScanner, 1, Off)
 
     -- The sparkles' settings are all in their own window, which opens with this page.
     -- A controller can't reach that window, and its color picker and menus would run
