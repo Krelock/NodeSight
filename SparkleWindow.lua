@@ -13,16 +13,17 @@ local sqrt, sin, cos, tan, max = math.sqrt, math.sin, math.cos, math.tan, math.m
 ---------------------------------------------------------------------------
 -- Nodes to preview
 ---------------------------------------------------------------------------
--- Name and model file (world/skillactivated/..., and world/goober/..., the game's objects you click).
+-- Name, model file (world/skillactivated/..., and world/goober/..., the game's objects you click),
+-- the scale the world draws it at (1 if not given) and how much nearer the camera goes.
 
 local NODES = {
     herbs = {
-        { "Peacebloom", 219481 }, { "Silverleaf", 219487, 0.55 }, { "Bruiseweed", 219440 },
-        { "Stranglekelp", 219495 }, { "Black Lotus", 219437 },
+        { "Peacebloom", 219481, 0.5 }, { "Silverleaf", 219487, 0.6, 0.55 }, { "Bruiseweed", 219440, 0.7 },
+        { "Stranglekelp", 219495, 0.5 }, { "Black Lotus", 219437 },
     },
     ore = {
-        { "Copper Vein", 219514 }, { "Tin Vein", 219568 }, { "Iron Deposit", 219532 }, { "Gold Vein", 219524 },
-        { "Mithril Deposit", 219541 }, { "Truesilver Deposit", 219569 }, { "Small Thorium Vein", 219566 },
+        { "Copper Vein", 219514, 0.5 }, { "Tin Vein", 219568, 0.5 }, { "Iron Deposit", 219532, 0.5 }, { "Gold Vein", 219524, 0.5 },
+        { "Mithril Deposit", 219541, 0.5 }, { "Truesilver Deposit", 219569, 0.5 }, { "Small Thorium Vein", 219566, 0.5 },
     },
     chests = { { "Battered Chest", 219372 } },
     quests = {
@@ -39,6 +40,14 @@ local NODES = {
 -- node fills this much of the preview.
 local PITCH, FOV, FILL = 0.35, 0.6, 0.7
 local ZOOM_IN, ZOOM_START, ZOOM_OUT = 0.4, 1.6, 2.2 -- times that distance
+
+-- The sparkles at the size and place they have in the world, next to the node.
+-- In the world they are sized for a node 25 yards from the camera; with the game's
+-- camera seeing 54 degrees top to bottom on a screen 768 UI units high, a yard is YARD units there.
+local YARD = 768 / (2 * 25 * tan(math.rad(27)))
+local PLATE_OVER = 1.25 -- yards from the top of the node's box up to its plate
+local AREA = 100 -- the camera also stands back far enough for sparkles this size
+local NEARER = { herbs = 0.85 } -- herbs are small next to their sparkles: the camera a little nearer
 
 -- Color sets, from the game's own colors (item qualities, class colors, gold text).
 local SETS = {
@@ -374,11 +383,11 @@ local function Build()
         if not self.framed and actor:IsLoaded() then self.framed = FrameNode(self, actor) end
     end)
     window.scene, window.actor = scene, actor
-    -- The sparkles grow and shrink with the zoom, around the node's middle.
+    -- The sparkles grow and shrink with the zoom, around the node's middle (PlaceCamera).
     scene.zoomer = New("Frame", scene)
     scene.zoomer:SetSize(1, 1)
     scene.zoomer:SetPoint("CENTER", preview, "CENTER")
-    window.anchor = New("Frame", scene.zoomer) -- sparkles 60 under it with the default height: on the node
+    window.anchor = New("Frame", scene.zoomer) -- where the node's plate would be
     window.anchor:SetSize(1, 1)
     window.anchor:SetPoint("BOTTOM", scene.zoomer, "CENTER", 0, 60)
     local picker = New("Frame", preview, "SettingsDropdownWithButtonsTemplate")
@@ -437,7 +446,7 @@ local function Build()
     Row(panel, -72, "Color set", sets, "Two colors that go well together.")
     window.sets = sets
     window.size = Slider(panel, -108, "Area", "size", 30, 200, "How far around the node the sparkles go.", true)
-    window.height = Slider(panel, -146, "Height", "height", -100, 100, "Moves the sparkles up or down.", true)
+    window.height = Slider(panel, -146, "Height", "height", -150, 100, "Moves the sparkles up or down.", true)
     window.count = Slider(panel, -184, "Count", "count", 1, 20,
         "How many sparkles show at once. Some styles don't use it.", true)
     window.beta = Label(panel, "Beta: not tested in game yet.", "GameFontDisableSmall")
@@ -518,23 +527,33 @@ end
 -- Showing a tab
 ---------------------------------------------------------------------------
 
+-- The camera, then the sparkles where the node's plate is on screen (the top of its box
+-- plus PLATE_OVER), at their world size there.
 function PlaceCamera(scene)
-    scene.zoomer:SetScale(ZOOM_START / scene.zoom)
     local distance = scene.distance * scene.zoom
     local fx, fy, fz = scene:GetCameraForward()
     scene:SetCameraPosition(-fx * distance, -fy * distance, -fz * distance)
+    local _, height = scene:GetSize()
+    local focal = max(height, 1) / 2 / tan(FOV / 2)
+    local up = scene.tall / 2 + PLATE_OVER / scene.scale -- model units over the box's middle
+    local depth = max(distance - up * sin(PITCH), 0.01)
+    local scale = focal / depth / (YARD * scene.scale)
+    scene.zoomer:SetScale(scale)
+    window.anchor:SetPoint("BOTTOM", scene.zoomer, "CENTER", 0, up * cos(PITCH) * focal / depth / scale)
 end
 
--- Stands the camera back far enough that the whole node shows, at any turn.
--- Its size is only known once the model has loaded.
+-- Stands the camera back far enough that the whole node shows, at any turn, and
+-- sparkles of size AREA around it. Its size is only known once the model has loaded.
 function FrameNode(scene, actor)
     local x1, y1, z1, x2, y2, z2 = actor:GetActiveBoundingBox()
     if not (x1 and y1 and z1 and x2 and y2 and z2) then return false end
     local across, tall = sqrt((x2 - x1) ^ 2 + (y2 - y1) ^ 2), z2 - z1
+    across = max(across, AREA / (YARD * scene.scale))
     local width, height = scene:GetSize()
     local fit = tan(FOV / 2) * FILL
     local seen = tall * cos(PITCH) + across * sin(PITCH)
     scene.distance = (max(seen / 2 / fit, across / 2 / (fit * width / max(height, 1))) + across / 2) * (scene.nearer or 1)
+    scene.tall = tall
     PlaceCamera(scene)
     return true
 end
@@ -549,12 +568,13 @@ local function ShowNode()
         window.actor:SetModelByFileID(node[2])
         window.scene.framed = false
     end
-    window.scene.nearer = node[3] or 1 -- a model whose box is bigger than what shows
+    window.scene.scale = node[3] or 1
+    window.scene.nearer = (node[4] or 1) * (NEARER[kind] or 1) -- node[4]: a model whose box is bigger than what shows
     window.picker.Dropdown:SetupMenu(function(_, root)
         for i, choice in ipairs(nodes) do
             root:CreateRadio(choice[1], function() return (window.node[kind] or 1) == i end, function()
                 window.node[kind] = i
-                ShowNode()
+                Refresh()
             end, i)
         end
     end)
@@ -628,7 +648,8 @@ function Refresh()
             end
         end
     end
-    ns.ShowSparkles(window.anchor, kind, nil, {}) -- the saved look, as a preview
+    local node = NODES[kind][window.node[kind] or 1]
+    ns.ShowSparkles(window.anchor, kind, nil, { lower = ns.SPARKLE_LOWER[node[1]:lower()] }) -- the saved look, as a preview
     ShowNode()
 end
 

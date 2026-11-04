@@ -11,6 +11,17 @@ local ipairs = ipairs
 local ShowWhatsNew
 do
     local WHATS_NEW = {
+        { version = "1.5.3",
+            { "Changes", {
+                { "Sparkle window.", "The preview shows the sparkles where and how big they are in the world next to each node, and the herbs are a little closer" },
+                { "When gathered.", "The finish is a little quicker" },
+                { "Height.", "The sparkles go down to -150 now" },
+            } },
+            { "Fixes", {
+                "Silverleaf's sparkles floated over the plant: they sit 15 lower than other herbs' now (-75 at the default Height)",
+                "Chunk of Amber and Large Chunk of Amber in Teldrassil showed an empty ring instead of their amber picture",
+            } },
+        },
         { version = "1.5.2",
             { "New", {
                 { "Minimap shape (Automatic by default).", "Herbs and ore in the corners of a square minimap get symbols now: NodeSight asks your UI addon (EllesmereUI included) for the shape. If the corners stay empty, choose Square in Minimap shape under Symbols. Thanks to tester617 for this on GitHub" },

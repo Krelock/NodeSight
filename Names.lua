@@ -451,7 +451,8 @@ local ORE_ICONS = {
     { "mithril deposit", "inv_ore_mithril_02" }, { "truesilver deposit", "inv_ore_truesilver_01" },
     { "thorium vein", "inv_ore_thorium_02" }, { "indurium", "inv_ore_mithril_01" },
     { "incendicite", "inv_ore_thorium_01" }, { "bloodstone", "inv_ore_thorium_01" },
-    { "chunk of amber", "trade_archaeology_insect-in-amber" }, { "small obsidian", "inv_misc_stonetablet_01" },
+    { "chunk of amber", 463485 }, -- by file ID: the file's name has spaces ("insect in amber")
+    { "small obsidian", "inv_misc_stonetablet_01" },
     { "large obsidian", "inv_stone_15" }, { "moonstone", "inv_misc_apexis_crystal" },
 }
 
@@ -492,7 +493,10 @@ local function NodeIcon(name)
     name = Key(name)
     for pass = 1, 2 do -- herbs, then ore
         for _, entry in ipairs(pass == 1 and HERB_ICONS or ORE_ICONS) do
-            if name:find(entry[1], 1, true) then return "Interface\\Icons\\" .. entry[2] end
+            if name:find(entry[1], 1, true) then
+                local icon = entry[2]
+                return type(icon) == "number" and icon or "Interface\\Icons\\" .. icon
+            end
         end
     end
 end

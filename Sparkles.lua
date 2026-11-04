@@ -94,6 +94,14 @@ local function FrameLook(frame, what)
     return Look(frame.kind, what)
 end
 
+-- Nodes whose plate sits higher over the plant than most: their sparkles go this much lower.
+local LOWER = { silverleaf = 15 }
+
+-- Where the sparkles' middle is, under the plate's bottom.
+local function Height(frame)
+    return FrameLook(frame, "height") - (frame.lower or 0)
+end
+
 -- Before the defaults are filled in: chests and quest objects (other objects before)
 -- start as other objects were, and the other kinds from the herbs' saved look (but
 -- the bobber's height: it floats on the water, at 0).
@@ -866,7 +874,7 @@ local REACH_FADE = 0.25 -- seconds to go from dim to full
 local BURST_TIME = 0.6
 local FADE_TIME = 0.3 -- seconds to fade in or out
 local GATHER_DIM = 0.75 -- how far sparkles fade back while you gather the node
-local HARVEST_TIME = 0.7 -- seconds of a gathered node's finish
+local HARVEST_TIME = 0.65 -- seconds of a gathered node's finish
 -- The finish starts with the loot; this long after the gathering with no loot, anyway.
 local LOOT_WAIT = 1.5
 -- A node still there this long after its loot closed (or a finish with no loot) wasn't
@@ -977,7 +985,7 @@ local function ResetHarvest(frame)
     end
     -- Risen: back down (only on its own plate; a spare is placed again when used).
     if frame.harvestY and frame.harvestY ~= 0 and frame.plate and frame:GetParent() == frame.plate then
-        frame:SetPoint("CENTER", frame.plate, "BOTTOM", 0, FrameLook(frame, "height"))
+        frame:SetPoint("CENTER", frame.plate, "BOTTOM", 0, Height(frame))
     end
     frame.harvestAge, frame.harvestAlpha, frame.harvestY, frame.harvestScale = nil, 1, 0, 1
     frame.harvested, frame.castDone, frame.backAt = nil, nil, nil
@@ -1021,7 +1029,7 @@ local function Animate(frame, elapsed)
         local harvest = HARVESTS[frame.harvest] or HARVESTS[1]
         harvest.Draw(frame, u, S)
         frame:SetScale((frame.over and 1 or zoomWatch.scale or 1) * frame.harvestScale)
-        frame:SetPoint("CENTER", frame.plate, "BOTTOM", 0, FrameLook(frame, "height") + frame.harvestY)
+        frame:SetPoint("CENTER", frame.plate, "BOTTOM", 0, Height(frame) + frame.harvestY)
         if u >= 1 then
             frame.harvestAge = nil
             if frame.burst then frame.burst:Hide() end
@@ -1097,6 +1105,7 @@ local function ShowSparkles(namePlate, kind, unit, over)
     if issecretvalue(name) or type(name) ~= "string" then name = nil end
     frame.name = name
     frame.rare = name and ns.db.rareGlow and RARE[ns.NodeKey(name)] or nil
+    frame.lower = over and over.lower or name and LOWER[ns.NodeKey(name)] or nil
     if fresh and name and ns.db.sparkleSound then
         local now = GetTime()
         if now - heardAt >= SOUND_APART and now - (heard[name] or -SOUND_AGAIN) >= SOUND_AGAIN then
@@ -1113,7 +1122,7 @@ local function ShowSparkles(namePlate, kind, unit, over)
     local S = FrameLook(frame, "size")
     frame:SetSize(S, S)
     frame:ClearAllPoints()
-    frame:SetPoint("CENTER", namePlate, "BOTTOM", 0, FrameLook(frame, "height") + frame.harvestY)
+    frame:SetPoint("CENTER", namePlate, "BOTTOM", 0, Height(frame) + frame.harvestY)
     local style = STYLES[FrameLook(frame, "style")] or STYLES[1]
     local color, color2 = Colors(kind)
     if over and over.color then color, color2 = over.color, over.color2 or over.color end
@@ -1419,6 +1428,6 @@ ns.HARVESTS, ns.SparklePreviews, ns.SparkleAnimate, ns.ResetHarvest = HARVESTS, 
 ns.ApplyColor, ns.NewSparkle, ns.NewSparkles = ApplyColor, NewSparkle, NewSparkles
 ns.ShowSparkles, ns.HideSparkles, ns.Setup, ns.UpdateAll = ShowSparkles, HideSparkles, Setup, UpdateAll
 ns.KINDS, ns.SPARKLE_KEYS, ns.SPARKLE_STYLES, ns.StyleFits = KINDS, KEYS, STYLES, StyleFits
-ns.CarryOverLooks, ns.SparkleLook, ns.SparkleRGB, ns.SparkleColors = CarryOverLooks, Look, RGB, Colors
+ns.CarryOverLooks, ns.SparkleLook, ns.SparkleRGB, ns.SparkleColors, ns.SPARKLE_LOWER = CarryOverLooks, Look, RGB, Colors, LOWER
 -- Is a Setup waiting for the end of combat?
 function ns.SetupPending() return pendingSetup end
