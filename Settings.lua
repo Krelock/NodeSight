@@ -240,6 +240,9 @@ local function RegisterSettings()
     zoom:SetScript("OnEvent", function()
         if SettingsPanel and SettingsPanel:IsShown() then percent:NotifyUpdate() end
     end)
+    Checkbox("switchMounted", "Only while mounted",
+        "Switches only while you ride a mount. Travel Form and Ghost Wolf don't count. Needs Switch between herbs and ore.",
+        UpdateScanner)
     Checkbox("switchPauseBusy", "Pause while casting, looting or with a spell or item on the cursor",
         "Switching pauses while you cast, gather or loot, and while a spell waits for a target or something is on your cursor. Needs Switch between herbs and ore.",
         UpdateScanner)
@@ -255,6 +258,18 @@ local function RegisterSettings()
     Slider("switchAfterCast", "Pause after your own spells (seconds)", 0, 10,
         "Switching pauses this long after your own spells end, and after you dismount, so the switch's global cooldown doesn't get in your way. Needs Switch between herbs and ore.",
         UpdateScanner, 1, Off)
+    Checkbox("switchWorld", "Switch in the open world",
+        "Switches while you're in the open world. Needs Switch between herbs and ore.",
+        UpdateScanner)
+    Checkbox("switchDungeons", "Switch in dungeons",
+        "Switches while you're in a dungeon. Needs Switch between herbs and ore.",
+        UpdateScanner)
+    Checkbox("switchRaids", "Switch in raids",
+        "Switches while you're in a raid. Needs Switch between herbs and ore.",
+        UpdateScanner)
+    Checkbox("switchBattlegrounds", "Switch in battlegrounds",
+        "Switches while you're in a battleground. Needs Switch between herbs and ore.",
+        UpdateScanner)
 
     -- The sparkles' settings are all in their own window, which opens with this page.
     -- A controller can't reach that window, and its color picker and menus would run

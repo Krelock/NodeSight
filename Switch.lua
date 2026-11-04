@@ -125,6 +125,18 @@ local function NearNode(yards)
     return false
 end
 
+-- The setting for each area type of IsInInstance(). Other types (arenas, scenarios) never switch.
+local AREAS = { none = "switchWorld", party = "switchDungeons", raid = "switchRaids", pvp = "switchBattlegrounds" }
+
+-- Switching allowed here: in an area it's on for, and mounted if only while mounted
+-- (a secret counts as neither).
+local function Allowed()
+    local db = ns.db
+    local _, area = IsInInstance()
+    if issecretvalue(area) or not AREAS[area] or not db[AREAS[area]] then return false end
+    return not db.switchMounted or IsSet(IsMounted())
+end
+
 -- An enemy: attackable, alive, hostile or neutral (no reaction counts too), not a critter.
 -- A secret counts as enemy for its point. Second result: true only for a readable yes from
 -- UnitCanAttack, so the range checks may ask items.
@@ -365,6 +377,7 @@ end
 function ns.SwitchReady(kind)
     -- In combat (a switch costs a global cooldown) or not moving on your own (a secret counts as standing).
     if InCombatLockdown() or not Moving() then return false end
+    if not Allowed() then return false end -- not on for this area, or not mounted if only while mounted
     local db = ns.db
     if db.switchPauseBusy and Busy() then return false end -- casting, looting or something on the cursor
     if db.switchPauseStealth and IsSet(IsStealthed()) then return false end -- stealthed
@@ -388,8 +401,8 @@ function ns.SwitchReady(kind)
     return not (enemy and Near("mouseover", yards, attackable))
 end
 
--- Every frame with the switch on: adds the way (yards or seconds) since the last tick, and
--- switches once it reaches the goal.
+-- Every frame with the switch on: adds the way (yards or seconds) since the last tick where
+-- switching is allowed, and switches once it reaches the goal.
 function ns.SwitchUpdate()
     local now = GetTime()
     if not switch.lastTick then
@@ -407,7 +420,7 @@ function ns.SwitchUpdate()
         switch.pending = nil
         switch.kind = ns.Finders() or switch.kind -- so a late tracking event isn't taken for one by hand
     end
-    if Moving() then
+    if Moving() and Allowed() then
         local counted = math.min(step, MAX_STEP)
         switch.way = switch.way + (ns.db.switchMeasure == 3 and counted or counted * Speed())
     end

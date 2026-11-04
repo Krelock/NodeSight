@@ -62,11 +62,14 @@ local defaults = {
     switchPercent = 40, -- distance between switches, in percent of the minimap's view radius
     switchDistanceYards = 60, -- distance between switches in yards
     switchSeconds = 8, -- seconds on the move between switches
+    switchMounted = false, -- switch only while mounted
     switchPauseBusy = true, -- no switch while casting, looting or with something on the cursor
     switchPauseStealth = true, -- no switch while stealthed
     switchNearYards = 10, -- no switch this close to a herb or ore (0 off)
     switchAfterCast = 3, -- seconds without a switch after your own spells (0 off)
     switchEnemyYards = 40, -- no switch with an enemy this close targeted (0 off)
+    switchWorld = true, switchDungeons = true, switchRaids = true, -- where to switch
+    switchBattlegrounds = false, -- off, not needed there and it would rather get in the way
     combatScan = true, -- keep scanning in combat
     rares = true, -- rare beasts and humanoids (Beta)
     rareIcon = 2, -- which of ICONS.rares
