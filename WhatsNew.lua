@@ -11,6 +11,21 @@ local ipairs = ipairs
 local ShowWhatsNew
 do
     local WHATS_NEW = {
+        { version = "1.5.6",
+            { "New", {
+                { "Enable All button for sparkles.", "On NodeSight's main page in Options. Turns every kind of sparkle on, or all of them off again" },
+                { "Sparkles are off.", "The Sparkle window says so under the node when the shown sparkles are off, and the box that turns them on glows" },
+                { "Enable Interact Key warning.", "Sparkles need the game's Enable Interact Key (Options > Controls). If it gets turned off, a red line in the Sparkle window and in the Enable All button's tooltip says so" },
+                { "Required skill in tooltips (on by default).", "Untick it to leave out the \"Requires Herbalism (15)\" line NodeSight adds to herb and ore tooltips. It's on NodeSight's own page in Options" },
+            } },
+            { "Changes", {
+                { "Sparkles on your fishing bobber.", "No longer Beta" },
+            } },
+            { "Fixes", {
+                "Quest objects whose name isn't the quest item's, like Naxxramas Crystal Fragment and Agamand Weapon Rack, never sparkled. An object now counts as a quest object when its name shares a word with an unfinished quest item in your log",
+                "Your own name or a party or raid member's could show up on the minimap as a herb or ore when it ended like one, like Bob Silverleaf. Players' names are left out now",
+            } },
+        },
         { version = "1.5.5",
             { "Fixes", {
                 "Level-1 herbs and ore like Peacebloom, Silverleaf and Copper Vein changed color one skill point late. They're yellow at 25, green at 50 and gray at 100 now, as the game colors them",

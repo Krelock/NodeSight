@@ -1283,9 +1283,26 @@ local function Idle()
 end
 
 -- Quest objects you loot often have the plain interact icon (a pumpkin has a
--- mailbox's), and the game doesn't relate objects to quests, so they're found by
--- name among your unfinished item objectives ("Tirisfal Pumpkin: 3/10").
-local questNames, questsRead = {}, false
+-- mailbox's), and UnitIsRelatedToActiveQuest is false for objects, so they're
+-- found by name among your unfinished item objectives ("Tirisfal Pumpkin: 3/10").
+local questNames, questWords, questsRead = {}, {}, false
+
+-- Words of 3 letters or more. An object often shares one with the item it gives
+-- (Naxxramas Crystal Fragment for Necrotic Crystal Fragment).
+local function Words(text)
+    local words = {}
+    for word in text:lower():gmatch("[%a\128-\255]+") do
+        if #word >= 3 then words[#words + 1] = word end
+    end
+    return words
+end
+
+local function SharesWord(name)
+    for _, word in ipairs(Words(name)) do
+        if questWords[word] then return true end
+    end
+    return false
+end
 
 local function ObjectiveItem(text)
     return text:match("^(.-):%s*%d+%s*/%s*%d+%s*$") or text:match("^%s*%d+%s*/%s*%d+%s+(.-)%s*$") or text
@@ -1294,6 +1311,7 @@ end
 local function ReadQuests()
     questsRead = true
     wipe(questNames)
+    wipe(questWords)
     local log = C_QuestLog
     if not (log and log.GetNumQuestLogEntries and log.GetInfo and log.GetQuestObjectives) then return end
     for i = 1, log.GetNumQuestLogEntries() do
@@ -1303,7 +1321,9 @@ local function ReadQuests()
             for _, o in ipairs(objectives) do
                 local text = o.text
                 if o.type == "item" and not o.finished and type(text) == "string" then
-                    questNames[ObjectiveItem(text)] = true
+                    local item = ObjectiveItem(text)
+                    questNames[item] = true
+                    for _, word in ipairs(Words(item)) do questWords[word] = true end
                 end
             end
         end
@@ -1329,7 +1349,7 @@ local function SparkleKind(unit, icon)
         if read and (named == "herbs" or named == "ore") then return named end
         if read then
             if not questsRead then ReadQuests() end
-            if questNames[name] then return "quests" end
+            if questNames[name] or SharesWord(name) then return "quests" end
         end
     end
     return kind

@@ -26,6 +26,17 @@ local function WindowFailed()
     return ns.db.sparkleWindowFailed ~= nil
 end
 
+-- Sparkles are on, but Enable Interact Key is off (1 is gamepad only), so objects get no plate.
+local function InteractOff()
+    if GamepadUI() or ns.SetupPending() then return false end
+    local any = false
+    for _, kind in ipairs(ns.KINDS) do any = any or ns.db[kind] == true end
+    local value = tonumber(C_CVar.GetCVar("softTargetInteract"))
+    return any and value ~= nil and value < 2
+end
+ns.InteractOff = InteractOff
+ns.INTERACT_OFF = ("Sparkles need %s (%s > %s)."):format(ENABLE_INTERACT_TEXT, SETTINGS_TITLE, CONTROLS_LABEL)
+
 local function RegisterSettings()
     -- Rows go to the current page; Page() starts a subpage.
     local main, layout = Settings.RegisterVerticalLayoutCategory("NodeSight")
@@ -95,12 +106,38 @@ local function RegisterSettings()
     Checkbox("sound", "Sound for new finds",
         "Plays the minimap's ping sound when something new shows up on your minimap, not seen in the last minute. Not for a herb or ore above your skill. Needs Scan the minimap.",
         UpdateScanner)
+    Checkbox("skillLine", "Required skill in tooltips",
+        "Shows the skill a herb or ore needs in its tooltip.",
+        function() end) -- (tooltips are built again each time they show)
     Checkbox("switchFinders", "Switch between herbs and ore",
         "Switches between Find Herbs and Find Minerals. You need both trained and one active to start.",
         UpdateScanner)
     Slider("switchYards", "Yards between switches", 10, 50,
         "How far you go before the other one is turned on. The default is " .. defaults.switchYards .. ". Needs Switch between herbs and ore.",
         UpdateScanner)
+
+    -- Every kind of sparkle at once, like the Sparkle window's "Sparkles on everything".
+    local function AllOn()
+        for _, kind in ipairs(ns.KINDS) do
+            if not ns.db[kind] then return false end
+        end
+        return true
+    end
+    local function AllText() return AllOn() and DISABLE_ALL_ADDONS or ENABLE_ALL_ADDONS end
+    layout:AddInitializer(CreateSettingsButtonInitializer("Sparkles", AllText, function(button)
+        local on = not AllOn()
+        for _, kind in ipairs(ns.KINDS) do ns.db[kind] = on end
+        ns.UpdateAll()
+        ns.RefreshFarSparkles()
+        ns.Setup()
+        ns.RefreshSparkleWindow()
+        button:SetText(AllText())
+    end, function()
+        local tip = "Turns sparkles on or off for herbs, ore, chests, quest objects, other objects and your fishing bobber. "
+            .. ((GamepadUI() or WindowFailed()) and "Each has its own setting on the Sparkles page." or "Each has its own box in the Sparkle window.")
+        if InteractOff() then tip = tip .. "\n\n" .. RED_FONT_COLOR:WrapTextInColorCode(ns.INTERACT_OFF) end
+        return tip
+    end, false))
 
     Page("Arrow")
     Settings.CreateCheckbox(category, arrow, arrowTip) -- the same setting as on NodeSight's own page

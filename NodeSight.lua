@@ -33,7 +33,7 @@ local defaults = {
     chests = false, -- sparkles on chests
     quests = false, -- sparkles on quest objects
     others = false, -- sparkles on other objects
-    bobber = false, -- Beta: sparkles on your fishing bobber
+    bobber = false, -- sparkles on your fishing bobber
     gameIcons = false, -- keep the game's interact icons while sparkles are on
     arrow = false, -- arrow to the nearest node
     arrowLocked = false, -- the arrow can't be dragged, and clicks go through it
@@ -50,6 +50,7 @@ local defaults = {
     oreRings = false, -- green and rust rings for tin and iron
     iconSize = 11, -- symbol size
     skillLook = 1, -- how symbols show your skill (SKILL.looks): red when too low
+    skillLine = true, -- "Requires Herbalism (15)" in herb and ore tooltips
     clearNear = false, -- symbols see-through over your own arrow
     sound = false, -- sound when something new shows up
     scan = true, -- the minimap scan
@@ -283,9 +284,39 @@ local function FinderOn()
     return RacialReady("leyline") or RacialReady("convergence")
 end
 
+-- Players' names: your arrow and a party member's dot on the minimap show a full
+-- name, which can end like a herb's ("Bob Silverleaf"). Read again with your skills.
+local groupNames, groupRead = {}, false
+
+-- The full name only (every character has a surname), so a herb called just
+-- "Silverleaf" stays one. The game can give both in the first value.
+local function AddName(unit)
+    local first, surname = UnitName(unit)
+    if issecretvalue(first) or type(first) ~= "string" then return end
+    if not issecretvalue(surname) and type(surname) == "string" and surname ~= "" then
+        groupNames[Plain(first .. " " .. surname)] = true
+    elseif first:find(" ", 1, true) then
+        groupNames[Plain(first)] = true
+    end
+end
+
+local function InGroup(plain)
+    if not groupRead then
+        groupRead = true
+        wipe(groupNames)
+        AddName("player")
+        local raid = IsInRaid()
+        for i = 1, raid and GetNumGroupMembers() or GetNumSubgroupMembers() do
+            AddName((raid and "raid" or "party") .. i)
+        end
+    end
+    return groupNames[plain] == true
+end
+
 -- "herbs", "ore", "treasure", "rares" (with that setting), "leyline" or "convergence"
 -- (while its racial is ready) or nil.
 local function KindOf(name)
+    if InGroup(Plain(name)) then return nil end
     if db.rares then
         local id = ns.RareID(Plain(name)) -- by NPC ID, the names come from the client (RareNames.lua)
         local home = id and RARES[id]
@@ -530,10 +561,11 @@ end
 
 local function FreshSkills()
     local now = GetTime()
-    if now - skillsRead >= SKILL_WAIT then skills.herbs, skills.ore, skillsRead = nil, nil, now end
+    if now - skillsRead >= SKILL_WAIT then skills.herbs, skills.ore, skillsRead, groupRead = nil, nil, now, false end
 end
 
 local function OnMinimapTooltip(tooltip, data)
+    if not db.skillLine then return end
     local lines = not issecretvalue(data) and data.lines
     if not lines or issecretvalue(lines) then return end
     FreshSkills()
@@ -554,6 +586,7 @@ end
 
 -- The same line on a herb's or ore's own tooltip, when the mouse is over it.
 local function OnObjectTooltip(tooltip, data)
+    if not db.skillLine then return end
     local lines = not issecretvalue(data) and data.lines
     if not lines or issecretvalue(lines) or issecretvalue(lines[1]) then return end
     local name = lines[1] and lines[1].leftText
@@ -1136,7 +1169,7 @@ local function FinishScan()
     local rotating = C_CVar.GetCVar("rotateMinimap") == "1"
     local facing = PlayerFacing()
     local found, pinOf, kept = {}, {}, {}
-    skills.herbs, skills.ore = nil, nil -- reread when needed
+    skills.herbs, skills.ore, groupRead = nil, nil, false -- reread when needed
     racialShown = false
     -- A rotating minimap has your facing at the top; otherwise north.
     if not (rotating and not facing) then

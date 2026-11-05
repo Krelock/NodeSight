@@ -77,8 +77,8 @@ local TABS = {
         tip = "Sparkles on things you need for a quest." },
     { key = "others", name = "Other objects", on = "Sparkles on other objects", icon = "Interface\\Icons\\INV_Box_02",
         tip = "Sparkles on anything else you can use. Not mailboxes, chairs or doors." },
-    { key = "bobber", name = "Fishing bobber", on = "Sparkles on your fishing bobber (Beta)", icon = "Interface\\Icons\\Trade_Fishing",
-        tip = "Sparkles on your bobber so it's easier to spot. Not tested in game yet." },
+    { key = "bobber", name = "Fishing bobber", on = "Sparkles on your fishing bobber", icon = "Interface\\Icons\\Trade_Fishing",
+        tip = "Sparkles on your bobber so it's easier to spot." },
     { key = "general", name = GENERAL_LABEL, icon = "Interface\\Icons\\INV_Misc_Gear_01" },
 }
 -- Added to the on/off box's tooltip.
@@ -342,6 +342,8 @@ local function Build()
     window:SetToplevel(true)
     window:EnableMouse(true)
     window:SetTitle("NodeSight Sparkles")
+    window.interactOff = Label(window, ns.INTERACT_OFF, "GameFontRed")
+    window.interactOff:SetPoint("TOP", 30, -36)
     ButtonFrameTemplate_HideButtonBar(window)
     window.CloseButton:SetScript("OnClick", function() window:Hide() end)
     -- (The previews hide with it, and their frames only run while shown.)
@@ -406,6 +408,15 @@ local function Build()
     picker:SetPoint("TOP", 0, -6)
     picker:SetFrameLevel(scene:GetFrameLevel() + 10) -- over the model, which takes the mouse
     window.picker = picker
+    -- Under the node while these sparkles are off.
+    local off = New("Frame", preview)
+    off:SetAllPoints()
+    off:SetFrameLevel(scene:GetFrameLevel() + 10)
+    window.offText = Label(off, "Sparkles are off", "GameFontNormalLarge")
+    window.offText:SetPoint("BOTTOM", 0, 44)
+    window.offHint = Label(off, "Tick the glowing box to turn them on.", "GameFontHighlight")
+    window.offHint:SetPoint("TOP", window.offText, "BOTTOM", 0, -6)
+    window.off = off
 
     -- The styles.
     local grid = New("Frame", window.Inset)
@@ -459,8 +470,6 @@ local function Build()
     window.height = Slider(panel, -146, "Height", "height", -150, 100, "Moves the sparkles up or down.", true)
     window.count = Slider(panel, -184, "Count", "count", 1, 20,
         "How many sparkles show at once. Some styles don't use it.", true)
-    window.beta = Label(panel, "Beta: not tested in game yet.", "GameFontDisableSmall")
-    window.beta:SetPoint("BOTTOMLEFT", 0, 4)
 
     -- The General tab: settings for all sparkles.
     window.look = { grid, panel }
@@ -507,6 +516,13 @@ local function Build()
     show:SetScript("OnClick", function() PlayHarvest() end)
     Tooltip(show, PREVIEW, "Plays it on the preview.")
     window.showHarvest = show
+    -- Blizzard's proc glow round the box that turns them on: only its loop, as on
+    -- an action button whose alert skips the burst.
+    if ActionButtonSpellAlertMixin then
+        window.glow = New("Frame", window.Inset, "ActionButtonSpellAlertTemplate")
+        window.glow.ProcStartFlipbook:Hide()
+        window.glow:SetFrameLevel(window.everything:GetFrameLevel() + 2)
+    end
 
     -- The tabs along the bottom, as on Forever's friends list.
     window.Tabs = {}
@@ -601,6 +617,7 @@ function Refresh()
     local everything = true
     for _, k in ipairs(ns.KINDS) do everything = everything and ns.db[k] == true end
     window.everything:SetChecked(everything)
+    window.interactOff:SetShown(ns.InteractOff())
     window.gameIcons:SetChecked(ns.db.gameIcons)
     window.brightness:SetValue(ns.db.brightness)
     window.reachLook:SetChecked(ns.db.reachLook)
@@ -622,7 +639,21 @@ function Refresh()
     for _, k in ipairs(Kinds()) do on = on and ns.db[k] end
     window.on:SetChecked(on)
     window.on.label:SetText(tab.on or "")
-    window.beta:SetShown(tab.key == "bobber")
+    local anyOn = false
+    for _, k in ipairs(ns.KINDS) do anyOn = anyOn or ns.db[k] == true end
+    local off = isGeneral and not anyOn or not isGeneral and not on
+    window.off:SetShown(off)
+    local glow = window.glow
+    if glow then
+        glow:SetShown(off)
+        if off then
+            local box = isGeneral and window.everything or window.on
+            glow:ClearAllPoints()
+            glow:SetPoint("CENTER", box)
+            glow:SetSize(box:GetWidth() * 1.4, box:GetHeight() * 1.4) -- Blizzard's size on a button
+            if not glow.ProcLoop:IsPlaying() then glow.ProcLoop:Play() end
+        end
+    end
     local one, two = ns.SparkleColors(kind)
     window.swatch:SetColorRGB(ns.SparkleRGB(one))
     window.swatch2:SetColorRGB(ns.SparkleRGB(two))
@@ -696,6 +727,11 @@ function ns.ShowSparkleWindow()
         ns.db.sparkleWindowFailed = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version")
         if window then window:Hide() end
     end
+end
+
+-- After a change made elsewhere (the main page's Sparkles button).
+function ns.RefreshSparkleWindow()
+    if window and window:IsShown() then Refresh() end
 end
 
 ns.SPARKLE_TABS, ns.SPARKLE_NEEDS = TABS, NEEDS -- the Options rows' words with the gamepad UI on
