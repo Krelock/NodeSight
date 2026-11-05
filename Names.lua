@@ -527,17 +527,20 @@ local NEEDED = {
     },
 }
 local TOO_HARD = { 1, 0.2, 0.2 } -- red tint for nodes above your skill
-local skills = {} -- cached skill levels (false = unknown)
+local skills = {} -- cached skill levels with bonuses (false = unknown)
+local bases, caps = {}, {} -- and without bonuses, and the trained cap; read with skills
 local professions = {} -- localized profession names
 
 -- Herbalism or Mining skill including bonuses, or nil.
 local function GatherSkill(kind)
     local info = C_SkillInfo and C_SkillInfo.GetSkillLineInfoByID and C_SkillInfo.GetSkillLineInfoByID(SKILL_LINE[kind])
     if not info or issecretvalue(info) then return nil end
-    local rank, bonus = info.rank, info.modifier
+    local rank, bonus, cap = info.rank, info.modifier, info.maxRank
     if issecretvalue(rank) or issecretvalue(bonus) or not rank then return nil end
     local name = info.name
     if not issecretvalue(name) then professions[kind] = name end
+    bases[kind] = rank
+    caps[kind] = not issecretvalue(cap) and cap or nil
     return rank + (bonus or 0)
 end
 
@@ -561,13 +564,18 @@ local function NodeSkill(name, kind)
 end
 
 -- Your chance of a skill-up from a herb or ore, as the profession window colors it:
--- 1 too hard, then 2 to 5 at 25, 50 and 100 points over what it needs. Also returns
+-- 1 too hard, then 2 to 5 at 25, 50 and 100 points over what it needs, and 5 at
+-- your trained cap. Bonuses count for gathering, not for skill-ups. Also returns
 -- what it needs. nil if either isn't known.
 local function SkillLevel(name, kind)
     local need, skill = NodeSkill(name, kind)
     if not skill then return nil end
-    local over = skill - need
-    return over < 0 and 1 or over < 25 and 2 or over < 50 and 3 or over < 100 and 4 or 5, need
+    -- Learned at 0, you can still gather what needs 1.
+    if math.max(skill, 1) < need then return 1, need end
+    local base, cap = bases[kind], caps[kind]
+    if cap and cap > 0 and base >= cap then return 5, need end
+    local over = base - need
+    return over < 25 and 2 or over < 50 and 3 or over < 100 and 4 or 5, need
 end
 
 -- Used by NodeSight.lua.

@@ -213,6 +213,16 @@ local function New(kind, parent, template)
     return frame
 end
 
+-- Blizzard's tab sizes itself from its parent when shown, and one made with no
+-- parent is shown as it's made, so tabs are made on a frame of our own.
+local tabHolder = CreateFrame("Frame")
+
+local function NewTab(parent)
+    local tab = CreateFrame("Button", nil, tabHolder, "PanelTabButtonTemplate")
+    tab:SetParent(parent)
+    return tab
+end
+
 local function Label(parent, text, font)
     local label = parent:CreateFontString(nil, "ARTWORK", font or "GameFontNormal")
     label:SetText(text)
@@ -502,7 +512,7 @@ local function Build()
     window.Tabs = {}
     for i, tab in ipairs(TABS) do
         tab.index = i
-        local button = New("Button", window, "PanelTabButtonTemplate")
+        local button = NewTab(window)
         button:SetID(i)
         button:SetText(tab.name)
         if i == 1 then button:SetPoint("TOPLEFT", window, "BOTTOMLEFT", 11, 2) end

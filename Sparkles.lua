@@ -154,14 +154,15 @@ end
 -- object's cursor is read onto our own texture instead (SetUnitCursorTexture).
 local probe
 
+-- Also true when an icon was read (the object is your interact target).
 local function ObjectKind(unit, icon)
-    if icon:IsShown() then return Kind(icon) end
+    if icon:IsShown() then return Kind(icon), true end
     if not SetUnitCursorTexture then return "others" end
     local picked = UnitIsUnit(unit, "softinteract")
     if issecretvalue(picked) or not picked then return "others" end -- a secret can't be tested
     if not probe then probe = CreateFrame("Frame"):CreateTexture() end
     if not SetUnitCursorTexture(probe, unit, nil, true, true) then return "others" end
-    return Kind(probe)
+    return Kind(probe), true
 end
 
 -- The bobber has the plain interact icon. Its object ID (in its GUID) says
@@ -1281,14 +1282,55 @@ local function Idle()
     return not SparklesOn() and not next(hidden) and not next(sparkles)
 end
 
+-- Quest objects you loot often have the plain interact icon (a pumpkin has a
+-- mailbox's), and the game doesn't relate objects to quests, so they're found by
+-- name among your unfinished item objectives ("Tirisfal Pumpkin: 3/10").
+local questNames, questsRead = {}, false
+
+local function ObjectiveItem(text)
+    return text:match("^(.-):%s*%d+%s*/%s*%d+%s*$") or text:match("^%s*%d+%s*/%s*%d+%s+(.-)%s*$") or text
+end
+
+local function ReadQuests()
+    questsRead = true
+    wipe(questNames)
+    local log = C_QuestLog
+    if not (log and log.GetNumQuestLogEntries and log.GetInfo and log.GetQuestObjectives) then return end
+    for i = 1, log.GetNumQuestLogEntries() do
+        local info = log.GetInfo(i)
+        local objectives = info and not info.isHeader and info.questID and log.GetQuestObjectives(info.questID)
+        if objectives then
+            for _, o in ipairs(objectives) do
+                local text = o.text
+                if o.type == "item" and not o.finished and type(text) == "string" then
+                    questNames[ObjectiveItem(text)] = true
+                end
+            end
+        end
+    end
+end
+
+local questWatch = CreateFrame("Frame")
+questWatch:RegisterEvent("QUEST_LOG_UPDATE")
+questWatch:SetScript("OnEvent", function() questsRead = false end) -- read again when next needed
+
 -- What sparkles on an object's plate: its kind, the bobber and chests (by their
--- names, as the minimap's are) found among plain and other objects.
+-- names, as the minimap's are) found among plain and other objects. Your
+-- interact target with such an icon also goes by name: herbs and ore (Gloom
+-- Weed has no herb icon) and quest objects.
 local function SparkleKind(unit, icon)
-    local kind = ObjectKind(unit, icon)
+    local kind, read = ObjectKind(unit, icon)
     if kind == "plain" or kind == "others" then
         if ns.db.bobber and IsBobber(unit) then return "bobber" end
         local name = UnitName(unit)
-        if not issecretvalue(name) and type(name) == "string" and ns.NodeKind(name) == "treasure" then return "chests" end
+        if issecretvalue(name) or type(name) ~= "string" then return kind end
+        local named = ns.NodeKind(name)
+        if named == "treasure" then return "chests" end
+        if read and (named == "herbs" or named == "ore") then return named end
+        if read then
+            if not questsRead then ReadQuests() end
+            if questNames[name] then return "quests" end
+        end
     end
     return kind
 end

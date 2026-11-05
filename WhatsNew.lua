@@ -11,6 +11,17 @@ local ipairs = ipairs
 local ShowWhatsNew
 do
     local WHATS_NEW = {
+        { version = "1.5.4",
+            { "Changes", {
+                { "Skill colors.", "Gray now means a node gives no skill point: everything you can gather turns gray when your skill is at its training cap, until you train the next rank. Race and gear bonuses still count for whether you can gather a node, but not for the chance of a skill-up" },
+            } },
+            { "Fixes", {
+                "Level-1 herbs and ore like Peacebloom, Silverleaf and Copper Vein showed red at a skill of 0. They're orange now. Thanks to DashiDoshi for reporting it",
+                "Quest objects like Tirisfal Pumpkin never sparkled, because the game gives them the same icon as a chair. They're found by your quest log now",
+                "Gloom Weed and Doom Weed never sparkled. They sparkle as herbs now",
+                "Opening the sparkle window gave Lua errors since the game's launch update. The window still worked",
+            } },
+        },
         { version = "1.5.3",
             { "Changes", {
                 { "Sparkle window.", "The preview shows the sparkles where and how big they are in the world next to each node, and the herbs are a little closer" },
