@@ -574,7 +574,8 @@ local function SkillLevel(name, kind)
     if math.max(skill, 1) < need then return 1, need end
     local base, cap = bases[kind], caps[kind]
     if cap and cap > 0 and base >= cap then return 5, need end
-    local over = base - need
+    -- Level-1 nodes count from 0: yellow at 25, green at 50, gray at 100.
+    local over = base - (need > 1 and need or 0)
     return over < 25 and 2 or over < 50 and 3 or over < 100 and 4 or 5, need
 end
 

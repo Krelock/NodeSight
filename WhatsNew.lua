@@ -11,6 +11,11 @@ local ipairs = ipairs
 local ShowWhatsNew
 do
     local WHATS_NEW = {
+        { version = "1.5.5",
+            { "Fixes", {
+                "Level-1 herbs and ore like Peacebloom, Silverleaf and Copper Vein changed color one skill point late. They're yellow at 25, green at 50 and gray at 100 now, as the game colors them",
+            } },
+        },
         { version = "1.5.4",
             { "Changes", {
                 { "Skill colors.", "Gray now means a node gives no skill point: everything you can gather turns gray when your skill is at its training cap, until you train the next rank. Race and gear bonuses still count for whether you can gather a node, but not for the chance of a skill-up" },
