@@ -1,4 +1,4 @@
--- NodeSight's settings: the main page plus Arrow, Symbols, Sparkles and Beta.
+-- NodeSight's settings: the main page plus Arrow, Symbols, Switch, Sparkles and Beta.
 
 local ADDON_NAME, ns = ...
 
@@ -8,6 +8,7 @@ local defaults, SHAPES, world = ns.defaults, ns.SHAPES, ns.world
 local UpdateScanner, ApplyDotScale, ApplyArrowLock = ns.UpdateScanner, ns.ApplyDotScale, ns.ApplyArrowLock
 local ApplyArrowSize = ns.ApplyArrowSize
 local ShowWhatsNew = ns.ShowWhatsNew
+local SwitchDistance, SwitchReset, SWITCH_REACH = ns.SwitchDistance, ns.SwitchReset, ns.SWITCH_REACH
 
 ---------------------------------------------------------------------------
 -- Settings panel
@@ -37,6 +38,19 @@ end
 ns.InteractOff = InteractOff
 ns.INTERACT_OFF = ("Sparkles need %s (%s > %s)."):format(ENABLE_INTERACT_TEXT, SETTINGS_TITLE, CONTROLS_LABEL)
 
+-- The switch distance's label: the percent, and the yards it is now if known.
+local function Percent(value)
+    local yards = SwitchDistance(value)
+    if yards then return ("%d %% (%d yd)"):format(value, math.floor(yards + 0.5)) end
+    return ("%d %%"):format(value)
+end
+
+-- A pause slider's label: Off at 0.
+local function Off(value)
+    if value == 0 then return "Off" end
+    return tostring(value)
+end
+
 local function RegisterSettings()
     -- Rows go to the current page; Page() starts a subpage.
     local main, layout = Settings.RegisterVerticalLayoutCategory("NodeSight")
@@ -60,10 +74,11 @@ local function RegisterSettings()
         return setting
     end
 
-    local function Slider(key, name, minValue, maxValue, tooltip, onChange)
-        local options = Settings.CreateSliderOptions(minValue, maxValue, 1)
-        options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right)
-        Settings.CreateSlider(category, Register(key, name, onChange), options, tooltip)
+    local function Slider(key, name, minValue, maxValue, tooltip, onChange, step, label)
+        local options = Settings.CreateSliderOptions(minValue, maxValue, step or 1)
+        options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, label)
+        local setting = Register(key, name, onChange)
+        return setting, Settings.CreateSlider(category, setting, options, tooltip)
     end
 
     local function Dropdown(key, name, choices, tooltip, onChange)
@@ -72,7 +87,7 @@ local function RegisterSettings()
             for value, label in ipairs(choices) do container:Add(value, label) end
             return container:GetData()
         end
-        Settings.CreateDropdown(category, Register(key, name, onChange), GetOptions, tooltip)
+        return Settings.CreateDropdown(category, Register(key, name, onChange), GetOptions, tooltip)
     end
 
     -- What's New button, left of Blizzard's Defaults button and parented to it (so
@@ -109,12 +124,10 @@ local function RegisterSettings()
     Checkbox("skillLine", "Required skill in tooltips",
         "Shows the skill a herb or ore needs in its tooltip.",
         function() end) -- (tooltips are built again each time they show)
-    Checkbox("switchFinders", "Switch between herbs and ore",
-        "Switches between Find Herbs and Find Minerals. You need both trained and one active to start.",
-        UpdateScanner)
-    Slider("switchYards", "Yards between switches", 10, 50,
-        "How far you go before the other one is turned on. The default is " .. defaults.switchYards .. ". Needs Switch between herbs and ore.",
-        UpdateScanner)
+    local findersTip = "Switches between Find Herbs and Find Minerals. You need both trained and one active to start."
+    -- Toggling the switch also ends a stop after failed switches; other settings keep it.
+    local finders = Checkbox("switchFinders", "Switch between herbs and ore", findersTip,
+        function() SwitchReset() UpdateScanner() end)
 
     -- Every kind of sparkle at once, like the Sparkle window's "Sparkles on everything".
     local function AllOn()
@@ -190,6 +203,74 @@ local function RegisterSettings()
         UpdateScanner)
     Dropdown("minimapShape", "Minimap shape", ns.MAP_SHAPES,
         "Automatic asks your UI addon whether the minimap is square. Choose Square if your minimap is square but herbs and ore in its corners don't show up. Needs Scan the minimap.",
+        UpdateScanner)
+
+    Page("Switch")
+    Settings.CreateCheckbox(category, finders, findersTip) -- the same setting as on NodeSight's own page
+    -- The measure's change restarts the way and redraws the page, so only its slider shows.
+    local measure = Dropdown("switchMeasure", "Measure distance in", ns.SWITCH_MEASURES,
+        "How the distance between switches is measured: in percent of what your minimap shows (it changes with the zoom), in yards, or in seconds on the move. Needs Switch between herbs and ore.",
+        function()
+            ns.SwitchMeasureChanged()
+            UpdateScanner()
+            if SettingsInbound and SettingsInbound.RepairDisplay then pcall(SettingsInbound.RepairDisplay) end
+        end)
+    -- A distance slider goes under the measure and shows only at its value, where the client can.
+    local function Under(slider, value)
+        if not slider then return end
+        local function Chosen() return ns.db.switchMeasure == value end
+        if measure and type(slider.SetParentInitializer) == "function" then slider:SetParentInitializer(measure, Chosen) end
+        if type(slider.AddShownPredicate) == "function" then slider:AddShownPredicate(Chosen) end
+    end
+    local percent, percentSlider = Slider("switchPercent", "Distance between switches", 20, 100,
+        "How far you go between switches, in percent of what your minimap shows: farther when zoomed out or outdoors. The default is " .. defaults.switchPercent .. " %. Needs Switch between herbs and ore, and Measure distance in at % of the minimap.",
+        UpdateScanner, 5, Percent)
+    Under(percentSlider, 1)
+    local yards, seconds = ns.SWITCH_RANGES.switchDistanceYards, ns.SWITCH_RANGES.switchSeconds
+    local _, yardsSlider = Slider("switchDistanceYards", "Distance between switches (yards)", yards[1], yards[2],
+        "How far you go between switches, in yards. The default is " .. defaults.switchDistanceYards .. ". Needs Switch between herbs and ore, and Measure distance in at Yards.",
+        UpdateScanner, yards[3])
+    Under(yardsSlider, 2)
+    local _, secondsSlider = Slider("switchSeconds", "Time between switches (seconds)", seconds[1], seconds[2],
+        "How long you move between switches, in seconds. Time standing still doesn't count. The default is " .. defaults.switchSeconds .. ". Needs Switch between herbs and ore, and Measure distance in at Seconds.",
+        UpdateScanner, seconds[3])
+    Under(secondsSlider, 3)
+    -- The yards in its label follow the minimap's zoom while the settings are open.
+    if percentSlider then percentSlider.reinitializeOnValueChanged = true end
+    local zoom = CreateFrame("Frame")
+    zoom:RegisterEvent("MINIMAP_UPDATE_ZOOM")
+    zoom:SetScript("OnEvent", function()
+        if SettingsPanel and SettingsPanel:IsShown() then percent:NotifyUpdate() end
+    end)
+    Checkbox("switchMounted", "Only while mounted",
+        "Switches only while you ride a mount. Travel Form and Ghost Wolf don't count. Needs Switch between herbs and ore.",
+        UpdateScanner)
+    Checkbox("switchPauseBusy", "Pause while casting, looting or with a spell or item on the cursor",
+        "Switching pauses while you cast, gather or loot, and while a spell waits for a target or something is on your cursor. Needs Switch between herbs and ore.",
+        UpdateScanner)
+    Slider("switchEnemyYards", "Pause with an enemy targeted within about (yards)", 0, 60,
+        "Switching pauses while a living enemy is targeted within this distance, and for a second after your mouse moves onto one. Distances are about: without an exact distance from the game, NodeSight checks up to " .. SWITCH_REACH .. " yards, farther if one of your own spells reaches farther. Needs Switch between herbs and ore.",
+        UpdateScanner, 1, Off)
+    Checkbox("switchPauseStealth", "Pause while stealthed",
+        "Switching pauses while you're stealthed. Needs Switch between herbs and ore.",
+        UpdateScanner)
+    Slider("switchNearYards", "Pause near a herb or ore (yards)", 0, 40,
+        "Switching pauses this close to a herb or ore with a symbol, so you can walk up and gather it. Needs Switch between herbs and ore.",
+        UpdateScanner, 1, Off)
+    Slider("switchAfterCast", "Pause after your own spells (seconds)", 0, 10,
+        "Switching pauses this long after your own spells end, and after you dismount, so the switch's global cooldown doesn't get in your way. Needs Switch between herbs and ore.",
+        UpdateScanner, 1, Off)
+    Checkbox("switchWorld", "Switch in the open world",
+        "Switches while you're in the open world. Needs Switch between herbs and ore.",
+        UpdateScanner)
+    Checkbox("switchDungeons", "Switch in dungeons",
+        "Switches while you're in a dungeon. Needs Switch between herbs and ore.",
+        UpdateScanner)
+    Checkbox("switchRaids", "Switch in raids",
+        "Switches while you're in a raid. Needs Switch between herbs and ore.",
+        UpdateScanner)
+    Checkbox("switchBattlegrounds", "Switch in battlegrounds",
+        "Switches while you're in a battleground. Needs Switch between herbs and ore.",
         UpdateScanner)
 
     -- The sparkles' settings are all in their own window, which opens with this page.
