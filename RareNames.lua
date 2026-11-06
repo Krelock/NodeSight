@@ -75,7 +75,7 @@ frame:RegisterEvent("PLAYER_LOGIN")
 frame:SetScript("OnEvent", function(self)
     self:UnregisterEvent("PLAYER_LOGIN")
     NodeSightDB = NodeSightDB or {}
-    if NodeSightDB.rares == false then return end -- rares off: asked at the next login after turning them on
+    if (ns.db or NodeSightDB).rares == false then return end -- rares off: asked at the next login after turning them on
     NodeSightDB.rareNames = NodeSightDB.rareNames or {}
     NodeSightDB.rareNames[LOCALE] = NodeSightDB.rareNames[LOCALE] or {}
     saved = NodeSightDB.rareNames[LOCALE]

@@ -2,7 +2,8 @@
 -- settings of all of them, the styles as tiles with a small preview each, the
 -- look's settings, and the node in 3D with its sparkles on it, as in the world.
 --
--- Sections: Nodes to preview, Changing the look, Building the window, Showing a tab.
+-- Sections: Nodes to preview, Changing the look, Building the window, Showing a tab,
+-- Interact Key turned off.
 
 local ADDON_NAME, ns = ...
 
@@ -343,7 +344,18 @@ local function Build()
     window:EnableMouse(true)
     window:SetTitle("NodeSight Sparkles")
     window.interactOff = Label(window, ns.INTERACT_OFF, "GameFontRed")
-    window.interactOff:SetPoint("TOP", 30, -36)
+    window.interactOff:SetPoint("TOP", 0, -36)
+    -- Turns it back on with the rest of what sparkles need (after the fight, in combat).
+    local turnOn = New("Button", window, "UIPanelButtonTemplate")
+    turnOn:SetSize(80, 22)
+    turnOn:SetText(ENABLE)
+    turnOn:SetPoint("LEFT", window.interactOff, "RIGHT", 8, 0)
+    turnOn:SetScript("OnClick", function()
+        ns.Setup()
+        Refresh()
+    end)
+    Tooltip(turnOn, ENABLE_INTERACT_TEXT, "Turns the game's Enable Interact Key back on, so sparkles show again.")
+    window.turnOn = turnOn
     ButtonFrameTemplate_HideButtonBar(window)
     window.CloseButton:SetScript("OnClick", function() window:Hide() end)
     -- (The previews hide with it, and their frames only run while shown.)
@@ -618,6 +630,7 @@ function Refresh()
     for _, k in ipairs(ns.KINDS) do everything = everything and ns.db[k] == true end
     window.everything:SetChecked(everything)
     window.interactOff:SetShown(ns.InteractOff())
+    window.turnOn:SetShown(window.interactOff:IsShown())
     window.gameIcons:SetChecked(ns.db.gameIcons)
     window.brightness:SetValue(ns.db.brightness)
     window.reachLook:SetChecked(ns.db.reachLook)
@@ -733,5 +746,71 @@ end
 function ns.RefreshSparkleWindow()
     if window and window:IsShown() then Refresh() end
 end
+
+---------------------------------------------------------------------------
+-- Interact Key turned off
+---------------------------------------------------------------------------
+-- Turned off while sparkles are on: a dialog like the game's offers it back.
+
+local notice
+
+local function DialogButton(parent, text, onClick)
+    local button = New("Button", parent)
+    button:SetSize(128, 21) -- StaticPopupButtonTemplate's size
+    button:SetNormalTexture("Interface\\Buttons\\UI-DialogBox-Button-Up")
+    button:GetNormalTexture():SetTexCoord(0, 1, 0, 0.71875)
+    button:SetPushedTexture("Interface\\Buttons\\UI-DialogBox-Button-Down")
+    button:GetPushedTexture():SetTexCoord(0, 1, 0, 0.71875)
+    button:SetHighlightTexture("Interface\\Buttons\\UI-DialogBox-Button-Highlight", "ADD")
+    button:GetHighlightTexture():SetTexCoord(0, 1, 0, 0.71875)
+    button:SetNormalFontObject(GameFontNormal)
+    button:SetHighlightFontObject(GameFontHighlight)
+    button:SetText(text)
+    button:SetScript("OnClick", onClick)
+    return button
+end
+
+local function ShowNotice()
+    if not notice then
+        notice = New("Frame", UIParent)
+        notice:SetFrameStrata("DIALOG")
+        notice:SetToplevel(true)
+        notice:EnableMouse(true)
+        notice:SetPoint("TOP", UIParent, "TOP", 0, -135)
+        notice:SetWidth(420)
+        local background = notice:CreateTexture(nil, "BACKGROUND", nil, -7)
+        background:SetAtlas("UI-DialogBox-Background-Dark", true)
+        background:SetPoint("TOPLEFT", 7, -7)
+        background:SetPoint("BOTTOMRIGHT", -7, 7)
+        local edge = notice:CreateTexture(nil, "BACKGROUND", nil, -4)
+        edge:SetAtlas("UI-DiamondDialogBox-Border", true)
+        edge:SetAllPoints()
+        local text = notice:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        text:SetPoint("TOP", 0, -20)
+        text:SetWidth(380)
+        text:SetSpacing(3)
+        text:SetText(NORMAL_FONT_COLOR:WrapTextInColorCode(C_AddOns.GetAddOnMetadata(ADDON_NAME, "Title") or ADDON_NAME)
+            .. "\n\n" .. ns.INTERACT_OFF)
+        notice:SetHeight(text:GetStringHeight() + 73)
+        notice.text = text
+        notice.enable = DialogButton(notice, ENABLE, function()
+            notice:Hide()
+            ns.Setup()
+            if window and window:IsShown() then Refresh() end
+        end)
+        notice.enable:SetPoint("BOTTOMRIGHT", notice, "BOTTOM", -6, 16)
+        notice.close = DialogButton(notice, CLOSE, function() notice:Hide() end)
+        notice.close:SetPoint("BOTTOMLEFT", notice, "BOTTOM", 6, 16)
+    end
+    notice:Show()
+end
+
+local interactWatch = CreateFrame("Frame")
+interactWatch:RegisterEvent("CVAR_UPDATE")
+interactWatch:SetScript("OnEvent", function(_, _, name)
+    if issecretvalue(name) or type(name) ~= "string" or name:lower() ~= "softtargetinteract" or not ns.db then return end
+    if window and window:IsShown() then Refresh() end
+    if ns.InteractOff() then ShowNotice() end
+end)
 
 ns.SPARKLE_TABS, ns.SPARKLE_NEEDS = TABS, NEEDS -- the Options rows' words with the gamepad UI on

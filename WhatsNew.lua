@@ -11,18 +11,19 @@ local ipairs = ipairs
 local ShowWhatsNew
 do
     local WHATS_NEW = {
-        { version = "1.5.6",
+        { version = "1.6.0",
             { "New", {
+                { "Settings for this character only (on by default).", "Each character keeps its own NodeSight settings, starting from the ones you have now. Untick it to share them with your other characters again. It's on NodeSight's main page in Options" },
                 { "Enable All button for sparkles.", "On NodeSight's main page in Options. Turns every kind of sparkle on, or all of them off again" },
                 { "Sparkles are off.", "The Sparkle window says so under the node when the shown sparkles are off, and the box that turns them on glows" },
-                { "Enable Interact Key warning.", "Sparkles need the game's Enable Interact Key (Options > Controls). If it gets turned off, a red line in the Sparkle window and in the Enable All button's tooltip says so" },
+                { "Enable Interact Key warning.", "Sparkles need the game's Enable Interact Key (Options > Controls). If it gets turned off, a dialog offers to turn it back on, and the Sparkle window shows a red line with an Enable button" },
                 { "Required skill in tooltips (on by default).", "Untick it to leave out the \"Requires Herbalism (15)\" line NodeSight adds to herb and ore tooltips. It's on NodeSight's own page in Options" },
             } },
             { "Changes", {
                 { "Sparkles on your fishing bobber.", "No longer Beta" },
             } },
             { "Fixes", {
-                "Quest objects whose name isn't the quest item's, like Naxxramas Crystal Fragment and Agamand Weapon Rack, never sparkled. An object now counts as a quest object when its name shares a word with an unfinished quest item in your log",
+                "Quest objects whose name isn't the quest item's, like Naxxramas Crystal Fragment, Agamand Weapon Rack and Cattail, never sparkled. An object now counts as a quest object when its name shares a word with an unfinished quest item in your log, plural or not",
                 "Your own name or a party or raid member's could show up on the minimap as a herb or ore when it ended like one, like Bob Silverleaf. Players' names are left out now",
             } },
         },

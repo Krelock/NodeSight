@@ -139,6 +139,13 @@ local function RegisterSettings()
         return tip
     end, false))
 
+    -- Saved on the character whichever settings are in use; they switch at the next reload.
+    local own = Settings.RegisterAddOnSetting(category, "NodeSight_own", "own", NodeSightCharDB, "boolean",
+        "Settings for this character only", true)
+    own:SetValueChangedCallback(function() end)
+    Settings.CreateCheckbox(category, own,
+        "This character keeps its own NodeSight settings. Untick it to use the settings your other characters share. Changes at your next reload or login.")
+
     Page("Arrow")
     Settings.CreateCheckbox(category, arrow, arrowTip) -- the same setting as on NodeSight's own page
     Checkbox("arrowLocked", "Lock the arrow in place",

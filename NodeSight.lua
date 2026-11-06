@@ -1719,37 +1719,58 @@ function ns.Markers() return markers end
 local MINIMAP_TOOLTIP = Enum.TooltipDataType.MinimapMouseover -- the minimap dots' tooltip type
 local OBJECT_TOOLTIP = Enum.TooltipDataType.Object -- a herb's or ore's own tooltip
 
-local function OnAddonLoaded()
+-- Settings: this character's own (NodeSightCharDB, the default, started from the
+-- shared ones) or the ones shared by every character that has its own turned off
+-- (NodeSightDB). Learned nodes, rare names and the CVars to put back are always shared.
+local function LoadSettings()
     NodeSightDB = NodeSightDB or {}
-    ns.CarryOverLooks(NodeSightDB)
-    -- Red symbols turned off, from before Skill colors: Off.
-    if NodeSightDB.skillLook == nil and NodeSightDB.hard == false then NodeSightDB.skillLook = SKILL.OFF end
-    for key, value in pairs(defaults) do
-        if NodeSightDB[key] == nil then NodeSightDB[key] = value end
-    end
-    -- Fix saved values the settings can't produce.
-    if type(NodeSightDB.styleLooks) ~= "table" then NodeSightDB.styleLooks = {} end -- each style's look, per kind (the sparkle window)
-    for _, kind in ipairs(ns.KINDS) do
-        local keys = ns.SPARKLE_KEYS[kind]
-        NodeSightDB[keys.color] = tostring(NodeSightDB[keys.color]):match("^%x%x%x%x%x%x%x%x$") or defaults[keys.color]
-        local two = NodeSightDB[keys.color2]
-        NodeSightDB[keys.color2] = two ~= nil and tostring(two):match("^%x%x%x%x%x%x%x%x$") or nil
-        if not ns.StyleFits(NodeSightDB[keys.style], kind) then NodeSightDB[keys.style] = defaults[keys.style] end
-        -- The look in use belongs to its style (one from before the window has no entry yet).
-        local looks = NodeSightDB.styleLooks
-        if type(looks[kind]) ~= "table" then looks[kind] = {} end
-        if looks[kind][NodeSightDB[keys.style]] == nil then
-            looks[kind][NodeSightDB[keys.style]] = { size = NodeSightDB[keys.size], height = NodeSightDB[keys.height],
-                count = NodeSightDB[keys.count], color = NodeSightDB[keys.color], color2 = NodeSightDB[keys.color2] }
+    local SHARED = { learned = true, saved = true, applied = true, rareNames = true }
+    if type(NodeSightCharDB) ~= "table" then
+        NodeSightCharDB = { own = true }
+        for key, value in pairs(NodeSightDB) do
+            if not SHARED[key] then NodeSightCharDB[key] = type(value) == "table" and CopyTable(value) or value end
         end
     end
-    if not SHAPES[NodeSightDB.shape] then NodeSightDB.shape = defaults.shape end
-    if not SKILL.looks[NodeSightDB.skillLook] then NodeSightDB.skillLook = defaults.skillLook end
-    if not ns.MAP_SHAPES[NodeSightDB.minimapShape] then NodeSightDB.minimapShape = defaults.minimapShape end
-    if not ns.HARVESTS[NodeSightDB.harvest] then NodeSightDB.harvest = defaults.harvest end
-    if not ICONS.rares[NodeSightDB.rareIcon] then NodeSightDB.rareIcon = defaults.rareIcon end
-    if NodeSightDB.switchYards < 10 then NodeSightDB.switchYards = 10 end
-    db = NodeSightDB
+    if NodeSightCharDB.own == false then return NodeSightDB end
+    return setmetatable(NodeSightCharDB, {
+        __index = function(_, key) if SHARED[key] then return NodeSightDB[key] end end,
+        __newindex = function(t, key, value)
+            if SHARED[key] then NodeSightDB[key] = value else rawset(t, key, value) end
+        end,
+    })
+end
+
+local function OnAddonLoaded()
+    local settings = LoadSettings()
+    ns.CarryOverLooks(settings)
+    -- Red symbols turned off, from before Skill colors: Off.
+    if settings.skillLook == nil and settings.hard == false then settings.skillLook = SKILL.OFF end
+    for key, value in pairs(defaults) do
+        if settings[key] == nil then settings[key] = value end
+    end
+    -- Fix saved values the settings can't produce.
+    if type(settings.styleLooks) ~= "table" then settings.styleLooks = {} end -- each style's look, per kind (the sparkle window)
+    for _, kind in ipairs(ns.KINDS) do
+        local keys = ns.SPARKLE_KEYS[kind]
+        settings[keys.color] = tostring(settings[keys.color]):match("^%x%x%x%x%x%x%x%x$") or defaults[keys.color]
+        local two = settings[keys.color2]
+        settings[keys.color2] = two ~= nil and tostring(two):match("^%x%x%x%x%x%x%x%x$") or nil
+        if not ns.StyleFits(settings[keys.style], kind) then settings[keys.style] = defaults[keys.style] end
+        -- The look in use belongs to its style (one from before the window has no entry yet).
+        local looks = settings.styleLooks
+        if type(looks[kind]) ~= "table" then looks[kind] = {} end
+        if looks[kind][settings[keys.style]] == nil then
+            looks[kind][settings[keys.style]] = { size = settings[keys.size], height = settings[keys.height],
+                count = settings[keys.count], color = settings[keys.color], color2 = settings[keys.color2] }
+        end
+    end
+    if not SHAPES[settings.shape] then settings.shape = defaults.shape end
+    if not SKILL.looks[settings.skillLook] then settings.skillLook = defaults.skillLook end
+    if not ns.MAP_SHAPES[settings.minimapShape] then settings.minimapShape = defaults.minimapShape end
+    if not ns.HARVESTS[settings.harvest] then settings.harvest = defaults.harvest end
+    if not ICONS.rares[settings.rareIcon] then settings.rareIcon = defaults.rareIcon end
+    if settings.switchYards < 10 then settings.switchYards = 10 end
+    db = settings
     ns.db = db
     NewScanner()
     UpdateScanner()

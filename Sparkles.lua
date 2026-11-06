@@ -1287,12 +1287,20 @@ end
 -- found by name among your unfinished item objectives ("Tirisfal Pumpkin: 3/10").
 local questNames, questWords, questsRead = {}, {}, false
 
--- Words of 3 letters or more. An object often shares one with the item it gives
--- (Naxxramas Crystal Fragment for Necrotic Crystal Fragment).
+-- Words of 3 letters or more, each also without a plural's ending. An object
+-- often shares one with the item it gives (Naxxramas Crystal Fragment for
+-- Necrotic Crystal Fragment, Cattail for Handful of Cattails).
 local function Words(text)
     local words = {}
     for word in text:lower():gmatch("[%a\128-\255]+") do
-        if #word >= 3 then words[#words + 1] = word end
+        if #word >= 3 then
+            words[#words + 1] = word
+            if #word > 4 and word:sub(-3) == "ies" then
+                words[#words + 1] = word:sub(1, -4) .. "y" -- berries: berry
+            elseif #word > 3 and word:sub(-1) == "s" and word:sub(-2) ~= "ss" then
+                words[#words + 1] = word:sub(1, -2) -- cattails: cattail; grass stays
+            end
+        end
     end
     return words
 end
