@@ -11,6 +11,14 @@ local ipairs = ipairs
 local ShowWhatsNew
 do
     local WHATS_NEW = {
+        { version = "1.6.2",
+            { "Changes", {
+                { "Quest objects you loot.", "An object that gave you an item for an unfinished quest sparkles from then on, its other spawns too, until the quest no longer needs the item. Shared by all your characters" },
+            } },
+            { "Fixes", {
+                "Quest objects whose name has nothing in common with the quest item, like Alexston's Chest for A Simple Compass, never sparkled. NodeSight now knows about 400 of the old world's quest objects, in any language",
+            } },
+        },
         { version = "1.6.1",
             { "Fixes", {
                 "Quest objects named like a quest item in the singular, like Cattail for Handful of Cattails, never sparkled. Plurals count now",

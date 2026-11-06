@@ -1721,10 +1721,11 @@ local OBJECT_TOOLTIP = Enum.TooltipDataType.Object -- a herb's or ore's own tool
 
 -- Settings: this character's own (NodeSightCharDB, the default, started from the
 -- shared ones) or the ones shared by every character that has its own turned off
--- (NodeSightDB). Learned nodes, rare names and the CVars to put back are always shared.
+-- (NodeSightDB). Learned nodes and quest objects, rare names and the CVars to put
+-- back are always shared.
 local function LoadSettings()
     NodeSightDB = NodeSightDB or {}
-    local SHARED = { learned = true, saved = true, applied = true, rareNames = true }
+    local SHARED = { learned = true, questObjects = true, saved = true, applied = true, rareNames = true }
     if type(NodeSightCharDB) ~= "table" then
         NodeSightCharDB = { own = true }
         for key, value in pairs(NodeSightDB) do

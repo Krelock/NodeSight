@@ -20,9 +20,9 @@ local UpdateScanner, Markers = ns.UpdateScanner, ns.Markers
 -- Far sparkles
 ---------------------------------------------------------------------------
 -- Costs more CPU than the rest. While on, it takes over your map pin and
--- tracked quest (restored when nothing is marked or a fight starts). Nothing
--- changes in combat or with the world map open (the map would build its pin
--- frame under our taint).
+-- tracked quest (restored when nothing is marked). Nothing changes in combat
+-- (the marked node keeps its sparkles) or with the world map open (the map
+-- would build its pin frame under our taint).
 --
 -- A pin has no height and the marker is drawn at your height, so the sparkles
 -- are a column up or down from it, by the minimap's arrow (world.Level) or by
@@ -44,6 +44,27 @@ local function LookOf(kind)
     if kind == "herbs" or kind == "ore" or kind == "chests" or kind == "others" then return kind end -- already a look
     return kind == "treasure" and "chests" or "others"
 end
+
+-- Glides a screen position (a "one euro" filter): slow, small moves such as the
+-- marker bobbing as you walk are smoothed out, fast ones such as the camera
+-- turning are followed closely. `state` keeps it between frames; x = nil snaps.
+local function Ease(passed, cutoff)
+    return 1 / (1 + 1 / (2 * math.pi * cutoff * passed))
+end
+function world.Glide(state, x, y, passed)
+    if not state.x then
+        state.x, state.y, state.vx, state.vy = x, y, 0, 0
+    elseif passed > 0 then
+        local d = Ease(passed, 1)
+        state.vx = state.vx + ((x - state.x) / passed - state.vx) * d
+        state.vy = state.vy + ((y - state.y) / passed - state.vy) * d
+        local a = Ease(passed, 1 + 0.01 * math.sqrt(state.vx * state.vx + state.vy * state.vy))
+        state.x = state.x + (x - state.x) * a
+        state.y = state.y + (y - state.y) * a
+    end
+    return state.x, state.y
+end
+world.glide = {}
 
 -- Starts ten sparkles in a frame, in the kind's color and size.
 function world.Fill(frame, kind)
@@ -78,7 +99,8 @@ function world.Off(marker, facing)
 end
 
 -- Marks the nearest node within 15 degrees of your facing; the current one is
--- kept unless another is 5+ yards nearer.
+-- kept unless another is 5+ yards nearer, and a new one has to be the better
+-- one for half a second.
 function world.Pick()
     local facing = PlayerFacing()
     local least, kept
@@ -92,11 +114,24 @@ function world.Pick()
         end
     end
     if not least then return nil end
-    if kept and GetTime() - (world.taken or 0) < 0.5 then return kept end
+    local now = GetTime()
     local keep = kept and world.Off(kept, facing) <= least + 0.26
     for _, marker in ipairs(Markers()) do
         if world.Can(marker) and world.Off(marker, facing) <= least + 0.26 then
-            if keep and kept.yards - marker.yards <= 5 then return kept end
+            if keep and kept.yards - marker.yards <= 5 then marker = kept end
+            if marker == kept or not kept then
+                world.want = nil
+                return marker
+            end
+            -- Another one is better: wait until it has been for half a second, so
+            -- turning past herbs doesn't move the pin to each of them.
+            local want = world.want
+            if not (want and want.map == marker.map and (want.mx - marker.mx) ^ 2 + (want.my - marker.my) ^ 2 <= 2.5e-7) then
+                world.want = { map = marker.map, mx = marker.mx, my = marker.my, at = now }
+                return kept
+            end
+            if now - want.at < 0.5 then return kept end
+            world.want = nil
             return marker
         end
     end
@@ -157,10 +192,16 @@ function world.FadeIn(frame, now, from)
     end
 end
 
--- Combat starts: remove the pin now, since nothing can change during the fight.
+-- Combat starts: the marked node keeps its pin and sparkles, and no other is
+-- marked until the fight ends (the game's lockdown starts a moment later).
 function world.Fight()
     world.fight = true
-    if world.at and not (WorldMapFrame and WorldMapFrame:IsShown()) then world.Back() end
+    -- A camera measurement has the pin on its test spot: back on the node.
+    if world.hop and not (WorldMapFrame and WorldMapFrame:IsShown()) then
+        world.hop = nil
+        world.Set(world.at)
+        if world.frame then world.frame:SetAlpha(1) end
+    end
 end
 
 -- Debug readout, only with NodeSightDB.worldReadout = true (set by hand).
@@ -185,8 +226,10 @@ function world.Say(target)
     local camera = world.hop and "measuring" or "not worked out"
     if world.side and not world.hop then
         local focal, pivot, riding = world.Lens()
-        camera = ("%.0f deg, pivot %.1f, %.0f deg down, measured %d of 3%s%s%s"):format(math.deg(2 * math.atan(UIParent:GetHeight() / 2 / focal)),
-            pivot, math.deg(world.down), #world.fits[riding], #world.fits[riding] < 3 and world.fails < 8 and ", stand still for more" or "",
+        local saved = world.Saved(riding) and #world.fits[riding] < 3
+        camera = ("%.0f deg, pivot %.1f, %.0f deg down, %s%s%s%s"):format(math.deg(2 * math.atan(UIParent:GetHeight() / 2 / focal)),
+            pivot, math.deg(world.down), saved and "saved" or ("measured %d of 3"):format(#world.fits[riding]),
+            not saved and #world.fits[riding] < 3 and world.fails < 8 and ", stand still for more" or "",
             world.fit and " (last: " .. world.fit .. ")" or "",
             world.fails > 0 and (", %d tries gave nothing%s"):format(world.fails, world.fails >= 8 and ": left at that" or "") or "")
     end
@@ -298,8 +341,22 @@ function world.Fit(hop, X, Y)
     fits[#fits + 1] = { lens = lens, pivot = pivot }
     local cam = ns.db.cam and ns.db.cam.cvar == world.cvar and ns.db.cam or { cvar = world.cvar }
     cam.lens, cam[riding and "ride" or "pivot"] = world.Middle(fits, "lens"), world.Middle(fits, "pivot")
+    if #fits >= 3 then cam[riding and "rideDone" or "done"] = world.Race() end
     ns.db.cam = cam
     return "ok"
+end
+
+-- The camera's height depends on your race, so a saved measurement is kept per race.
+function world.Race()
+    local _, race = UnitRace("player")
+    if issecretvalue(race) then return nil end
+    return race
+end
+
+-- Measured in an earlier session for this race and field of view?
+function world.Saved(riding)
+    local cam, race = ns.db.cam, world.Race()
+    return cam and cam.cvar == world.cvar and race ~= nil and cam[riding and "rideDone" or "done"] == race or false
 end
 
 -- A camera measurement: the pin moves to a test spot for a third of a second,
@@ -348,6 +405,7 @@ function world.Clear(from)
         local frame = world.others[i]
         if frame:IsShown() then
             frame:Hide()
+            frame.glide.x = nil
             for _, part in ipairs(frame.parts) do
                 part.group:Stop()
                 part.coreGroup:Stop()
@@ -361,7 +419,7 @@ world.TRIES = { { 0.35, 0.5 }, { -0.35, 0.5 }, { 0.6, 0.5 }, { -0.6, 0.5 }, { 0.
 
 -- Every frame the marker is visible: work out the camera, place the other
 -- sparkles, and start a measurement when due.
-function world.Several(nav, now, busy)
+function world.Several(nav, now, busy, passed)
     local shown = 0
     world.side = nil
     local at, zoom = world.at, GetCameraZoom and GetCameraZoom()
@@ -391,14 +449,20 @@ function world.Several(nav, now, busy)
                             frame = NewSparkles()
                             frame:SetParent(UIParent)
                             frame:SetFrameStrata("BACKGROUND")
+                            frame.glide = {}
                             world.others[shown] = frame
                         end
+                        -- Another node in this frame: no glide from the last one's place.
+                        local glide = frame.glide
+                        if glide.name ~= marker.name or (glide.mx - marker.mx) ^ 2 + (glide.my - marker.my) ^ 2 > 6.25e-6 then glide.x = nil end
+                        glide.name, glide.mx, glide.my = marker.name, marker.mx, marker.my
+                        local gx, gy = world.Glide(glide, x * focal, y * focal, passed)
                         local scale = math.max(0.2, math.min(1, 15 / reach))
                         frame.wide, frame.tall = 60, 560 * math.min(8 / reach, 0.3) / 2 / scale
                         frame:SetScale(scale)
                         frame:SetSize(frame.wide, frame.tall)
                         frame:ClearAllPoints()
-                        frame:SetPoint("CENTER", UIParent, "CENTER", x * focal / scale, y * focal / scale)
+                        frame:SetPoint("CENTER", UIParent, "CENTER", gx / scale, gy / scale)
                         if not frame:IsShown() then frame.fade = now end
                         if not frame:IsShown() or frame.kind ~= LookOf(marker.kind) then world.Fill(frame, marker.kind) end
                         world.FadeIn(frame, now, frame.fade)
@@ -409,7 +473,7 @@ function world.Several(nav, now, busy)
             if not world.stillAt or math.abs(X - world.stillX) + math.abs(Y - world.stillY) > 3 then
                 world.stillX, world.stillY, world.stillAt = X, Y, now
             end
-            if #world.fits[riding] < 3 and world.fails < 8 and not busy and now - (world.tried or -10) >= 4
+            if #world.fits[riding] < 3 and world.fails < 8 and not world.Saved(riding) and not busy and now - (world.tried or -10) >= 4
                 and now - world.stillAt >= 0.4 then
                 for _, try in ipairs(world.TRIES) do
                     local reach, bearing = math.max(10, far * try[2]), way + try[1]
@@ -465,10 +529,10 @@ function world.Update()
                 world.at = { map = target.map, mx = target.mx, my = target.my, kind = target.kind, name = target.name }
                 world.Set(world.at)
                 if not same then
-                    world.level, world.asked, world.under, world.heat, world.low = nil, nil, nil, nil, nil
-                    world.plain, world.clear, world.blip, world.was = nil, nil, nil, nil
-                    world.taken = GetTime()
-                    world.fade = world.taken -- the new node's sparkles fade in
+                    world.level, world.asked, world.under, world.heat, world.low, world.stuck = nil, nil, nil, nil, nil, nil
+                    world.plain, world.clear, world.blip, world.was, world.hot = nil, nil, nil, nil, nil
+                    world.fade = GetTime() -- the new node's sparkles fade in
+                    world.glide.x = nil
                 end
             end
         end
@@ -490,8 +554,9 @@ function world.Update()
     -- Sparkles on the marker while it's on screen.
     local nav = sparkly and not world.broken and C_Navigation.GetFrame()
     local distance = nav and C_Navigation.GetDistance()
-    local seen = nav and distance and not issecretvalue(distance) and distance > 0
-        and C_Navigation.HasValidScreenPosition() and not C_Navigation.WasClampedToScreen()
+    local placed = nav and distance and not issecretvalue(distance) and distance > 0 and C_Navigation.HasValidScreenPosition()
+    local edge = placed and C_Navigation.WasClampedToScreen()
+    local seen = placed and not edge
     -- Measuring the camera; once it ends (or is called off), on as usual this frame.
     if world.hop then world.Hop(nav, seen, busy) end
     if world.hop then
@@ -504,8 +569,16 @@ function world.Update()
             frame:SetFrameStrata("BACKGROUND")
             world.frame = frame
         end
-        -- Above or below you: checked once a second.
         local now = GetTime()
+        -- Back from the edge before it faded out: fade in from where it got to.
+        if world.gone then
+            world.gone = nil
+            world.fade = now - frame:GetAlpha() * FADE
+            for _, other in ipairs(world.others) do
+                if other:IsShown() then other.fade = now - other:GetAlpha() * FADE end
+            end
+        end
+        -- Above or below you: checked once a second.
         if target and (not world.asked or now - world.asked >= 1) then
             world.level, world.asked = world.Level(target), now
         end
@@ -514,9 +587,13 @@ function world.Update()
         local passed = math.min(now - (world.seen or now), 0.1)
         world.seen = now
         local hidden = C_Navigation.GetTargetState() == 1 and 1 or 0
-        if world.nav ~= nav then world.heat, world.plain, world.clear, world.blip, world.was = nil, nil, nil, nil, nil end
+        if world.nav ~= nav then world.heat, world.plain, world.clear, world.blip, world.was, world.hot = nil, nil, nil, nil, nil, nil end
         world.heat = world.heat and world.heat + (hidden - world.heat) * (1 - math.exp(-passed / 0.5)) or hidden
         if world.heat > 0.8 then world.under = true elseif world.heat < 0.2 then world.under = false end
+        -- Hidden in the ground for a second: the herb is above you, and stays so until you
+        -- reach it, as the marker comes in and out of view over a hillside.
+        world.hot = world.heat > 0.8 and (world.hot or 0) + passed or 0
+        if world.hot >= 1 then world.stuck = true end
         -- In plain view for 2 s: the herb is at or below the marker ("clear").
         if hidden == 1 and not world.was then
             if world.blip and now - world.blip < 3 then world.clear = false end
@@ -528,7 +605,7 @@ function world.Update()
         -- Column height: 8 yards at this distance (max 3 in 10 slope), 20 yards for
         -- "hidden" and "clear". Sparkles shrink with distance.
         local level = world.level or "level"
-        if level == "level" and world.under then
+        if level == "level" and (world.under or world.stuck) then
             level = "hidden"
         elseif level == "level" and world.clear then
             level = "clear"
@@ -555,25 +632,58 @@ function world.Update()
         -- base: the area's bottom, relative to the marker
         local wide, tall, base = 60, (high - low) / scale, low / scale
         frame:SetScale(scale)
-        if world.nav ~= nav or math.abs(frame.tall - tall) > 0.5 or math.abs(world.base - base) > 0.5 then
+        -- Held where the marker is on screen, gliding; on the marker itself if
+        -- its place can't be read.
+        local X, Y = world.Where(nav)
+        local px, py
+        if X then
+            X, Y = world.Glide(world.glide, X, Y, passed)
+            px, py = X / scale, Y / scale + base
+        end
+        local resized = world.nav ~= nav or math.abs(frame.tall - tall) > 0.5 or math.abs(world.base - base) > 0.5
+        if resized then
             frame.wide, frame.tall, world.base = wide, tall, base
             frame:SetSize(wide, tall)
+        end
+        -- Placed again only when it moved or the way it's held changed.
+        local moved = px and not (world.px and math.abs(world.px - px) + math.abs(world.py - py) < 0.05)
+        if resized or moved or (not px) ~= (not world.px) then
             frame:ClearAllPoints()
             -- If the marker can't be anchored to, report once and stop.
-            local ok, problem = pcall(frame.SetPoint, frame, "BOTTOM", nav, "CENTER", 0, base)
+            local ok, problem
+            if px then
+                ok, problem = pcall(frame.SetPoint, frame, "BOTTOM", UIParent, "CENTER", px, py)
+            else
+                ok, problem = pcall(frame.SetPoint, frame, "BOTTOM", nav, "CENTER", 0, base)
+            end
             if not ok then
                 world.broken = true
                 frame:Hide()
                 geterrorhandler()("NodeSight: sparkles can't be put on the game's marker: " .. tostring(problem))
                 return
             end
-            world.nav = nav
+            world.nav, world.px, world.py = nav, px, py
         end
         local kind = world.at and world.at.kind
         if not frame:IsShown() then world.fade = now end
         if not frame:IsShown() or frame.kind ~= LookOf(kind) then world.Fill(frame, kind) end
         world.FadeIn(frame, now, world.fade)
-        world.Several(nav, now, busy)
+        world.Several(nav, now, busy, passed)
+    elseif edge and world.frame and world.frame:IsShown() and world.nav == nav then
+        -- Held at the screen's edge: fade out instead of vanishing, so turning the
+        -- camera past the edge doesn't blink.
+        local now = GetTime()
+        if not world.gone then world.gone, world.goneAlpha = now, world.frame:GetAlpha() end
+        local alpha = world.goneAlpha * (1 - (now - world.gone) / FADE)
+        if alpha <= 0 then
+            world.Out()
+        else
+            world.frame:SetAlpha(alpha)
+            world.frame.fading = true
+            for _, other in ipairs(world.others) do
+                if other:IsShown() then other:SetAlpha(math.min(other:GetAlpha(), alpha)) end
+            end
+        end
     else
         world.Out()
     end
@@ -583,6 +693,7 @@ end
 function world.Out()
     if world.frame and world.frame:IsShown() then
         world.frame:Hide()
+        world.glide.x = nil
         world.nav = nil
         for _, part in ipairs(world.frame.parts) do
             part.group:Stop()

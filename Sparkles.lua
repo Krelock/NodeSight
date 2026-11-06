@@ -175,10 +175,15 @@ local function Fishing()
     return not issecretvalue(icon) and icon == FISHING_ICON
 end
 
-local function IsBobber(unit)
-    local guid = UnitGUID(unit)
+-- An object's ID, the sixth part of its GUID; nil for anything else.
+local function ObjectID(guid)
     local id = not issecretvalue(guid) and type(guid) == "string" and guid:match("^GameObject%-%d+%-%d+%-%d+%-%d+%-(%d+)")
-    if id then return tonumber(id) == BOBBER end
+    return id and tonumber(id) or nil
+end
+
+local function IsBobber(unit)
+    local id = ObjectID(UnitGUID(unit))
+    if id then return id == BOBBER end
     return Fishing()
 end
 
@@ -1285,8 +1290,9 @@ end
 -- Quest objects you loot or use often have the plain interact icon (a pumpkin has
 -- a mailbox's), and UnitIsRelatedToActiveQuest is false for objects, so they're
 -- found by name among your unfinished item and object objectives ("Tirisfal
--- Pumpkin: 3/10", "Scourge Cauldron destroyed: 0/1").
-local questNames, questWords, questsRead = {}, {}, false
+-- Pumpkin: 3/10", "Scourge Cauldron destroyed: 0/1"), by the quest data
+-- (ns.QUEST_OBJECTS) and by the objects you got a quest's item from before.
+local questNames, questWords, openQuests, questsRead = {}, {}, {}, false
 
 -- Words of 3 letters or more, each also without a plural's ending. An object
 -- often shares one with the item it gives (Naxxramas Crystal Fragment for
@@ -1321,6 +1327,7 @@ local function ReadQuests()
     questsRead = true
     wipe(questNames)
     wipe(questWords)
+    wipe(openQuests)
     local log = C_QuestLog
     if not (log and log.GetNumQuestLogEntries and log.GetInfo and log.GetQuestObjectives) then return end
     for i = 1, log.GetNumQuestLogEntries() do
@@ -1329,6 +1336,7 @@ local function ReadQuests()
         if objectives then
             for _, o in ipairs(objectives) do
                 local text = o.text
+                if not o.finished then openQuests[info.questID] = true end
                 if (o.type == "item" or o.type == "object") and not o.finished and type(text) == "string" then
                     local item = ObjectiveItem(text)
                     questNames[item] = true
@@ -1339,9 +1347,46 @@ local function ReadQuests()
     end
 end
 
+-- An object your quests want: one of its quests is open, or it gave you an item
+-- an unfinished objective still asks for.
+local function QuestObject(unit)
+    local id = ObjectID(UnitGUID(unit))
+    local item = ns.db.questObjects and ns.db.questObjects[id]
+    if item and questNames[item] then return true end
+    local quests = ns.QUEST_OBJECTS and ns.QUEST_OBJECTS[id]
+    if type(quests) ~= "table" then return openQuests[quests] == true end
+    for _, quest in ipairs(quests) do
+        if openQuests[quest] then return true end
+    end
+    return false
+end
+
+-- LOOT_READY: an object that gave an item an unfinished objective asks for is
+-- remembered (account-wide), so it sparkles as a quest object from then on.
+local function LearnQuestLoot()
+    if not questsRead then ReadQuests() end
+    for slot = 1, GetNumLootItems() do
+        local _, name = GetLootSlotInfo(slot)
+        if not issecretvalue(name) and questNames[name] then
+            local id = ObjectID(GetLootSourceInfo(slot))
+            if id then
+                ns.db.questObjects = ns.db.questObjects or {}
+                ns.db.questObjects[id] = name
+            end
+        end
+    end
+end
+
 local questWatch = CreateFrame("Frame")
 questWatch:RegisterEvent("QUEST_LOG_UPDATE")
-questWatch:SetScript("OnEvent", function() questsRead = false end) -- read again when next needed
+questWatch:RegisterEvent("LOOT_READY")
+questWatch:SetScript("OnEvent", function(_, event)
+    if event == "LOOT_READY" then
+        LearnQuestLoot()
+    else
+        questsRead = false -- read again when next needed
+    end
+end)
 
 -- What sparkles on an object's plate: its kind, the bobber and chests (by their
 -- names, as the minimap's are) found among plain and other objects. Your
@@ -1354,12 +1399,13 @@ local function SparkleKind(unit, icon)
         local name = UnitName(unit)
         if issecretvalue(name) or type(name) ~= "string" then return kind end
         local named = ns.NodeKind(name)
+        if ns.db.quests and read and named ~= "herbs" and named ~= "ore" then
+            if not questsRead then ReadQuests() end
+            if QuestObject(unit) then return "quests" end -- a quest's chest too
+        end
         if named == "treasure" then return "chests" end
         if read and (named == "herbs" or named == "ore") then return named end
-        if read then
-            if not questsRead then ReadQuests() end
-            if questNames[name] or SharesWord(name) then return "quests" end
-        end
+        if read and (questNames[name] or SharesWord(name)) then return "quests" end
     end
     return kind
 end

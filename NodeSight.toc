@@ -2,7 +2,7 @@
 ## Title: NodeSight
 ## Notes: See what every herb and ore on your minimap is, with an arrow to the nearest one and gold sparkles on it when you're close.
 ## Author: Krelock
-## Version: 1.6.1
+## Version: 1.6.2
 ## SavedVariables: NodeSightDB
 ## SavedVariablesPerCharacter: NodeSightCharDB
 ## IconTexture: Interface\Icons\INV_Misc_Herb_01
@@ -17,6 +17,7 @@ Locales\ptBR.lua
 Locales\zhCN.lua
 Locales\zhTW.lua
 Zones.lua
+QuestObjects.lua
 Names.lua
 RareNames.lua
 MinimapShape.lua
