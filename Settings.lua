@@ -281,6 +281,9 @@ local function RegisterSettings()
     Checkbox("switchBattlegrounds", "Switch in battlegrounds",
         "Switches while you're in a battleground. Needs Switch between herbs and ore.",
         UpdateScanner)
+    if CreateSettingsListSectionHeaderInitializer then
+        layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Thanks to tester617 for the Switch page"))
+    end
 
     -- The sparkles' settings are all in their own window, which opens with this page.
     -- A controller can't reach that window, and its color picker and menus would run
