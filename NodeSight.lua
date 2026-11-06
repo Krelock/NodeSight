@@ -1794,7 +1794,7 @@ events:RegisterEvent("MINIMAP_UPDATE_TRACKING")
 events:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 events:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player")
 events:RegisterEvent("SKILL_LINES_CHANGED")
-events:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
+events:SetScript("OnEvent", function(_, event, arg1, arg2)
     if event == "ADDON_LOADED" then
         if arg1 == ADDON_NAME then
             events:UnregisterEvent("ADDON_LOADED")

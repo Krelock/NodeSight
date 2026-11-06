@@ -11,6 +11,18 @@ local ipairs = ipairs
 local ShowWhatsNew
 do
     local WHATS_NEW = {
+        { version = "1.6.3",
+            { "New", {
+                { "Switch page.", "Switch between herbs and ore has its own page in Options now, under NodeSight. Each switch costs a global cooldown, so it can wait for a better moment. Thanks to tester617 for all of it on GitHub" },
+                { "Distance between switches (40% of the minimap by default).", "Measure it in percent of what your minimap shows, in yards or in seconds on the move, under Switch" },
+                { "Pauses (on by default).", "No switch while you cast, gather, loot or have something on the cursor, while stealthed, near a herb or ore, for 3 seconds after your own spells or dismounting, or with an enemy targeted within about 40 yards. Each one can be set under Switch" },
+                { "Where to switch (open world, dungeons and raids on, battlegrounds off).", "Plus Only while mounted (off by default), under Switch" },
+            } },
+            { "Changes", {
+                { "Switch between herbs and ore.", "It no longer switches every 15 yards. It never switches while standing still, on a flight path, while dead or during the global cooldown, and after two switches in a row that didn't work it stops for a minute. Yards between switches is gone" },
+                { "Minimap shape.", "Automatic shows what it found in brackets: Round, Square or Mixed. Thanks to tester617" },
+            } },
+        },
         { version = "1.6.2",
             { "Changes", {
                 { "Quest objects you loot.", "An object that gave you an item for an unfinished quest sparkles from then on, its other spawns too, until the quest no longer needs the item. Shared by all your characters" },
