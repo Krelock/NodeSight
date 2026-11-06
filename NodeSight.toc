@@ -22,6 +22,7 @@ Names.lua
 RareNames.lua
 MinimapShape.lua
 NodeSight.lua
+Switch.lua
 Sparkles.lua
 FarSparkles.lua
 SparkleWindow.lua

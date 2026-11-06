@@ -38,17 +38,22 @@ local function EllesmereRendered()
     return ok and ellesmereShapes[shape] or nil
 end
 
--- The setting's shape, or on Automatic EllesmereUI's, else GetMinimapShape's. Round without an
--- answer. EllesmereUI comes first: its minimap replaces the stock one.
-local function Uncropped()
-    local forced = ns.db.minimapShape
-    if forced == 2 then return minimapShapes.ROUND end
-    if forced == 3 then return minimapShapes.SQUARE end
+-- The shape Automatic finds: EllesmereUI's, else GetMinimapShape's, round without an answer.
+-- EllesmereUI comes first: its minimap replaces the stock one.
+local function Detected()
     local rendered = EllesmereRendered()
     if rendered then return rendered end
     if not GetMinimapShape then return minimapShapes.ROUND end
     local ok, shape = pcall(GetMinimapShape)
     return ok and minimapShapes[shape] or minimapShapes.ROUND
+end
+
+-- The setting's shape, or on Automatic the one it finds.
+local function Uncropped()
+    local forced = ns.db.minimapShape
+    if forced == 2 then return minimapShapes.ROUND end
+    if forced == 3 then return minimapShapes.SQUARE end
+    return Detected()
 end
 
 -- How high a cropped square reaches, as a share of the half width: the hit rect's insets,
@@ -96,3 +101,10 @@ function ns.RimDistance(px, py, dx, dy, rim, quarters)
 end
 
 ns.MAP_SHAPES = { "Automatic", "Round", "Square" } -- the Minimap shape setting's choices
+
+-- The setting's choice labels, Automatic with what it finds in brackets: Round, Square or Mixed.
+function ns.MapShapeChoices()
+    local found = Detected()
+    local name = found == minimapShapes.ROUND and "Round" or found == minimapShapes.SQUARE and "Square" or "Mixed"
+    return { ("%s (%s)"):format(ns.MAP_SHAPES[1], name), ns.MAP_SHAPES[2], ns.MAP_SHAPES[3] }
+end
