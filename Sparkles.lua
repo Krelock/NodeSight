@@ -1282,9 +1282,10 @@ local function Idle()
     return not SparklesOn() and not next(hidden) and not next(sparkles)
 end
 
--- Quest objects you loot often have the plain interact icon (a pumpkin has a
--- mailbox's), and UnitIsRelatedToActiveQuest is false for objects, so they're
--- found by name among your unfinished item objectives ("Tirisfal Pumpkin: 3/10").
+-- Quest objects you loot or use often have the plain interact icon (a pumpkin has
+-- a mailbox's), and UnitIsRelatedToActiveQuest is false for objects, so they're
+-- found by name among your unfinished item and object objectives ("Tirisfal
+-- Pumpkin: 3/10", "Scourge Cauldron destroyed: 0/1").
 local questNames, questWords, questsRead = {}, {}, false
 
 -- Words of 3 letters or more, each also without a plural's ending. An object
@@ -1328,7 +1329,7 @@ local function ReadQuests()
         if objectives then
             for _, o in ipairs(objectives) do
                 local text = o.text
-                if o.type == "item" and not o.finished and type(text) == "string" then
+                if (o.type == "item" or o.type == "object") and not o.finished and type(text) == "string" then
                     local item = ObjectiveItem(text)
                     questNames[item] = true
                     for _, word in ipairs(Words(item)) do questWords[word] = true end

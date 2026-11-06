@@ -11,6 +11,12 @@ local ipairs = ipairs
 local ShowWhatsNew
 do
     local WHATS_NEW = {
+        { version = "1.6.1",
+            { "Fixes", {
+                "Quest objects named like a quest item in the singular, like Cattail for Handful of Cattails, never sparkled. Plurals count now",
+                "Quest objects you use or destroy, like a Scourge Cauldron for \"Scourge Cauldron destroyed\", never counted as quest objects. They do now",
+            } },
+        },
         { version = "1.6.0",
             { "New", {
                 { "Settings for this character only (on by default).", "Each character keeps its own NodeSight settings, starting from the ones you have now. Untick it to share them with your other characters again. It's on NodeSight's main page in Options" },
@@ -23,7 +29,7 @@ do
                 { "Sparkles on your fishing bobber.", "No longer Beta" },
             } },
             { "Fixes", {
-                "Quest objects whose name isn't the quest item's, like Naxxramas Crystal Fragment, Agamand Weapon Rack and Cattail, never sparkled. An object now counts as a quest object when its name shares a word with an unfinished quest item in your log, plural or not",
+                "Quest objects whose name isn't the quest item's, like Naxxramas Crystal Fragment and Agamand Weapon Rack, never sparkled. An object now counts as a quest object when its name shares a word with an unfinished quest item in your log",
                 "Your own name or a party or raid member's could show up on the minimap as a herb or ore when it ended like one, like Bob Silverleaf. Players' names are left out now",
             } },
         },
