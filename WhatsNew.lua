@@ -24,7 +24,7 @@ do
                 { "Settings.", "Easier to find your way around: the Symbols page is now Minimap, the pages have headings, Scan in combat moved to Minimap, and settings that need another one sit under it and only show while it's on. The tooltips are shorter" },
                 { "Rares on the minimap.", "No longer Beta, and it moved to Minimap with Rare symbol" },
                 { "Arrow size.", "The arrow's name and distance now grow and shrink with the arrow" },
-                { "Far away sparkles (Beta).", "The map pin they use no longer shows on the world map. It still shows on the minimap, where the game draws it" },
+                { "Far away sparkles (Beta).", "Numerous improvements: they line up better on herbs above you, glide smoothly instead of jumping when you move or turn the camera, no longer flicker in and out, and stay on in fights. The map pin they use no longer shows on the world map. It still shows on the minimap, where the game draws it" },
                 { "What's New.", "The button glows after an update until you've opened the notes" },
             } },
         },
