@@ -1,3 +1,5 @@
+# Blizzard patched out the minimap symbols (the herb and ore icons on the minimap) in today's update, sorry everyone. It's the same on every version. The sparkles still work fine. I'll keep looking for a new way but I don't think there is one.
+
 # NodeSight
 
 When you track herbs or ore, the minimap just shows a dot for each one. You have to hover over every dot to see what it is. NodeSight puts the item's own picture on each dot so you don't have to.
