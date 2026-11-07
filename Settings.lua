@@ -385,8 +385,9 @@ local function RegisterSettings()
     local _, far = Checkbox("worldMark", "Far away sparkles (Beta)",
         "Sparkles on the herb or ore you face, from far away. Not perfect yet, and uses a lot more CPU. Takes over your map pin while on. Needs Sparkles on herbs or ore.",
         function() world.Changed() Redraw() end)
-    local _, keepQuest = Checkbox("worldKeepQuest", "Keep my tracked quest (Beta)",
-        "While you track a quest, far away sparkles leave the game's navigation to it. They borrow the map pin for a moment after you turn or zoom, so your quest's arrow blinks then. Untick to have far away sparkles keep the pin while you quest.",
+    local _, keepQuest = Checkbox("worldKeepQuest", "Keep my tracked quest (less accurate sparkles)",
+        "Your tracked quest keeps the game's navigation, so you keep the way to your quest objective. Far away sparkles borrow the map pin for a moment after you turn or zoom (your quest's arrow blinks then), and can drift in between.\n\n"
+            .. RED_FONT_COLOR:WrapTextInColorCode("Far away sparkles are much less accurate with this on."),
         world.Changed)
     Indent(keepQuest, far, function() return ns.db.worldMark end)
 

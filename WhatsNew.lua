@@ -15,7 +15,7 @@ do
             { "New", {
                 { "Sparkles on skinnable corpses (Beta) (off by default).", "A looted corpse you can skin sparkles, so you don't run past it. Turn it on in the Sparkle window's new Skinning tab" },
                 { "Landing flies.", "A sparkle style for corpses: flies buzz around the corpse and land on it now and then. Pick it in the Skinning tab" },
-                { "Keep my tracked quest (Beta) (on by default).", "While you track a quest, Far away sparkles leave the game's navigation to your quest and still show. They borrow the map pin for a moment after you turn or zoom, so your quest's arrow blinks then. Under Beta" },
+                { "Keep my tracked quest (less accurate sparkles) (off by default).", "Your tracked quest keeps the game's navigation, so you keep the way to your quest objective. This makes Far away sparkles much less accurate: they borrow the map pin for a moment after you turn or zoom, so your quest's arrow blinks then. Under Beta" },
                 { "Symbols near you (Shown by default).", "A symbol on top of your own arrow on the minimap can be see-through or hidden, so you still see which way you face. It replaces See-through near you, under Minimap" },
                 { "Sound (Minimap ping by default).", "Pick which of the game's sounds Sound for new finds plays: Minimap ping, Coins, Whisper, Ready check, Raid warning or Auction bell. Under Sound for new finds on NodeSight's page" },
                 { "Only for skill-ups (off by default).", "Sound for new finds only plays for herbs and ore you can still get a skill-up from. Under Sound for new finds on NodeSight's page" },
