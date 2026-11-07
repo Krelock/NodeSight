@@ -1,4 +1,4 @@
-# Blizzard patched out the minimap symbols (the herb and ore icons on the minimap) in today's update, sorry everyone. It's the same on every version. The sparkles still work fine. I'll keep looking for a new way but I don't think there is one.
+# Found a new method to get minimap symbols back, working on it.
 
 # NodeSight
 
