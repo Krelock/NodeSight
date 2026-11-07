@@ -78,7 +78,7 @@ local defaults = {
     rareIcon = 2, -- which of ICONS.rares
     leylines = true, -- Skyborne: leylines and elemental convergences, while the racial is ready
     worldMark = false, -- Beta: sparkles on far away herbs and ore
-    worldKeepQuest = true, -- far sparkles leave a tracked quest's navigation alone
+    worldKeepQuest = true, -- far sparkles leave a tracked quest's navigation alone (but for quick pins)
     dotScale = 100, -- the game's own dot size, in percent
     -- Each kind's sparkles (Sparkles.lua's KEYS): style (Sparkles.lua's STYLES),
     -- tint "aarrggbb" (white = none), area size, offset from the plate's bottom,

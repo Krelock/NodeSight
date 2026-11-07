@@ -211,7 +211,7 @@ function world.Back()
     if world.pin then C_Map.SetUserWaypoint(world.pin) else C_Map.ClearUserWaypoint() end
     C_SuperTrack.SetSuperTrackedUserWaypoint(world.tracked == true)
     if world.quest and world.quest ~= 0 then C_SuperTrack.SetSuperTrackedQuestID(world.quest) end
-    world.at, world.pin, world.quest = nil, nil, nil
+    world.at, world.pin, world.quest, world.peek = nil, nil, nil, nil
     world.MapPin()
 end
 
@@ -229,6 +229,7 @@ end
 -- marked until the fight ends (the game's lockdown starts a moment later).
 function world.Fight()
     world.fight = true
+    if world.peek and not (WorldMapFrame and WorldMapFrame:IsShown()) then world.Back() end
     -- A camera measurement has the pin on its test spot: back on the node.
     if world.hop and not (WorldMapFrame and WorldMapFrame:IsShown()) then
         world.hop = nil
@@ -447,6 +448,32 @@ function world.Clear(from)
     end
 end
 
+-- Other sparkle frame i on a node at x, y on screen (UIParent units from the middle), reach yards away.
+function world.Other(i, marker, x, y, reach, now, passed)
+    local frame = world.others[i]
+    if not frame then
+        frame = NewSparkles()
+        frame:SetParent(UIParent)
+        frame:SetFrameStrata("BACKGROUND")
+        frame.glide = {}
+        world.others[i] = frame
+    end
+    -- Another node in this frame: no glide from the last one's place.
+    local glide = frame.glide
+    if glide.name ~= marker.name or (glide.mx - marker.mx) ^ 2 + (glide.my - marker.my) ^ 2 > 6.25e-6 then glide.x = nil end
+    glide.name, glide.mx, glide.my = marker.name, marker.mx, marker.my
+    local gx, gy = world.Glide(glide, x, y, passed)
+    local scale = math.max(0.2, math.min(1, 15 / reach))
+    frame.wide, frame.tall = 60, 560 * math.min(8 / reach, 0.3) / 2 / scale
+    frame:SetScale(scale)
+    frame:SetSize(frame.wide, frame.tall)
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", UIParent, "CENTER", gx / scale, gy / scale)
+    if not frame:IsShown() then frame.fade = now end
+    if not frame:IsShown() or frame.kind ~= LookOf(marker.kind) then world.Fill(frame, marker.kind) end
+    world.FadeIn(frame, now, frame.fade)
+end
+
 -- Test spots for a measurement: { radians right of the marked node, distance factor }.
 world.TRIES = { { 0.35, 0.5 }, { -0.35, 0.5 }, { 0.6, 0.5 }, { -0.6, 0.5 }, { 0.35, 1.6 }, { -0.35, 1.6 } }
 
@@ -477,28 +504,7 @@ function world.Several(nav, now, busy, passed)
                     local x, y = world.Project(reach, side + math.atan2(east, north) - way, down, zoom, pivot)
                     if x and math.abs(x * focal) < halfWide and math.abs(y * focal) < halfTall then
                         shown = shown + 1
-                        local frame = world.others[shown]
-                        if not frame then
-                            frame = NewSparkles()
-                            frame:SetParent(UIParent)
-                            frame:SetFrameStrata("BACKGROUND")
-                            frame.glide = {}
-                            world.others[shown] = frame
-                        end
-                        -- Another node in this frame: no glide from the last one's place.
-                        local glide = frame.glide
-                        if glide.name ~= marker.name or (glide.mx - marker.mx) ^ 2 + (glide.my - marker.my) ^ 2 > 6.25e-6 then glide.x = nil end
-                        glide.name, glide.mx, glide.my = marker.name, marker.mx, marker.my
-                        local gx, gy = world.Glide(glide, x * focal, y * focal, passed)
-                        local scale = math.max(0.2, math.min(1, 15 / reach))
-                        frame.wide, frame.tall = 60, 560 * math.min(8 / reach, 0.3) / 2 / scale
-                        frame:SetScale(scale)
-                        frame:SetSize(frame.wide, frame.tall)
-                        frame:ClearAllPoints()
-                        frame:SetPoint("CENTER", UIParent, "CENTER", gx / scale, gy / scale)
-                        if not frame:IsShown() then frame.fade = now end
-                        if not frame:IsShown() or frame.kind ~= LookOf(marker.kind) then world.Fill(frame, marker.kind) end
-                        world.FadeIn(frame, now, frame.fade)
+                        world.Other(shown, marker, x * focal, y * focal, reach, now, passed)
                     end
                 end
             end
@@ -530,6 +536,91 @@ function world.Several(nav, now, busy, passed)
     world.Clear(shown + 1)
 end
 
+-- Blizzard's marker unseen while world.hide (alpha 0 after its own UpdateAlpha).
+function world.HookMarker()
+    if world.hooked or not (SuperTrackedFrame and SuperTrackedFrame.UpdateAlpha) then return end
+    world.hooked = true
+    hooksecurefunc(SuperTrackedFrame, "UpdateAlpha", function(marker)
+        if world.hide then marker:SetAlpha(0) end
+    end)
+end
+
+-- Keep my tracked quest, with quick pins: while a quest is tracked the pin goes on the
+-- marked node only for a moment, when the view has settled after a turn or zoom, to
+-- read the camera from the game's marker; then the quest gets its navigation back.
+-- Until the next one the sparkles are placed from that reading, turning with you.
+local PEEK_TURN, PEEK_ZOOM, PEEK_STILL, PEEK_GAP, PEEK_OLD = 0.2, 1, 0.5, 2, 15
+function world.Questing(busy)
+    local now, peek = GetTime(), world.peek
+    local map, px, py, wide, tall = MapPosition()
+    local zoom, facing = GetCameraZoom and GetCameraZoom(), PlayerFacing()
+    if issecretvalue(zoom) then zoom = nil end
+    if peek then
+        if busy or now < peek.due then return end
+        -- Read the camera from where the marker is now, then give the quest its way back.
+        local nav = C_Navigation.GetFrame()
+        local X, Y
+        if nav and C_Navigation.HasValidScreenPosition() and not C_Navigation.WasClampedToScreen() then X, Y = world.Where(nav) end
+        local at = world.at
+        if X and zoom and facing and map and at and at.map == map then
+            local focal, pivot = world.Lens()
+            local east, north = (at.mx - px) * wide, (py - at.my) * tall
+            local far, way = math.sqrt(east * east + north * north), math.atan2(east, north)
+            local side, down = world.Camera(X / focal, Y / focal, far, zoom, pivot)
+            if side then world.view = { yaw = way - side, down = down, zoom = zoom, facing = facing, map = map, at = now } end
+        end
+        world.Back()
+        return
+    end
+    if world.at then world.Back() end -- the far sparkles had the pin when the quest was tracked
+    world.hide = false
+    -- Pin again when the view has been still for a moment after a turn or zoom.
+    if facing ~= world.lastFacing or zoom ~= world.lastZoom then world.stillSince = now end
+    world.lastFacing, world.lastZoom = facing, zoom
+    local view = world.view
+    local stale = not view or view.map ~= map or not facing or not zoom
+        or math.abs((facing - view.facing + math.pi) % (2 * math.pi) - math.pi) > PEEK_TURN
+        or math.abs(zoom - view.zoom) > PEEK_ZOOM or now - view.at > PEEK_OLD
+    local quest = C_SuperTrack.GetSuperTrackedQuestID()
+    local target = zoom and facing and not busy and stale and now - (world.stillSince or now) >= PEEK_STILL and now - (world.peeked or -PEEK_GAP) >= PEEK_GAP
+        and not issecretvalue(quest) and world.Pick()
+    if target and C_Map.CanSetUserWaypointOnMap(target.map) then
+        world.pin, world.quest, world.tracked = C_Map.GetUserWaypoint(), quest, C_SuperTrack.IsSuperTrackingUserWaypoint()
+        world.at = { map = target.map, mx = target.mx, my = target.my, kind = target.kind, name = target.name }
+        world.Set(world.at)
+        world.peek, world.peeked = { due = now + (world.wait or 0.3) + 0.1 }, now
+        world.hide = true -- (the game's marker unseen on the herb meanwhile)
+        world.HookMarker()
+        return
+    end
+    -- Sparkles from the last reading: on the nearest nodes in view.
+    if world.frame and world.frame:IsShown() then world.Out() end -- (the marker's own sparkles, from before)
+    if not (view and view.map == map and zoom and facing) then
+        world.shown = 0
+        return world.Clear()
+    end
+    local passed = math.min(now - (world.seen or now), 0.1)
+    world.seen = now
+    local focal, pivot = world.Lens()
+    local yaw = view.yaw - (facing - view.facing) -- (the camera turns with you; facing counts the other way)
+    local halfWide, halfTall, shown = UIParent:GetWidth() / 2, UIParent:GetHeight() / 2, 0
+    for _, marker in ipairs(Markers()) do -- (nearest first)
+        if shown == 5 then break end
+        if not marker.hard and not marker.dim and marker.kind ~= "rares" and marker.map == map and marker.yards and marker.yards >= 12
+            and ns.db[LookOf(marker.kind)] then
+            local east, north = (marker.mx - px) * wide, (py - marker.my) * tall
+            local reach = math.sqrt(east * east + north * north)
+            local x, y = world.Project(reach, math.atan2(east, north) - yaw, view.down, zoom, pivot)
+            if x and math.abs(x * focal) < halfWide and math.abs(y * focal) < halfTall then
+                shown = shown + 1
+                world.Other(shown, marker, x * focal, y * focal, reach, now, passed)
+            end
+        end
+    end
+    world.shown = shown
+    world.Clear(shown + 1)
+end
+
 -- Every frame: move the pin to the target and the sparkles to the marker.
 function world.Update()
     -- Off and nothing left to clean up.
@@ -544,7 +635,9 @@ function world.Update()
         end
         return
     end
-    local target = ns.db.worldMark and not world.QuestFirst() and world.Pick()
+    if ns.db.worldMark and world.QuestFirst() then return world.Questing(busy) end
+    world.view = nil
+    local target = ns.db.worldMark and world.Pick()
     local at = world.at
     if busy then
         -- leave the pin alone
@@ -578,12 +671,7 @@ function world.Update()
     at = world.at
     local sparkly = at and ns.db[LookOf(at.kind)] or false
     world.hide = sparkly and not world.broken -- with no sparkles possible, Blizzard's marker stays
-    if world.hide and not world.hooked and SuperTrackedFrame and SuperTrackedFrame.UpdateAlpha then
-        world.hooked = true
-        hooksecurefunc(SuperTrackedFrame, "UpdateAlpha", function(marker)
-            if world.hide then marker:SetAlpha(0) end
-        end)
-    end
+    if world.hide then world.HookMarker() end
     -- Sparkles on the marker while it's on screen.
     local nav = sparkly and not world.broken and C_Navigation.GetFrame()
     local distance = nav and C_Navigation.GetDistance()
