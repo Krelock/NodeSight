@@ -35,7 +35,13 @@ local NODES = {
         { "Book", 200912 }, { "Meeting Stone", 197022 }, { "Lever", 201061 }, { "Gong", 201029 }, { "Brazier", 200925 },
     },
     bobber = { { "Fishing Bobber", 201000 } },
+    -- Creatures by display ID (creature = true), lying dead.
+    skinning = {
+        { "Plainstrider", 1219, creature = true }, { "Mottled Boar", 503, creature = true },
+        { "Young Wolf", 447, creature = true }, { "Flatland Cougar", 1059, creature = true },
+    },
 }
+local DEAD = 6 -- the "Dead" animation: a corpse lying still
 
 -- The camera looks down a little, as you see a node on the ground, and the
 -- node fills this much of the preview.
@@ -48,7 +54,7 @@ local ZOOM_IN, ZOOM_START, ZOOM_OUT = 0.4, 1.6, 2.2 -- times that distance
 local YARD = 768 / (2 * 25 * tan(math.rad(27)))
 local PLATE_OVER = 1.25 -- yards from the top of the node's box up to its plate
 local AREA = 100 -- the camera also stands back far enough for sparkles this size
-local NEARER = { herbs = 0.85 } -- herbs are small next to their sparkles: the camera a little nearer
+local NEARER = { herbs = 0.85, skinning = 0.65 } -- small next to their sparkles (herbs) or their box (a corpse): the camera nearer
 
 -- Color sets, from the game's own colors (item qualities, class colors, gold text).
 local SETS = {
@@ -80,6 +86,8 @@ local TABS = {
         tip = "Sparkles on anything else you can use. Not mailboxes, chairs or doors." },
     { key = "bobber", name = "Fishing bobber", on = "Sparkles on your fishing bobber", icon = "Interface\\Icons\\Trade_Fishing",
         tip = "Sparkles on your bobber so it's easier to spot." },
+    { key = "skinning", name = "Skinning", on = "Sparkles on skinnable corpses (Beta)", icon = "Interface\\Icons\\INV_Misc_Pelt_Wolf_01",
+        tip = "Sparkles on corpses you can skin, once they're looted." },
     { key = "general", name = GENERAL_LABEL, icon = "Interface\\Icons\\INV_Misc_Gear_01" },
 }
 -- Added to the on/off box's tooltip.
@@ -121,8 +129,11 @@ local function Remember(kind)
     looks[kind][ns.db[keys.style]] = look
 end
 
--- Style i's look for a kind: as it was left, or the one it comes with (the bobber floats
--- on the water: every style starts at height 0 on it).
+-- Kinds whose every style starts at one height: the bobber floats on the water, and a
+-- corpse lies well under its plate (it stays where the living creature's head was).
+local START_HEIGHT = { bobber = 0, skinning = -115 }
+
+-- Style i's look for a kind: as it was left, or the one it comes with.
 local function LookOf(kind, i)
     local look = ns.db.styleLooks[kind] and ns.db.styleLooks[kind][i]
     if type(look) == "table" and type(look.size) == "number" and type(look.height) == "number" and type(look.count) == "number"
@@ -130,7 +141,7 @@ local function LookOf(kind, i)
         return look
     end
     local start = ns.SPARKLE_STYLES[i].start
-    return { size = start.size, height = kind == "bobber" and 0 or start.height, count = start.count, color = start.color, color2 = start.color2 }
+    return { size = start.size, height = START_HEIGHT[kind] or start.height, count = start.count, color = start.color, color2 = start.color2 }
 end
 
 -- Sets a part of the look (or "on") for the tab's kinds, then the sparkles and the window.
@@ -272,10 +283,10 @@ local function Checkbox(panel, y, text, what, tip)
     return box
 end
 
--- The look a style comes with (its tile gives it back); the bobber's height is 0.
+-- The look a style comes with (its tile gives it back).
 local function StyleStart(kind, what)
     local style = ns.SPARKLE_STYLES[ns.SparkleLook(kind, "style")] or ns.SPARKLE_STYLES[1]
-    if kind == "bobber" and what == "height" then return 0 end
+    if what == "height" and START_HEIGHT[kind] then return START_HEIGHT[kind] end
     return style.start[what]
 end
 
@@ -601,9 +612,17 @@ local function ShowNode()
     local nodes = NODES[kind]
     local index = window.node[kind] or 1
     local node = nodes[index]
-    if window.file ~= node[2] then -- only for another node: a new style keeps the view
-        window.file = node[2]
-        window.actor:SetModelByFileID(node[2])
+    local file = node.creature and "creature" .. node[2] or node[2]
+    if window.file ~= file then -- only for another node: a new style keeps the view
+        window.file = file
+        if node.creature then
+            window.actor:SetModelByCreatureDisplayID(node[2])
+            window.actor:SetAnimation(DEAD)
+        else
+            window.actor:SetModelByFileID(node[2])
+            if window.dead then window.actor:SetAnimation(0) end -- the actor keeps its animation
+        end
+        window.dead = node.creature
         window.scene.framed = false
     end
     window.scene.scale = node[3] or 1

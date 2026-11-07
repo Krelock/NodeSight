@@ -15,7 +15,7 @@ local sin, cos, floor, max, min, abs, pi = math.sin, math.cos, math.floor, math.
 
 -- Any sparkles on? Only then does the addon touch interact settings or plates.
 local function SparklesOn()
-    return ns.db.herbs or ns.db.ore or ns.db.chests or ns.db.quests or ns.db.others or ns.db.bobber
+    return ns.db.herbs or ns.db.ore or ns.db.chests or ns.db.quests or ns.db.others or ns.db.bobber or ns.db.skinning
 end
 
 -- The gathering nodes' sparkle (world/skillactivated/tradeskillnodes/sparkle.blp).
@@ -46,6 +46,8 @@ local SOUND_AGAIN, SOUND_APART = 30, 2
 local heard, heardAt = {}, 0 -- name: when its sound played
 -- The flash when a node comes into reach (Interface\Cooldown\starburst).
 local BURST = 131011
+-- Corpses: spells/fly03.blp, a fly with its wings on the left half, without on the right.
+local FLY = 166202
 
 -- Each sparkle is a body plus a smaller, lighter core.
 local CORE = 0.45 -- core size relative to the body
@@ -70,11 +72,11 @@ local known = {} -- plate: what its object's icon said it was
 ---------------------------------------------------------------------------
 -- Herbs keep the keys the shared look had, so saved settings carry over.
 
-local KINDS = { "herbs", "ore", "chests", "quests", "others", "bobber" }
+local KINDS = { "herbs", "ore", "chests", "quests", "others", "bobber", "skinning" }
 local KEYS = {
     herbs = { style = "herbStyle", color = "sparkleColor", color2 = "sparkleColor2", size = "size", height = "height", count = "count" },
 }
-for _, kind in ipairs({ "ore", "chests", "quests", "others", "bobber" }) do
+for _, kind in ipairs({ "ore", "chests", "quests", "others", "bobber", "skinning" }) do
     KEYS[kind] = { style = kind .. "Style", color = kind .. "Color", color2 = kind .. "Color2", size = kind .. "Size", height = kind .. "Height",
         count = kind .. "Count" }
 end
@@ -104,7 +106,8 @@ end
 
 -- Before the defaults are filled in: chests and quest objects (other objects before)
 -- start as other objects were, and the other kinds from the herbs' saved look (but
--- the bobber's height: it floats on the water, at 0).
+-- not the height of the bobber, which floats on the water, or of corpses, whose
+-- plate stays where the living creature's was).
 local function CarryOverLooks(db)
     for _, kind in ipairs({ "chests", "quests" }) do
         -- Only once: a kind's second color is often unset, and must stay so.
@@ -119,7 +122,7 @@ local function CarryOverLooks(db)
         local saved = db[KEYS.herbs[what]]
         if saved ~= nil then
             for kind, keys in pairs(KEYS) do
-                if kind ~= "herbs" and db[keys[what]] == nil and not (kind == "bobber" and what == "height") then db[keys[what]] = saved end
+                if kind ~= "herbs" and db[keys[what]] == nil and not ((kind == "bobber" or kind == "skinning") and what == "height") then db[keys[what]] = saved end
             end
         end
     end
@@ -136,13 +139,14 @@ local function HasName(name, a, b)
     return name:find(a, 1, true) ~= nil or (b ~= nil and name:find(b, 1, true) ~= nil)
 end
 
--- "herbs", "ore", "quests", "others", or "plain" (never sparkles: guild vault,
--- mailbox, chairs, doors). A hidden icon counts as "others".
+-- "herbs", "ore", "skinning", "quests", "others", or "plain" (never sparkles: guild
+-- vault, mailbox, chairs, doors). A hidden icon counts as "others".
 local function Kind(icon)
     if not icon:IsShown() then return "others" end
     local texture, atlas = icon:GetTexture(), icon:GetAtlas()
     if HasName(texture, "herb") or HasName(atlas, "herb") then return "herbs" end
     if HasName(texture, "mine", "mining") or HasName(atlas, "mine", "mining") then return "ore" end
+    if HasName(texture, "skin") or HasName(atlas, "skin") then return "skinning" end
     if HasName(texture, "buy") or HasName(atlas, "buy") then return "plain" end
     if HasName(texture, "mail") or HasName(atlas, "mail") then return "plain" end
     if HasName(texture, "questinteract") or HasName(atlas, "questinteract") then return "quests" end
@@ -576,6 +580,34 @@ local function DustSpawn(m, S)
     m.ph, m.s, m.tw = random() * 2 * pi, S * (0.06 + 0.05 * random()), 2 + 3 * random()
 end
 
+-- A fly: buzzes round its own spot in quick jerky loops, its wings flapping (the
+-- picture with wings and the one without, swapped), and lands on the corpse now and then.
+-- Fly i of n has its own part of the corpse, so they don't bunch up.
+local function NewFly(frame, S, i, n)
+    local across = (i - 0.5) / n - 0.5
+    local f = { wings = Layer(frame, FLY, 4, false, "painted"), body = Layer(frame, FLY, 4, false, "painted"),
+        cx = (across * 0.9 + (random() - 0.5) * 0.08) * S, cy = S * (0.06 + (i % 2) * 0.16 + 0.06 * random()),
+        rx = S * (0.04 + 0.05 * random()), ry = S * (0.03 + 0.04 * random()), f1 = 2.2 + 2.5 * random(),
+        f2 = 2.6 + 3 * random(), ph = 2 * pi * random(), s = S * (0.15 + 0.05 * random()),
+        lx = across * 0.55 * S, ly = S * (0.02 + 0.06 * random()), cycle = 4.6 * random() }
+    f.wings:SetTexCoord(0, 0.5, 0, 1)
+    f.body:SetTexCoord(0.5, 1, 0, 1)
+    return f
+end
+
+local function PutFly(frame, f, S, c)
+    local x = f.cx + sin(c * f.f1 + f.ph) * f.rx + sin(c * 13 + f.ph) * S * 0.006
+    local y = f.cy + sin(c * f.f2 + f.ph * 1.7) * f.ry + cos(c * 11 + f.ph) * S * 0.006
+    -- 2.2 s flying, then down to its spot, 1.6 s sitting with its wings folded, and up
+    local u, down = (c + f.cycle) % 4.6 - 2.2, 0
+    if u > 0 then down = u < 0.4 and EaseOut(u / 0.4) or u < 2 and 1 or 1 - EaseOut((u - 2) / 0.4) end
+    x, y = x + (f.lx - x) * down, y + (f.ly - y) * down
+    local sitting = down > 0.98
+    local up = not sitting and floor(c * 30) % 2 == 0
+    Put(frame, f.wings, x, y, f.s, nil, up and 1 or 0)
+    Put(frame, f.body, x, y, sitting and f.s * 0.9 or f.s, nil, up and 0 or 1)
+end
+
 -- Each style: its name, how it is built (Build: its parts for count n), and
 -- Draw (moves them; c is the frame's clock, A its alpha). Twinkle is the
 -- animations above. start: the look a style comes with when it is picked;
@@ -821,6 +853,16 @@ local STYLES = {
                 local glow = max(0, sin(c * f.blink + f.bph)) ^ 1.5
                 Put(frame, f.body, f.x + sin(c * f.f1 + f.ph) * f.rx, f.y + sin(c * f.f2 + f.ph * 1.7) * f.ry, f.s, nil, 0.15 + 0.85 * glow)
             end
+        end },
+    { name = "Landing flies", only = "skinning", start = { size = 100, height = -60, count = 9, color = "ffffffff" }, tip = "Flies buzz around the corpse and land on it now and then. Count is how many, 2 to 6.",
+        Build = function(frame, n, S)
+            local flies = {}
+            local count = min(6, max(2, floor(n / 2 + 0.5)))
+            for i = 1, count do flies[i] = NewFly(frame, S, i, count) end
+            return { flies = flies }
+        end,
+        Draw = function(frame, p, S, _, c)
+            for _, f in ipairs(p.flies) do PutFly(frame, f, S, c) end
         end },
 }
 
@@ -1282,9 +1324,29 @@ local function SetHidden(unitFrame, hide)
     hidden[unitFrame] = hide or nil
 end
 
+-- Name only: every part of a unit frame but its name faded out (Blizzard never
+-- sets these parts' alpha). The target highlight ignores its parent's alpha.
+local BARE_PARTS = { "HealthBarsContainer", "CastBarsContainer", "PlayerLevelDiffFrame", "LevelFrame",
+    "ClassificationFrame", "AurasFrame", "SoftTargetFrame" }
+local bare = {} -- unit frame: its highlight's alpha before
+local function SetBare(unitFrame, on)
+    if not on and bare[unitFrame] == nil then return end
+    local light = unitFrame.selectionHighlight
+    if on and bare[unitFrame] == nil then
+        local alpha = light and light:GetAlpha()
+        bare[unitFrame] = not issecretvalue(alpha) and alpha or 0.25 -- 0.25: the XML's
+    end
+    for _, key in ipairs(BARE_PARTS) do
+        local part = unitFrame[key]
+        if part then part:SetAlpha(on and not (key == "SoftTargetFrame" and ns.db.gameIcons) and 0 or 1) end
+    end
+    if light then light:SetAlpha(on and 0 or bare[unitFrame]) end
+    if not on then bare[unitFrame] = nil end
+end
+
 -- Nothing to do: sparkles off and nothing of ours on any plate.
 local function Idle()
-    return not SparklesOn() and not next(hidden) and not next(sparkles)
+    return not SparklesOn() and not next(hidden) and not next(bare) and not next(sparkles)
 end
 
 -- Quest objects you loot or use often have the plain interact icon (a pumpkin has
@@ -1410,6 +1472,32 @@ local function SparkleKind(unit, icon)
     return kind
 end
 
+-- Skinning sparkles need plates on corpses, which the game only gives with
+-- "Always show nameplates for soft interact target". That shows a plate on the
+-- NPC you can talk to as well; such plates show only the name while they last.
+local extra = {} -- plate: an NPC's plate shown that way
+
+local function Corpse(unit)
+    local dead = UnitIsDead(unit)
+    if issecretvalue(dead) or not dead then return false end
+    local player = UnitIsPlayer(unit)
+    return not issecretvalue(player) and not player
+end
+
+-- A corpse sparkles only with the skinning icon: a corpse still to loot has the game's own loot sparkle.
+local function CorpseKind(unit, icon)
+    return ObjectKind(unit, icon) == "skinning" and "skinning" or "plain"
+end
+
+-- A friendly NPC's plate that shows only because it is your interact target.
+local function InteractOnly(unit)
+    if GetCVarBool("nameplateShowFriendlyNpcs") or UnitCanAttack("player", unit) then return false end
+    local player = UnitIsPlayer(unit)
+    if issecretvalue(player) or player then return false end
+    local picked = UnitIsUnit(unit, "softinteract")
+    return not issecretvalue(picked) and picked == true
+end
+
 -- A plate got a unit or changed: hide object plates and sparkle by kind.
 local function Update(unit)
     if Idle() then return end
@@ -1419,12 +1507,23 @@ local function Update(unit)
         local scriptPlate = NamePlateDriverFrame:GetNamePlateForUnit(unit)
         local unitFrame = scriptPlate and scriptPlate.UnitFrame
         if unitFrame and hidden[unitFrame] then SetHidden(unitFrame, false) end
+        if unitFrame then SetBare(unitFrame, false) end
         return
     end
     local namePlate = C_NamePlate.GetNamePlateForUnit(unit)
     local unitFrame = namePlate and namePlate.UnitFrame
     if not unitFrame then return end -- forbidden (friendly in instances) or gone
-    if UnitIsGameObject(unit) and SparklesOn() then
+    local object = UnitIsGameObject(unit)
+    local corpse = not object and ns.db.skinning and Corpse(unit)
+    if not object and not corpse and ns.db.skinning and (extra[namePlate] or InteractOnly(unit)) then
+        extra[namePlate] = true
+        if hidden[unitFrame] then SetHidden(unitFrame, false) end
+        SetBare(unitFrame, true)
+        return HideSparkles(namePlate)
+    end
+    extra[namePlate] = nil
+    SetBare(unitFrame, false)
+    if (object or corpse) and SparklesOn() then
         -- Hide every object plate (alpha only); sparkle herbs, ore and, if set, others.
         if not ns.db.gameIcons then
             SetHidden(unitFrame, true)
@@ -1438,7 +1537,8 @@ local function Update(unit)
             if ns.db[gathered.kind] and not hide then return end
             return HideSparkles(namePlate, true)
         end
-        local kind = SparkleKind(unit, unitFrame.SoftTargetFrame.Icon)
+        local icon = unitFrame.SoftTargetFrame.Icon
+        local kind = object and SparkleKind(unit, icon) or CorpseKind(unit, icon)
         -- The game shows the icon only on the interact target: a herb or ore that stops
         -- being it fades out, not taken for an other object.
         if kind == "others" and known[namePlate] then return HideSparkles(namePlate, true) end
@@ -1462,9 +1562,10 @@ end
 hooksecurefunc(NamePlateDriverFrame, "OnNamePlateAdded", function(_, unit)
     if Idle() then
         wipe(known)
+        wipe(extra)
     elseif unit:find("^nameplate%d+$") then
         local namePlate = C_NamePlate.GetNamePlateForUnit(unit)
-        if namePlate then known[namePlate] = nil end -- a new object on it
+        if namePlate then known[namePlate], extra[namePlate] = nil, nil end -- a new object on it
     end
     Update(unit)
 end)
@@ -1491,8 +1592,16 @@ local WANTED = {
     { "SoftTargetInteractRange", tostring(RANGE) },
     -- NPC interact icons have no plate to hide, so shrink them to 0.
     { "SoftTargetWorldtextSize", "0", npcIcon = true },
+    -- Corpses only get a plate with this. It would give the NPC you can talk to
+    -- one too (hiding its own name), so it's on only while a corpse is the target.
+    { "SoftTargetNameplateInteract", "1", corpse = true },
 }
 local pendingSetup -- a change is waiting for combat to end
+local corpseShown -- the plates setting is on for the corpse you target
+
+local function CorpseTargeted()
+    return ns.db.skinning and UnitExists("softinteract") and Corpse("softinteract") or false
+end
 
 -- CVars can come back reformatted ("30.000000" for 30).
 local function Same(a, b)
@@ -1508,10 +1617,11 @@ end
 
 -- Sets each needed CVar, saving the old value.
 local function ApplySetup()
+    corpseShown = CorpseTargeted()
     for _, entry in ipairs(WANTED) do
         local cvar, value = entry[1], entry[2]
         local old = C_CVar.GetCVar(cvar)
-        if entry.npcIcon and ns.db.gameIcons then
+        if entry.npcIcon and ns.db.gameIcons or entry.corpse and not corpseShown then
             PutBack(cvar)
         elseif old ~= nil and not Same(old, value) then
             C_CVar.SetCVar(cvar, value)
@@ -1525,6 +1635,7 @@ local function ApplySetup()
 end
 
 local function RestoreSetup()
+    corpseShown = false
     for cvar in pairs(ns.db.saved) do PutBack(cvar) end
     for cvar in pairs(ns.db.applied) do ns.db.applied[cvar] = nil end
 end
@@ -1538,6 +1649,13 @@ local function Setup()
     pendingSetup = nil
     if SparklesOn() then ApplySetup() else RestoreSetup() end
 end
+
+-- A corpse becoming the interact target, or no longer being it.
+local corpseWatch = CreateFrame("Frame")
+corpseWatch:RegisterEvent("PLAYER_SOFT_INTERACT_CHANGED")
+corpseWatch:SetScript("OnEvent", function()
+    if CorpseTargeted() ~= corpseShown then Setup() end
+end)
 
 -- What the other files use of this one.
 ns.sparkles, ns.hidden, ns.leaving = sparkles, hidden, leaving

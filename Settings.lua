@@ -1,4 +1,4 @@
--- NodeSight's settings: the main page plus Arrow, Symbols, Switch, Sparkles and Beta.
+-- NodeSight's settings: the main page plus Arrow, Minimap, Switch, Sparkles and Beta.
 
 local ADDON_NAME, ns = ...
 
@@ -8,7 +8,7 @@ local defaults, SHAPES, world = ns.defaults, ns.SHAPES, ns.world
 local UpdateScanner, ApplyDotScale, ApplyArrowLock = ns.UpdateScanner, ns.ApplyDotScale, ns.ApplyArrowLock
 local ApplyArrowSize = ns.ApplyArrowSize
 local ShowWhatsNew = ns.ShowWhatsNew
-local SwitchDistance, SwitchReset, SWITCH_REACH = ns.SwitchDistance, ns.SwitchReset, ns.SWITCH_REACH
+local SwitchDistance, SwitchReset = ns.SwitchDistance, ns.SwitchReset
 
 ---------------------------------------------------------------------------
 -- Settings panel
@@ -70,8 +70,25 @@ local function RegisterSettings()
 
     local function Checkbox(key, name, tooltip, onChange)
         local setting = Register(key, name, onChange)
-        Settings.CreateCheckbox(category, setting, tooltip)
-        return setting
+        return setting, Settings.CreateCheckbox(category, setting, tooltip)
+    end
+
+    local function Header(text)
+        if CreateSettingsListSectionHeaderInitializer then
+            layout:AddInitializer(CreateSettingsListSectionHeaderInitializer(text))
+        end
+    end
+
+    -- Shown rows are worked out again only when the page is redrawn.
+    local function Redraw()
+        if SettingsInbound and SettingsInbound.RepairDisplay then pcall(SettingsInbound.RepairDisplay) end
+    end
+
+    -- A row indented under another, shown only while shown() says so, where the client can.
+    local function Indent(row, parent, shown)
+        if not row or not parent then return end
+        if type(row.SetParentInitializer) == "function" then row:SetParentInitializer(parent, shown) end
+        if type(row.AddShownPredicate) == "function" then row:AddShownPredicate(shown) end
     end
 
     local function Slider(key, name, minValue, maxValue, tooltip, onChange, step, label)
@@ -107,29 +124,57 @@ local function RegisterSettings()
         EventRegistry:RegisterCallback("Settings.CategoryChanged", function(_, shown)
             button:SetShown(pages[shown] == true)
         end, button)
+        -- Until this version's notes are opened, the button's own hover light
+        -- (UIPanelButtonHighlightTexture's picture) slowly fades in and out while it shows.
+        local version = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version")
+        if NodeSightDB.notesSeen ~= version then
+            local light = button:CreateTexture(nil, "ARTWORK")
+            light:SetTexture("Interface\\Buttons\\UI-Panel-Button-Highlight")
+            light:SetTexCoord(0, 0.625, 0, 0.6875)
+            light:SetBlendMode("ADD")
+            light:SetAllPoints(button)
+            local pulse = light:CreateAnimationGroup()
+            pulse:SetLooping("BOUNCE")
+            local fade = pulse:CreateAnimation("Alpha")
+            fade:SetFromAlpha(1)
+            fade:SetToAlpha(0.1)
+            fade:SetDuration(1)
+            fade:SetSmoothing("IN_OUT")
+            button:HookScript("OnShow", function()
+                if NodeSightDB.notesSeen ~= version then pulse:Play() end
+            end)
+            button:HookScript("OnClick", function()
+                NodeSightDB.notesSeen = version
+                pulse:Stop()
+                light:Hide()
+            end)
+        end
     end
 
     Checkbox("scan", "Scan the minimap",
         "Scans the minimap for herbs and ore, for the arrow and the symbols. Turn it off to use only the sparkles.",
         UpdateScanner)
-    Checkbox("combatScan", "Scan in combat",
-        "Keeps scanning during fights, so new herbs and ore still show up. With it off, new ones show up after the fight. Needs Scan the minimap.",
-        UpdateScanner)
-    local arrowTip = "An arrow near the top of the screen points to the nearest herb or ore on your minimap, with its name and distance. Drag it to move it. Needs Scan the minimap."
-    local arrow = Checkbox("arrow", "Arrow to the nearest herb or ore", arrowTip, UpdateScanner)
     Checkbox("mapIcons", "Herb and ore symbols",
         "Puts the herb's or ore's map symbol on the minimap where the scan finds one. Needs Scan the minimap, and Find Herbs or Find Minerals on.",
         UpdateScanner)
-    Checkbox("sound", "Sound for new finds",
-        "Plays the minimap's ping sound when something new shows up on your minimap, not seen in the last minute. Not for a herb or ore above your skill. Needs Scan the minimap.",
-        UpdateScanner)
-    Checkbox("skillLine", "Required skill in tooltips",
-        "Shows the skill a herb or ore needs in its tooltip.",
-        function() end) -- (tooltips are built again each time they show)
+    local arrowTip = "An arrow near the top of the screen points to the nearest herb or ore on your minimap, with its name and distance. Drag it to move it. Needs Scan the minimap."
+    local arrow = Checkbox("arrow", "Arrow to the nearest herb or ore", arrowTip, UpdateScanner)
     local findersTip = "Switches between Find Herbs and Find Minerals. You need both trained and one active to start."
     -- Toggling the switch also ends a stop after failed switches; other settings keep it.
     local finders = Checkbox("switchFinders", "Switch between herbs and ore", findersTip,
         function() SwitchReset() UpdateScanner() end)
+    local _, soundRow = Checkbox("sound", "Sound for new finds",
+        "Plays a sound when something new shows up on your minimap. Not for herbs or ore above your skill. Needs Scan the minimap.",
+        function() UpdateScanner() Redraw() end)
+    local function SoundOn() return ns.db.sound end
+    Indent(Dropdown("soundKit", "Sound", ns.FIND_SOUND_NAMES, "Which of the game's sounds plays. Picking one plays it.",
+        ns.PlayFindSound), soundRow, SoundOn)
+    Indent(select(2, Checkbox("soundSkillUps", "Only for skill-ups",
+        "Only herbs and ore you can still get a skill-up from make the sound. Not chests or rares.",
+        UpdateScanner)), soundRow, SoundOn)
+    Checkbox("skillLine", "Required skill in tooltips",
+        "Shows the skill a herb or ore needs in its tooltip.",
+        function() end) -- (tooltips are built again each time they show)
 
     -- Every kind of sparkle at once, like the Sparkle window's "Sparkles on everything".
     local function AllOn()
@@ -148,7 +193,7 @@ local function RegisterSettings()
         ns.RefreshSparkleWindow()
         button:SetText(AllText())
     end, function()
-        local tip = "Turns sparkles on or off for herbs, ore, chests, quest objects, other objects and your fishing bobber. "
+        local tip = "Turns sparkles on or off for herbs, ore, chests, quest objects, other objects, your fishing bobber and skinnable corpses. "
             .. ((GamepadUI() or WindowFailed()) and "Each has its own setting on the Sparkles page." or "Each has its own box in the Sparkle window.")
         if InteractOff() then tip = tip .. "\n\n" .. RED_FONT_COLOR:WrapTextInColorCode(ns.INTERACT_OFF) end
         return tip
@@ -164,61 +209,76 @@ local function RegisterSettings()
     Page("Arrow")
     Settings.CreateCheckbox(category, arrow, arrowTip) -- the same setting as on NodeSight's own page
     Checkbox("arrowLocked", "Lock the arrow in place",
-        "The arrow can't be dragged, and your clicks go through it to the world. Needs Arrow to the nearest herb or ore.",
+        "The arrow can't be dragged, and your clicks go through it to the world.",
         ApplyArrowLock)
     Checkbox("arrowSkip", "Skip the node you're at",
-        "The arrow passes over a node within 5 yards of you and points to the next one. Needs Arrow to the nearest herb or ore.",
-        UpdateScanner)
-    Checkbox("arrowFirst", "Herbs and ore first",
-        "The arrow points to a chest, rare, leyline or convergence only when no herb or ore is in sight. Needs Arrow to the nearest herb or ore.",
-        UpdateScanner)
-    Checkbox("arrowHerbs", "Herbs", "The arrow points to herbs. Needs Arrow to the nearest herb or ore.", UpdateScanner)
-    Checkbox("arrowOre", "Ore", "The arrow points to ore. Needs Arrow to the nearest herb or ore.", UpdateScanner)
-    Checkbox("arrowChests", "Chests", "The arrow points to treasure chests (Find Treasure). Needs Arrow to the nearest herb or ore.", UpdateScanner)
-    Checkbox("arrowRares", "Rares",
-        "The arrow points to rare beasts and humanoids. Needs Arrow to the nearest herb or ore, and Rares on the minimap (Beta).",
-        UpdateScanner)
-    Checkbox("arrowLeylines", "Leylines and convergences",
-        "The arrow points to leylines and elemental convergences. Needs Arrow to the nearest herb or ore, and Leylines and convergences.",
+        "The arrow passes over a node within 5 yards of you and points to the next one.",
         UpdateScanner)
     Slider("arrowSize", "Arrow size", 20, 100,
-        "How big the arrow is. The default is " .. defaults.arrowSize .. ". Needs Arrow to the nearest herb or ore.",
+        "How big the arrow and its text are. The default is " .. defaults.arrowSize .. ".",
         ApplyArrowSize)
+    Header("Points to")
+    Checkbox("arrowFirst", "Herbs and ore first",
+        "The arrow points to a chest, rare, leyline or convergence only when no herb or ore is in sight.",
+        UpdateScanner)
+    Checkbox("arrowHerbs", "Herbs", "The arrow points to herbs.", UpdateScanner)
+    Checkbox("arrowOre", "Ore", "The arrow points to ore.", UpdateScanner)
+    Checkbox("arrowChests", "Chests", "The arrow points to treasure chests (Find Treasure).", UpdateScanner)
+    Checkbox("arrowRares", "Rares",
+        "The arrow points to rare beasts and humanoids. Needs Rares on the minimap (Minimap page).",
+        UpdateScanner)
+    Checkbox("arrowLeylines", "Leylines and convergences",
+        "The arrow points to leylines and elemental convergences. Needs Leylines and convergences (Minimap page).",
+        UpdateScanner)
 
-    Page("Symbols")
-    Dropdown("skillLook", "Skill colors", ns.SKILL_LOOKS,
-        "How a herb's or ore's symbol shows your skill. Red when too low: a red symbol for one you don't have the skill for yet. Colored ring and Colored gem: the profession window's colors, red when too low, then orange, yellow, green and gray as a skill-up gets less likely. Colored ring needs Symbol shape at Round, gold ring or Round, slim gold ring. Needs Herb and ore symbols.",
-        UpdateScanner)
-    Checkbox("clearNear", "See-through near you",
-        "A symbol over your own arrow on the minimap is see-through, so you still see which way you face. Needs Herb and ore symbols.",
-        UpdateScanner)
+    Page("Minimap")
+    Header("Symbols for")
     Checkbox("leylines", "Leylines and convergences",
         "High Order Skyborne get symbols on leylines while Read Leyline is ready, Windshaper Skyborne on elemental convergences while Skysight is ready. Needs Scan the minimap.",
         UpdateScanner)
+    local _, rares = Checkbox("rares", "Rares on the minimap",
+        "For hunters and druids: a rare beast's or humanoid's dot gets a rare symbol. Needs Scan the minimap, and Track Beasts or Track Humanoids on.",
+        function() UpdateScanner() Redraw() end)
+    local rareIcon = Dropdown("rareIcon", "Rare symbol", { "Rare icon", "Elite rare icon", "Star" },
+        "Which of the game's own rare symbols a rare beast's or humanoid's dot gets.",
+        UpdateScanner)
+    Indent(rareIcon, rares, function() return ns.db.rares end)
+    Header("Look")
     Dropdown("shape", "Symbol shape", SHAPES,
         "The shape of the herb and ore symbols on the minimap. Needs Scan the minimap.",
         UpdateScanner)
+    Dropdown("skillLook", "Skill colors", ns.SKILL_LOOKS,
+        "How a symbol shows your skill. Red when too low: red if you can't gather it yet. Colored ring and Colored gem: the profession window's skill-up colors, from red to gray. Colored ring needs a gold ring Symbol shape. Needs Herb and ore symbols.",
+        UpdateScanner)
     Checkbox("oreRings", "High visibility tin and iron",
-        "Tin and iron look alike on the minimap: with this on, tin gets a green ring and iron a rust one. Needs Symbol shape at Round, gold ring or Round, slim gold ring. With Skill colors at Colored ring, the skill's color goes first.",
+        "Tin gets a green ring and iron a rust one, so they're easy to tell apart. Needs a gold ring Symbol shape.",
+        UpdateScanner)
+    Dropdown("nearLook", "Symbols near you", ns.NEAR_LOOKS,
+        "A symbol over your own arrow on the minimap can be see-through or hidden, so you still see which way you face. Needs Herb and ore symbols.",
         UpdateScanner)
     Slider("iconSize", "Symbol size", 8, 24,
         "How big the herb and ore symbols on the minimap are. The default is " .. defaults.iconSize .. ". Needs Herb and ore symbols.",
         UpdateScanner)
     Slider("dotScale", "Size of the game's own dots", 50, 300,
-        "How big the game's own dots on the minimap are, in percent: 100 is the game's own size, which NodeSight leaves alone until you move this. Change it together with Symbol size to get the size you want.",
+        "Resizes the game's own minimap dots. 100 is the game's own size. Use it with Symbol size.",
         ApplyDotScale)
+    Header("Scanning")
+    Checkbox("combatScan", "Scan in combat",
+        "Keeps scanning during fights, so new herbs and ore still show up. With it off, new ones show up after the fight. Needs Scan the minimap.",
+        UpdateScanner)
     Slider("scanDetail", "Scan detail", 1, 3,
         "How closely the minimap is scanned: 3 is the most exact, 1 uses the least CPU but can place herbs poorly. The default is " .. defaults.scanDetail .. ". Needs Scan the minimap.",
         UpdateScanner)
     Dropdown("minimapShape", "Minimap shape", ns.MapShapeChoices,
-        "Automatic asks your UI addon whether the minimap is square and shows the answer in brackets. Choose Square if your minimap is square but herbs and ore in its corners don't show up. Needs Scan the minimap.",
+        "Automatic asks your UI addon and shows its answer in brackets. Pick Square if herbs and ore in the corners of a square minimap don't show up. Needs Scan the minimap.",
         UpdateScanner)
 
     Page("Switch")
     Settings.CreateCheckbox(category, finders, findersTip) -- the same setting as on NodeSight's own page
+    Header("When")
     -- The measure's change restarts the way and redraws the page, so only its slider shows.
     local measure = Dropdown("switchMeasure", "Measure distance in", ns.SWITCH_MEASURES,
-        "How the distance between switches is measured: in percent of what your minimap shows (it changes with the zoom), in yards, or in seconds on the move. Needs Switch between herbs and ore.",
+        "How the distance between switches is measured: percent of what your minimap shows (it changes with the zoom), yards, or seconds on the move.",
         function()
             ns.SwitchMeasureChanged()
             UpdateScanner()
@@ -232,16 +292,16 @@ local function RegisterSettings()
         if type(slider.AddShownPredicate) == "function" then slider:AddShownPredicate(Chosen) end
     end
     local percent, percentSlider = Slider("switchPercent", "Distance between switches", 20, 100,
-        "How far you go between switches, in percent of what your minimap shows: farther when zoomed out or outdoors. The default is " .. defaults.switchPercent .. " %. Needs Switch between herbs and ore, and Measure distance in at % of the minimap.",
+        "How far you go between switches, in percent of what your minimap shows: farther when zoomed out or outdoors. The default is " .. defaults.switchPercent .. " %.",
         UpdateScanner, 5, Percent)
     Under(percentSlider, 1)
     local yards, seconds = ns.SWITCH_RANGES.switchDistanceYards, ns.SWITCH_RANGES.switchSeconds
     local _, yardsSlider = Slider("switchDistanceYards", "Distance between switches (yards)", yards[1], yards[2],
-        "How far you go between switches, in yards. The default is " .. defaults.switchDistanceYards .. ". Needs Switch between herbs and ore, and Measure distance in at Yards.",
+        "How far you go between switches, in yards. The default is " .. defaults.switchDistanceYards .. ".",
         UpdateScanner, yards[3])
     Under(yardsSlider, 2)
     local _, secondsSlider = Slider("switchSeconds", "Time between switches (seconds)", seconds[1], seconds[2],
-        "How long you move between switches, in seconds. Time standing still doesn't count. The default is " .. defaults.switchSeconds .. ". Needs Switch between herbs and ore, and Measure distance in at Seconds.",
+        "How long you move between switches, in seconds. Time standing still doesn't count. The default is " .. defaults.switchSeconds .. ".",
         UpdateScanner, seconds[3])
     Under(secondsSlider, 3)
     -- The yards in its label follow the minimap's zoom while the settings are open.
@@ -252,34 +312,36 @@ local function RegisterSettings()
         if SettingsPanel and SettingsPanel:IsShown() then percent:NotifyUpdate() end
     end)
     Checkbox("switchMounted", "Only while mounted",
-        "Switches only while you ride a mount. Travel Form and Ghost Wolf don't count. Needs Switch between herbs and ore.",
+        "Switches only while you ride a mount. Travel Form and Ghost Wolf don't count.",
         UpdateScanner)
+    Header("Pauses")
     Checkbox("switchPauseBusy", "Pause while casting, looting or with a spell or item on the cursor",
-        "Switching pauses while you cast, gather or loot, and while a spell waits for a target or something is on your cursor. Needs Switch between herbs and ore.",
+        "Switching pauses while you cast, gather or loot, and while a spell waits for a target or something is on your cursor.",
         UpdateScanner)
     Slider("switchEnemyYards", "Pause with an enemy targeted within about (yards)", 0, 60,
-        "Switching pauses while a living enemy is targeted within this distance, and for a second after your mouse moves onto one. Distances are about: without an exact distance from the game, NodeSight checks up to " .. SWITCH_REACH .. " yards, farther if one of your own spells reaches farther. Needs Switch between herbs and ore.",
+        "Switching pauses while you target a living enemy this close, and for a second after you mouse over one. Distances are rough: the game doesn't give exact ones.",
         UpdateScanner, 1, Off)
     Checkbox("switchPauseStealth", "Pause while stealthed",
-        "Switching pauses while you're stealthed. Needs Switch between herbs and ore.",
+        "Switching pauses while you're stealthed.",
         UpdateScanner)
     Slider("switchNearYards", "Pause near a herb or ore (yards)", 0, 40,
-        "Switching pauses this close to a herb or ore with a symbol, so you can walk up and gather it. Needs Switch between herbs and ore.",
+        "Switching pauses this close to a herb or ore with a symbol, so you can walk up and gather it.",
         UpdateScanner, 1, Off)
     Slider("switchAfterCast", "Pause after your own spells (seconds)", 0, 10,
-        "Switching pauses this long after your own spells end, and after you dismount, so the switch's global cooldown doesn't get in your way. Needs Switch between herbs and ore.",
+        "Switching pauses this long after your own spells end, and after you dismount, so the switch's global cooldown doesn't get in your way.",
         UpdateScanner, 1, Off)
+    Header("Where")
     Checkbox("switchWorld", "Switch in the open world",
-        "Switches while you're in the open world. Needs Switch between herbs and ore.",
+        "Switches while you're in the open world.",
         UpdateScanner)
     Checkbox("switchDungeons", "Switch in dungeons",
-        "Switches while you're in a dungeon. Needs Switch between herbs and ore.",
+        "Switches while you're in a dungeon.",
         UpdateScanner)
     Checkbox("switchRaids", "Switch in raids",
-        "Switches while you're in a raid. Needs Switch between herbs and ore.",
+        "Switches while you're in a raid.",
         UpdateScanner)
     Checkbox("switchBattlegrounds", "Switch in battlegrounds",
-        "Switches while you're in a battleground. Needs Switch between herbs and ore.",
+        "Switches while you're in a battleground.",
         UpdateScanner)
     if CreateSettingsListSectionHeaderInitializer then
         layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Thanks to tester617 for the Switch page"))
@@ -320,15 +382,13 @@ local function RegisterSettings()
     end
 
     Page("Beta")
-    Checkbox("rares", "Rares on the minimap (Beta)",
-        "For hunters and druids: a rare beast's or humanoid's dot gets a rare symbol. Needs Scan the minimap, and Track Beasts or Track Humanoids on.",
-        UpdateScanner)
-    Dropdown("rareIcon", "Rare symbol", { "Rare icon", "Elite rare icon", "Star" },
-        "Which of the game's own rare symbols a rare beast's or humanoid's dot gets. Needs Rares on the minimap.",
-        UpdateScanner)
-    Checkbox("worldMark", "Far away sparkles (Beta)",
+    local _, far = Checkbox("worldMark", "Far away sparkles (Beta)",
         "Sparkles on the herb or ore you face, from far away. Not perfect yet, and uses a lot more CPU. Takes over your map pin while on. Needs Sparkles on herbs or ore.",
+        function() world.Changed() Redraw() end)
+    local _, keepQuest = Checkbox("worldKeepQuest", "Keep my tracked quest (Beta)",
+        "While you track a quest, far away sparkles leave the game's navigation to it, so you keep the way to your quest. Untick to have far away sparkles while you quest too.",
         world.Changed)
+    Indent(keepQuest, far, function() return ns.db.worldMark end)
 
     Settings.RegisterAddOnCategory(main)
 end

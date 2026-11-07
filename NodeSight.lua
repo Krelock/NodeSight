@@ -35,6 +35,7 @@ local defaults = {
     quests = false, -- sparkles on quest objects
     others = false, -- sparkles on other objects
     bobber = false, -- sparkles on your fishing bobber
+    skinning = false, -- sparkles on corpses you can skin
     gameIcons = false, -- keep the game's interact icons while sparkles are on
     arrow = false, -- arrow to the nearest node
     arrowLocked = false, -- the arrow can't be dragged, and clicks go through it
@@ -52,8 +53,10 @@ local defaults = {
     iconSize = 11, -- symbol size
     skillLook = 1, -- how symbols show your skill (SKILL.looks): red when too low
     skillLine = true, -- "Requires Herbalism (15)" in herb and ore tooltips
-    clearNear = false, -- symbols see-through over your own arrow
+    nearLook = 1, -- a symbol over your own arrow: 1 shown, 2 see-through, 3 hidden
     sound = false, -- sound when something new shows up
+    soundKit = 1, -- which sound (FIND_SOUNDS)
+    soundSkillUps = false, -- the sound only for herbs and ore that can give a skill-up
     scan = true, -- the minimap scan
     scanDetail = 2, -- 3 full, 2 lighter, 1 lightest
     minimapShape = 1, -- 1 automatic (asks your UI addon), 2 round, 3 square
@@ -75,6 +78,7 @@ local defaults = {
     rareIcon = 2, -- which of ICONS.rares
     leylines = true, -- Skyborne: leylines and elemental convergences, while the racial is ready
     worldMark = false, -- Beta: sparkles on far away herbs and ore
+    worldKeepQuest = true, -- far sparkles leave a tracked quest's navigation alone
     dotScale = 100, -- the game's own dot size, in percent
     -- Each kind's sparkles (Sparkles.lua's KEYS): style (Sparkles.lua's STYLES),
     -- tint "aarrggbb" (white = none), area size, offset from the plate's bottom,
@@ -85,6 +89,7 @@ local defaults = {
     questsStyle = 1, questsColor = "ffffffff", questsSize = 100, questsHeight = -60, questsCount = 9,
     othersStyle = 1, othersColor = "ffffffff", othersSize = 100, othersHeight = -60, othersCount = 9,
     bobberStyle = 6, bobberColor = "ffffffff", bobberSize = 100, bobberHeight = 0, bobberCount = 9,
+    skinningStyle = 1, skinningColor = "ffffffff", skinningSize = 100, skinningHeight = -115, skinningCount = 9,
     brightness = 100, -- sparkle alpha, in percent
     reachLook = false, -- dimmer out of reach, a flash in reach
     combatHide = false, -- no sparkles in combat
@@ -150,9 +155,13 @@ local ARROW = "MiniMap-QuestArrow" -- points up
 -- The arrow's checkbox for each kind, and how near the node you're at is (yards).
 local ARROW_TO = { herbs = "arrowHerbs", ore = "arrowOre", treasure = "arrowChests", rares = "arrowRares", leyline = "arrowLeylines", convergence = "arrowLeylines" }
 local SKIP_YARDS = 5
--- See-through near you: the game draws your own arrow under addons' textures, so a
--- symbol over it (half its size plus this many minimap units from the middle) gets this alpha.
+-- Symbols near you: the game draws your own arrow under addons' textures, so a symbol
+-- over it (half its size plus this many minimap units from the middle) can be see-through or hidden.
 local PLAYER_ARROW, CLEAR = 8, 0.35
+local NEAR_LOOKS = { "Shown", "See-through", "Hidden" }
+-- Sound for new finds: the game's own sounds, by their SOUNDKIT names.
+local FIND_SOUNDS = { { "Minimap ping", "MAP_PING" }, { "Coins", "LOOT_WINDOW_COIN_SOUND" }, { "Whisper", "TELL_MESSAGE" },
+    { "Ready check", "READY_CHECK" }, { "Raid warning", "RAID_WARNING" }, { "Auction bell", "AUCTION_WINDOW_OPEN" } }
 local CAVE = 0.4 -- alpha of a herb or ore in a cave
 -- Skill colors: how a symbol shows your skill against its node. Ring and gem use the
 -- profession window's colors for a skill-up. The gems are the original game's; it
@@ -801,9 +810,11 @@ local function ShowLook(icon, marker)
         end
         icon.gem:SetShown(level ~= false)
     end
-    -- Faded in a cave; see-through while over your own arrow.
+    -- Faded in a cave; see-through or hidden while over your own arrow.
     local alpha = marker.dim and CAVE or 1
-    if db.clearNear and marker.distance < icon.size / 2 + PLAYER_ARROW then alpha = math.min(alpha, CLEAR) end
+    if db.nearLook ~= 1 and marker.distance < icon.size / 2 + PLAYER_ARROW then
+        alpha = db.nearLook == 3 and 0 or math.min(alpha, CLEAR)
+    end
     if icon.alpha ~= alpha then
         icon.alpha = alpha
         icon.texture:SetAlpha(alpha)
@@ -883,8 +894,11 @@ local function ApplyArrowLock()
     arrow:EnableMouse(not db.arrowLocked)
 end
 
+-- The name and distance grow with the arrow: the font's own height at the default size.
 local function ApplyArrowSize()
     arrow:SetSize(db.arrowSize, db.arrowSize)
+    local font, height, flags = GameFontNormal:GetFont()
+    arrowText:SetFont(font, math.max(8, height * db.arrowSize / defaults.arrowSize), flags)
 end
 
 ---------------------------------------------------------------------------
@@ -1140,6 +1154,16 @@ end
 -- Scanning
 ---------------------------------------------------------------------------
 
+-- A herb or ore you can still get a skill-up from: not gray (the ones too hard are left out already).
+local function SkillUp(marker)
+    local level = (marker.kind == "herbs" or marker.kind == "ore") and SkillLevel(marker.name, marker.kind)
+    return level and level <= 4 or false
+end
+
+local function PlayFindSound()
+    PlaySound(SOUNDKIT[FIND_SOUNDS[db.soundKit] and FIND_SOUNDS[db.soundKit][2]] or SOUNDKIT.MAP_PING)
+end
+
 -- A scan finished: its places become the markers. Also sets the next scan's
 -- pace, keeps held symbols and plays the Sound setting's sound.
 local function FinishScan()
@@ -1240,8 +1264,9 @@ local function FinishScan()
             end
         end
     end
-    -- Sound setting: one ping per scan for anything not seen in the last minute
-    -- (same name within 25 minimap units; rares by name only). Not for nodes too hard.
+    -- Sound setting: one sound per scan for anything not seen in the last minute
+    -- (same name within 25 minimap units; rares by name only). Not for nodes too hard,
+    -- and with Only for skill-ups only for herbs and ore that can still give one.
     if db.sound then
         local now, new = GetTime(), false
         local reach = radius and (25 * radius * 2 / width) ^ 2 -- yards, squared
@@ -1249,7 +1274,7 @@ local function FinishScan()
             if now - heard[i].at > 60 then table.remove(heard, i) end
         end
         for _, marker in ipairs(found) do
-            if not marker.hard then
+            if not marker.hard and (not db.soundSkillUps or SkillUp(marker)) then
                 local known
                 for _, old in ipairs(heard) do
                     if old.name == marker.name and old.map == marker.map and (marker.kind == "rares" or not marker.map
@@ -1266,7 +1291,7 @@ local function FinishScan()
                 end
             end
         end
-        if new then PlaySound(SOUNDKIT.MAP_PING) end
+        if new then PlayFindSound() end
     end
     turns.scanned = true
     turning = rotating
@@ -1651,7 +1676,6 @@ local function NewScanner()
     tracker = CreateFrame("Frame")
     arrow = CreateFrame("Frame")
     arrow:SetParent(UIParent)
-    ApplyArrowSize()
     local place = db.arrowPlace
     if place then
         arrow:SetPoint(place[1], UIParent, place[2], place[3], place[4])
@@ -1683,6 +1707,7 @@ local function NewScanner()
     arrowTexture:SetAtlas(ARROW)
     arrowText = arrow:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     arrowText:SetPoint("TOP", arrow, "BOTTOM", 0, -2)
+    ApplyArrowSize()
     mapFrame = CreateFrame("Frame")
     mapFrame:SetParent(Minimap)
     mapFrame:SetAllPoints(Minimap)
@@ -1696,6 +1721,10 @@ end
 ns.defaults, ns.SHAPES, ns.world = defaults, SHAPES, world
 ns.FINDERS = FINDERS
 ns.SKILL_LOOKS = SKILL.looks
+ns.NEAR_LOOKS = NEAR_LOOKS
+ns.PlayFindSound = PlayFindSound
+ns.FIND_SOUND_NAMES = {}
+for i, sound in ipairs(FIND_SOUNDS) do ns.FIND_SOUND_NAMES[i] = sound[1] end
 ns.Clean, ns.MapPosition, ns.PlayerFacing = Clean, MapPosition, PlayerFacing
 ns.UpdateScanner, ns.ApplyDotScale, ns.ApplyArrowLock = UpdateScanner, ApplyDotScale, ApplyArrowLock
 ns.ApplyArrowSize = ApplyArrowSize
@@ -1729,10 +1758,15 @@ local function LoadSettings()
 end
 
 local function OnAddonLoaded()
+    local firstInstall = NodeSightDB == nil
     local settings = LoadSettings()
+    -- A first install has no update to tell of: its notes count as seen (no glow on What's New).
+    if firstInstall then NodeSightDB.notesSeen = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") end
     ns.CarryOverLooks(settings)
     -- Red symbols turned off, from before Skill colors: Off.
     if settings.skillLook == nil and settings.hard == false then settings.skillLook = SKILL.OFF end
+    -- See-through near you ticked, from before Symbols near you.
+    if settings.nearLook == nil and settings.clearNear == true then settings.nearLook = 2 end
     for key, value in pairs(defaults) do
         if settings[key] == nil then settings[key] = value end
     end
@@ -1755,6 +1789,8 @@ local function OnAddonLoaded()
     if not SHAPES[settings.shape] then settings.shape = defaults.shape end
     if not SKILL.looks[settings.skillLook] then settings.skillLook = defaults.skillLook end
     if not ns.MAP_SHAPES[settings.minimapShape] then settings.minimapShape = defaults.minimapShape end
+    if not NEAR_LOOKS[settings.nearLook] then settings.nearLook = defaults.nearLook end
+    if not FIND_SOUNDS[settings.soundKit] then settings.soundKit = defaults.soundKit end
     if not ns.HARVESTS[settings.harvest] then settings.harvest = defaults.harvest end
     if not ICONS.rares[settings.rareIcon] then settings.rareIcon = defaults.rareIcon end
     if not ns.SWITCH_MEASURES[settings.switchMeasure] then settings.switchMeasure = defaults.switchMeasure end
@@ -1764,6 +1800,7 @@ local function OnAddonLoaded()
         settings[key] = math.max(range[1], math.min(range[2], value))
     end
     settings.switchYards = nil -- (replaced by switchPercent)
+    settings.clearNear = nil -- (replaced by nearLook)
     db = settings
     ns.db = db
     NewScanner()

@@ -11,6 +11,23 @@ local ipairs = ipairs
 local ShowWhatsNew
 do
     local WHATS_NEW = {
+        { version = "1.7.0",
+            { "New", {
+                { "Sparkles on skinnable corpses (Beta) (off by default).", "A looted corpse you can skin sparkles, so you don't run past it. Turn it on in the Sparkle window's new Skinning tab" },
+                { "Landing flies.", "A sparkle style for corpses: flies buzz around the corpse and land on it now and then. Pick it in the Skinning tab" },
+                { "Keep my tracked quest (Beta) (on by default).", "While you track a quest, Far away sparkles leave the game's navigation to your quest, so you don't lose the way to it. Under Beta" },
+                { "Symbols near you (Shown by default).", "A symbol on top of your own arrow on the minimap can be see-through or hidden, so you still see which way you face. It replaces See-through near you, under Minimap" },
+                { "Sound (Minimap ping by default).", "Pick which of the game's sounds Sound for new finds plays: Minimap ping, Coins, Whisper, Ready check, Raid warning or Auction bell. Under Sound for new finds on NodeSight's page" },
+                { "Only for skill-ups (off by default).", "Sound for new finds only plays for herbs and ore you can still get a skill-up from. Under Sound for new finds on NodeSight's page" },
+            } },
+            { "Changes", {
+                { "Settings.", "Easier to find your way around: the Symbols page is now Minimap, the pages have headings, Scan in combat moved to Minimap, and settings that need another one sit under it and only show while it's on. The tooltips are shorter" },
+                { "Rares on the minimap.", "No longer Beta, and it moved to Minimap with Rare symbol" },
+                { "Arrow size.", "The arrow's name and distance now grow and shrink with the arrow" },
+                { "Far away sparkles (Beta).", "The map pin they use no longer shows on the world map. It still shows on the minimap, where the game draws it" },
+                { "What's New.", "The button glows after an update until you've opened the notes" },
+            } },
+        },
         { version = "1.6.3",
             { "New", {
                 { "Switch page.", "Switch between herbs and ore has its own page in Options now, under NodeSight. Each switch costs a global cooldown, so it can wait for a better moment. Thanks to tester617 for all of it on GitHub" },

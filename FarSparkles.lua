@@ -20,7 +20,8 @@ local UpdateScanner, Markers = ns.UpdateScanner, ns.Markers
 -- Far sparkles
 ---------------------------------------------------------------------------
 -- Costs more CPU than the rest. While on, it takes over your map pin and
--- tracked quest (restored when nothing is marked). Nothing changes in combat
+-- tracked quest (restored when nothing is marked); the world map doesn't show
+-- that pin (the minimap does: the game itself draws it there). Nothing changes in combat
 -- (the marked node keeps its sparkles) or with the world map open (the map
 -- would build its pin frame under our taint).
 --
@@ -168,10 +169,41 @@ function world.Level(marker)
     return world.level
 end
 
+-- With Keep my tracked quest: is a quest of yours tracked (or was one when the pin was taken)?
+function world.QuestFirst()
+    if not ns.db.worldKeepQuest then return false end
+    local quest = C_SuperTrack.GetSuperTrackedQuestID()
+    return issecretvalue(quest) or (quest ~= nil and quest ~= 0) or (world.at ~= nil and world.quest ~= nil and world.quest ~= 0)
+end
+
+-- The world map's pin, unseen and not clickable while the pin is ours. Blizzard's
+-- waypoint provider places it again on every change, so a hook on that does it.
+function world.ShowMapPin(pin)
+    if not pin then return end
+    local ours = world.at ~= nil
+    pin:SetAlpha(ours and 0 or 1)
+    pin:EnableMouse(not ours)
+end
+function world.MapPin()
+    local providers = not world.mapHooked and WorldMapFrame and WorldMapFrame.dataProviders
+    if type(providers) == "table" then
+        for provider in pairs(providers) do
+            if type(provider) == "table" and provider.GetPinTemplate and provider.RefreshAllData
+                and provider:GetPinTemplate() == "WaypointLocationPinTemplate" then
+                world.mapHooked, world.mapPins = true, provider
+                hooksecurefunc(provider, "RefreshAllData", function(self) world.ShowMapPin(self.pin) end)
+                break
+            end
+        end
+    end
+    if world.mapPins then world.ShowMapPin(world.mapPins.pin) end
+end
+
 -- Puts the map pin on the spot and tracks it.
 function world.Set(at)
     C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(at.map, at.mx, at.my))
     C_SuperTrack.SetSuperTrackedUserWaypoint(true)
+    world.MapPin()
 end
 
 -- Restores your own pin (tracked if it was) and tracked quest.
@@ -180,6 +212,7 @@ function world.Back()
     C_SuperTrack.SetSuperTrackedUserWaypoint(world.tracked == true)
     if world.quest and world.quest ~= 0 then C_SuperTrack.SetSuperTrackedQuestID(world.quest) end
     world.at, world.pin, world.quest = nil, nil, nil
+    world.MapPin()
 end
 
 -- Fades a sparkle frame in over FADE seconds from `from`.
@@ -511,7 +544,7 @@ function world.Update()
         end
         return
     end
-    local target = ns.db.worldMark and world.Pick()
+    local target = ns.db.worldMark and not world.QuestFirst() and world.Pick()
     local at = world.at
     if busy then
         -- leave the pin alone
