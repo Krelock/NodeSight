@@ -79,6 +79,8 @@ local defaults = {
     leylines = true, -- Skyborne: leylines and elemental convergences, while the racial is ready
     worldMark = false, -- Beta: sparkles on far away herbs and ore
     worldKeepQuest = false, -- far sparkles leave a tracked quest's navigation alone (but for quick pins)
+    worldSize = 150, -- far sparkles' size, in percent
+    worldRealign = 5, -- with Keep my tracked quest: seconds before a quick pin lines them up again anyway
     dotScale = 100, -- the game's own dot size, in percent
     -- Each kind's sparkles (Sparkles.lua's KEYS): style (Sparkles.lua's STYLES),
     -- tint "aarrggbb" (white = none), area size, offset from the plate's bottom,

@@ -385,11 +385,19 @@ local function RegisterSettings()
     local _, far = Checkbox("worldMark", "Far away sparkles (Beta)",
         "Sparkles on the herb or ore you face, from far away. Not perfect yet, and uses a lot more CPU. Takes over your map pin while on. Needs Sparkles on herbs or ore.",
         function() world.Changed() Redraw() end)
+    local _, sizeRow = Slider("worldSize", "Far away sparkle size", 50, 300,
+        "How big far away sparkles are: wider, and a longer column. The default is " .. defaults.worldSize .. " %.",
+        function() end, 5, function(value) return ("%d %%"):format(value) end) -- (read every frame)
+    Indent(sizeRow, far, function() return ns.db.worldMark end)
     local _, keepQuest = Checkbox("worldKeepQuest", "Keep my tracked quest (less accurate sparkles)",
         "Your tracked quest keeps the game's navigation, so you keep the way to your quest objective. Far away sparkles borrow the map pin for a moment after you turn or zoom (your quest's arrow blinks then), and can drift in between.\n\n"
             .. RED_FONT_COLOR:WrapTextInColorCode("Far away sparkles are much less accurate with this on."),
-        world.Changed)
+        function() world.Changed() Redraw() end)
     Indent(keepQuest, far, function() return ns.db.worldMark end)
+    local _, realignRow = Slider("worldRealign", "Line up again every", 2, 15,
+        "How often far away sparkles borrow the map pin to line up again while you track a quest. Lower is more accurate, but your quest's arrow blinks more often. The default is " .. defaults.worldRealign .. " seconds.",
+        function() end, 1, function(value) return ("%d s"):format(value) end) -- (read every frame)
+    Indent(realignRow, keepQuest, function() return ns.db.worldMark and ns.db.worldKeepQuest end)
 
     Settings.RegisterAddOnCategory(main)
 end

@@ -87,11 +87,25 @@ function world.Fill(frame, kind)
 end
 
 -- Can it be marked, and is it the marked one? Kept until 12 yards; new ones from 16.
+-- Not a held symbol (its finder off with Switch): it may have been gathered since.
 function world.Can(marker)
-    if marker.hard or marker.dim or marker.kind == "rares" or not marker.map or not marker.yards then return false end
+    if marker.hard or marker.dim or marker.held or marker.kind == "rares" or not marker.map or not marker.yards then return false end
     local at = world.at
     local marked = at and at.map == marker.map and (at.mx - marker.mx) ^ 2 + (at.my - marker.my) ^ 2 <= 2.5e-7 or false
     return marker.yards >= (marked and 12 or 16), marked
+end
+
+-- Brightness by distance: full from 18 yards, none at 12 (where a node is let go of).
+function world.Near(yards)
+    return yards and math.max(0, math.min(1, (yards - 12) / 6)) or 1
+end
+
+-- The marked node's distance, nil if the minimap no longer shows it.
+function world.Yards()
+    for _, marker in ipairs(Markers()) do
+        local _, marked = world.Can(marker)
+        if marked then return marker.yards end
+    end
 end
 
 -- Angle between it and your facing (0 to pi).
@@ -188,8 +202,9 @@ function world.MapPin()
     local providers = not world.mapHooked and WorldMapFrame and WorldMapFrame.dataProviders
     if type(providers) == "table" then
         for provider in pairs(providers) do
-            if type(provider) == "table" and provider.GetPinTemplate and provider.RefreshAllData
-                and provider:GetPinTemplate() == "WaypointLocationPinTemplate" then
+            -- Known by its mixin's function (not by asking: some providers' GetPinTemplate needs an argument).
+            if type(provider) == "table" and WaypointLocationDataProviderMixin and provider.RefreshAllData
+                and provider.GetPinTemplate == WaypointLocationDataProviderMixin.GetPinTemplate then
                 world.mapHooked, world.mapPins = true, provider
                 hooksecurefunc(provider, "RefreshAllData", function(self) world.ShowMapPin(self.pin) end)
                 break
@@ -215,10 +230,11 @@ function world.Back()
     world.MapPin()
 end
 
--- Fades a sparkle frame in over FADE seconds from `from`.
-local FADE = 0.4
-function world.FadeIn(frame, now, from)
-    local alpha = math.min(1, (now - (from or 0)) / FADE)
+-- Fades a sparkle frame in over FADE seconds from `from`; LET_GO: out, once let go of.
+-- `near`: dimmer as you walk up to the node (world.Near), as the close sparkles take over.
+local FADE, LET_GO = 0.4, 0.5
+function world.FadeIn(frame, now, from, near)
+    local alpha = math.min(1, (now - (from or 0)) / FADE) * (near or 1)
     if alpha < 1 or frame.fading then
         frame:SetAlpha(alpha)
         frame.fading = alpha < 1
@@ -465,13 +481,14 @@ function world.Other(i, marker, x, y, reach, now, passed)
     local gx, gy = world.Glide(glide, x, y, passed)
     local scale = math.max(0.2, math.min(1, 15 / reach))
     frame.wide, frame.tall = 60, 560 * math.min(8 / reach, 0.3) / 2 / scale
+    scale = scale * ns.db.worldSize / 100 -- (Far away sparkle size: wider sparkles, a longer column)
     frame:SetScale(scale)
     frame:SetSize(frame.wide, frame.tall)
     frame:ClearAllPoints()
     frame:SetPoint("CENTER", UIParent, "CENTER", gx / scale, gy / scale)
     if not frame:IsShown() then frame.fade = now end
     if not frame:IsShown() or frame.kind ~= LookOf(marker.kind) then world.Fill(frame, marker.kind) end
-    world.FadeIn(frame, now, frame.fade)
+    world.FadeIn(frame, now, frame.fade, world.Near(marker.yards))
 end
 
 -- Test spots for a measurement: { radians right of the marked node, distance factor }.
@@ -496,7 +513,7 @@ function world.Several(nav, now, busy, passed)
             local halfWide, halfTall = UIParent:GetWidth() / 2, UIParent:GetHeight() / 2
             for _, marker in ipairs(Markers()) do -- (nearest first)
                 if shown == 4 then break end
-                if not marker.hard and not marker.dim and marker.kind ~= "rares" and marker.map == map and marker.yards and marker.yards >= 12
+                if not marker.hard and not marker.dim and not marker.held and marker.kind ~= "rares" and marker.map == map and marker.yards and marker.yards >= 12
                     and (at.mx - marker.mx) ^ 2 + (at.my - marker.my) ^ 2 > 2.5e-7
                     and ns.db[LookOf(marker.kind)] then
                     east, north = (marker.mx - px) * wide, (py - marker.my) * tall
@@ -549,7 +566,7 @@ end
 -- marked node only for a moment, when the view has settled after a turn or zoom, to
 -- read the camera from the game's marker; then the quest gets its navigation back.
 -- Until the next one the sparkles are placed from that reading, turning with you.
-local PEEK_TURN, PEEK_ZOOM, PEEK_STILL, PEEK_GAP, PEEK_OLD = 0.2, 1, 0.5, 2, 15
+local PEEK_TURN, PEEK_ZOOM, PEEK_STILL, PEEK_GAP = 0.2, 1, 0.5, 2
 function world.Questing(busy)
     local now, peek = GetTime(), world.peek
     local map, px, py, wide, tall = MapPosition()
@@ -580,7 +597,7 @@ function world.Questing(busy)
     local view = world.view
     local stale = not view or view.map ~= map or not facing or not zoom
         or math.abs((facing - view.facing + math.pi) % (2 * math.pi) - math.pi) > PEEK_TURN
-        or math.abs(zoom - view.zoom) > PEEK_ZOOM or now - view.at > PEEK_OLD
+        or math.abs(zoom - view.zoom) > PEEK_ZOOM or now - view.at > ns.db.worldRealign -- (tilts and left-drag turns aren't seen)
     local quest = C_SuperTrack.GetSuperTrackedQuestID()
     local target = zoom and facing and not busy and stale and now - (world.stillSince or now) >= PEEK_STILL and now - (world.peeked or -PEEK_GAP) >= PEEK_GAP
         and not issecretvalue(quest) and world.Pick()
@@ -606,7 +623,7 @@ function world.Questing(busy)
     local halfWide, halfTall, shown = UIParent:GetWidth() / 2, UIParent:GetHeight() / 2, 0
     for _, marker in ipairs(Markers()) do -- (nearest first)
         if shown == 5 then break end
-        if not marker.hard and not marker.dim and marker.kind ~= "rares" and marker.map == map and marker.yards and marker.yards >= 12
+        if not marker.hard and not marker.dim and not marker.held and marker.kind ~= "rares" and marker.map == map and marker.yards and marker.yards >= 12
             and ns.db[LookOf(marker.kind)] then
             local east, north = (marker.mx - px) * wide, (py - marker.my) * tall
             local reach = math.sqrt(east * east + north * north)
@@ -624,7 +641,7 @@ end
 -- Every frame: move the pin to the target and the sparkles to the marker.
 function world.Update()
     -- Off and nothing left to clean up.
-    if not ns.db.worldMark and not world.at and not world.hop then return end
+    if not ns.db.worldMark and not world.at and not world.hop and not world.letGo then return end
     local busy = world.fight or InCombatLockdown() or (WorldMapFrame and WorldMapFrame:IsShown())
     -- Stopped after an error (see OnUpdate in NodeSight.lua): off until the next reload,
     -- but your own map pin comes back once it's safe to touch (not busy).
@@ -664,6 +681,7 @@ function world.Update()
         end
     elseif at then
         world.Back() -- nothing left to mark
+        world.letGo = GetTime() -- (its sparkles fade out where they are)
     end
     if ns.db.worldReadout then world.Say(target) end
     -- With that kind's Sparkles setting on, show sparkles and hide Blizzard's
@@ -750,6 +768,9 @@ function world.Update()
             low, high = world.low + (low - world.low) * step, world.high + (high - world.high) * step
         end
         world.low, world.high, world.shape = low, high, level
+        -- Far away sparkle size: the sparkles and the column grow together.
+        local size = ns.db.worldSize / 100
+        scale, low, high = scale * size, low * size, high * size
         -- base: the area's bottom, relative to the marker
         local wide, tall, base = 60, (high - low) / scale, low / scale
         frame:SetScale(scale)
@@ -788,7 +809,7 @@ function world.Update()
         local kind = world.at and world.at.kind
         if not frame:IsShown() then world.fade = now end
         if not frame:IsShown() or frame.kind ~= LookOf(kind) then world.Fill(frame, kind) end
-        world.FadeIn(frame, now, world.fade)
+        world.FadeIn(frame, now, world.fade, world.Near(world.Yards()))
         world.Several(nav, now, busy, passed)
     elseif edge and world.frame and world.frame:IsShown() and world.nav == nav then
         -- Held at the screen's edge: fade out instead of vanishing, so turning the
@@ -805,7 +826,22 @@ function world.Update()
                 if other:IsShown() then other:SetAlpha(math.min(other:GetAlpha(), alpha)) end
             end
         end
+    elseif world.letGo and world.frame and world.frame:IsShown() then
+        -- Let go of (a node within reach, or none left): fade out where they were,
+        -- so the close sparkles take over without a jump.
+        local alpha = 1 - (GetTime() - world.letGo) / LET_GO
+        if alpha <= 0 then
+            world.letGo = nil
+            world.Out()
+        else
+            world.frame:SetAlpha(math.min(world.frame:GetAlpha(), alpha))
+            world.frame.fading = true
+            for _, other in ipairs(world.others) do
+                if other:IsShown() then other:SetAlpha(math.min(other:GetAlpha(), alpha)) end
+            end
+        end
     else
+        world.letGo = nil
         world.Out()
     end
 end

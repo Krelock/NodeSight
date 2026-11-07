@@ -920,7 +920,8 @@ local REACH_DIM = 0.45 -- alpha while out of reach
 local REACH_HOLD = 0.15 -- a change must last this long (no flicker at the edge)
 local REACH_FADE = 0.25 -- seconds to go from dim to full
 local BURST_TIME = 0.6
-local FADE_TIME = 0.3 -- seconds to fade in or out
+local FADE_TIME = 0.3 -- seconds to fade out, or back in while gathering
+local APPEAR_TIME = 1 -- seconds to fade in when a node comes into reach
 local GATHER_DIM = 0.75 -- how far sparkles fade back while you gather the node
 local HARVEST_TIME = 0.65 -- seconds of a gathered node's finish
 -- The finish starts with the loot; this long after the gathering with no loot, anyway.
@@ -1059,7 +1060,7 @@ local function Animate(frame, elapsed)
     if style.Draw then style.Draw(frame, frame.parts[style.name], S, elapsed, frame.clock) end
     if ns.db.reachLook then UpdateReach(frame, elapsed) end
     local gatherGoal = frame.gathering and ns.db.gatherDim and 1 or 0
-    frame.fade = Toward(frame.fade, frame.leaving and 0 or 1, elapsed / FADE_TIME)
+    frame.fade = Toward(frame.fade, frame.leaving and 0 or 1, elapsed / (frame.leaving and FADE_TIME or APPEAR_TIME))
     frame.gather = Toward(frame.gather, gatherGoal, elapsed / FADE_TIME)
     if frame.glowing then PutGlow(frame, S) end
     if frame.burstAge then Burst(frame, elapsed) end
