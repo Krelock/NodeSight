@@ -157,7 +157,7 @@ end
 -- NodeSightDB.arrowsFlipped = true reverses it.
 function world.Level(marker)
     local left, bottom = Minimap:GetLeft(), Minimap:GetBottom()
-    if marker.far or not (left and bottom and Minimap:IsVisible()) or InCombatLockdown() then return world.level end
+    if marker.far or not (left and bottom and Minimap:IsVisible()) or InCombatLockdown() or ns.KeyScanning() then return world.level end
     local scale = Minimap:GetEffectiveScale()
     Minimap:SetUsingSoftCursor(true)
     local ok, data = pcall(function()

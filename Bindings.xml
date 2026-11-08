@@ -2,4 +2,7 @@
     <Binding name="NODESIGHT_SYMBOLS" header="NODESIGHT" category="ADDONS">
         NodeSight_ToggleSymbols()
     </Binding>
+    <Binding name="NODESIGHT_SCAN" category="ADDONS">
+        NodeSight_ScanMinimap()
+    </Binding>
 </Bindings>

@@ -1,4 +1,5 @@
--- NodeSight's settings: the main page plus Arrow, Minimap, Switch, Sparkles and Beta.
+-- NodeSight's settings: the main page plus Arrow, Minimap, Scanning, Switch, Sparkles and Beta.
+-- Sections: Scan key, Settings panel.
 
 local ADDON_NAME, ns = ...
 
@@ -9,6 +10,60 @@ local UpdateScanner, ApplyDotScale, ApplyArrowLock = ns.UpdateScanner, ns.ApplyD
 local ApplyArrowSize = ns.ApplyArrowSize
 local ShowWhatsNew = ns.ShowWhatsNew
 local SwitchDistance, SwitchReset = ns.SwitchDistance, ns.SwitchReset
+
+---------------------------------------------------------------------------
+-- Scan key
+---------------------------------------------------------------------------
+
+-- The scan's key binding, set from a button: click, then press the key. A listener of
+-- our own, so the game's Keybindings page and its listener are left alone.
+local SCAN_BINDING = "NODESIGHT_SCAN"
+local LISTENING = "Press a key"
+local listener, listeningOn -- listeningOn: the button that was clicked
+
+local function ScanKeyText()
+    local key = GetBindingKey(SCAN_BINDING)
+    return key and GetBindingText(key) or NOT_BOUND
+end
+
+local function StopListening()
+    local button = listeningOn
+    listeningOn = nil
+    listener:Hide()
+    -- Settings rows are reused: only a button still showing our prompt is ours.
+    if button:IsVisible() and button:GetText() == LISTENING then button:SetText(ScanKeyText()) end
+end
+
+local function OnKey(_, key)
+    if key == "ESCAPE" then return StopListening() end
+    if IsKeyPressIgnoredForBinding(key) then return end -- Shift, Ctrl or Alt alone: wait for the key
+    if not InCombatLockdown() then -- key bindings can't change in combat
+        local old = GetBindingKey(SCAN_BINDING)
+        if old then SetBinding(old) end
+        SetBinding(CreateKeyChordStringUsingMetaKeyState(key), SCAN_BINDING)
+        SaveBindings(GetCurrentBindingSet())
+    end
+    StopListening()
+end
+
+local function ScanKeyClicked(button)
+    if listeningOn then return StopListening() end
+    if InCombatLockdown() then return end
+    if not listener then
+        listener = CreateFrame("Frame")
+        listener:SetParent(UIParent)
+        listener:SetFrameStrata("FULLSCREEN_DIALOG") -- keys reach it before the options window
+        listener:EnableKeyboard(true)
+        listener:SetScript("OnKeyDown", OnKey)
+        -- The options window closed or the page changed (its rows are reused).
+        listener:SetScript("OnUpdate", function()
+            if not listeningOn:IsVisible() or listeningOn:GetText() ~= LISTENING or InCombatLockdown() then StopListening() end
+        end)
+    end
+    listeningOn = button
+    button:SetText(LISTENING)
+    listener:Show()
+end
 
 ---------------------------------------------------------------------------
 -- Settings panel
@@ -73,9 +128,9 @@ local function RegisterSettings()
         return setting, Settings.CreateCheckbox(category, setting, tooltip)
     end
 
-    local function Header(text)
+    local function Header(text, tooltip)
         if CreateSettingsListSectionHeaderInitializer then
-            layout:AddInitializer(CreateSettingsListSectionHeaderInitializer(text))
+            layout:AddInitializer(CreateSettingsListSectionHeaderInitializer(text, tooltip))
         end
     end
 
@@ -151,20 +206,18 @@ local function RegisterSettings()
         end
     end
 
-    Checkbox("scan", "Scan the minimap",
-        "Scans the minimap for herbs and ore, for the arrow and the symbols. Turn it off to use only the sparkles.",
-        UpdateScanner)
+    Header("Minimap symbols: go to Scanning to set a scan key or turn on Scan as you move", ns.SCAN_NOTICE[2])
     Checkbox("mapIcons", "Herb and ore symbols",
-        "Puts the herb's or ore's map symbol on the minimap where the scan finds one. Needs Scan the minimap, and Find Herbs or Find Minerals on.",
+        "Puts the herb's or ore's map symbol on the minimap where the scan finds one. Needs Find Herbs or Find Minerals on.",
         UpdateScanner)
-    local arrowTip = "An arrow near the top of the screen points to the nearest herb or ore on your minimap, with its name and distance. Drag it to move it. Needs Scan the minimap."
+    local arrowTip = "An arrow near the top of the screen points to the nearest herb or ore on your minimap, with its name and distance. Drag it to move it."
     local arrow = Checkbox("arrow", "Arrow to the nearest herb or ore", arrowTip, UpdateScanner)
     local findersTip = "Switches between Find Herbs and Find Minerals. You need both trained and one active to start."
     -- Toggling the switch also ends a stop after failed switches; other settings keep it.
     local finders = Checkbox("switchFinders", "Switch between herbs and ore", findersTip,
         function() SwitchReset() UpdateScanner() end)
     local _, soundRow = Checkbox("sound", "Sound for new finds",
-        "Plays a sound when something new shows up on your minimap. Not for herbs or ore above your skill. Needs Scan the minimap.",
+        "Plays a sound when something new shows up on your minimap. Not for herbs or ore above your skill.",
         function() UpdateScanner() Redraw() end)
     local function SoundOn() return ns.db.sound end
     Indent(Dropdown("soundKit", "Sound", ns.FIND_SOUND_NAMES, "Which of the game's sounds plays. Picking one plays it.",
@@ -207,6 +260,7 @@ local function RegisterSettings()
         "This character keeps its own NodeSight settings. Untick it to use the settings your other characters share. Changes at your next reload or login.")
 
     Page("Arrow")
+    Header("Arrow: needs scanning on", ns.SCAN_NOTICE[2])
     Settings.CreateCheckbox(category, arrow, arrowTip) -- the same setting as on NodeSight's own page
     Checkbox("arrowLocked", "Lock the arrow in place",
         "The arrow can't be dragged, and your clicks go through it to the world.",
@@ -234,10 +288,10 @@ local function RegisterSettings()
     Page("Minimap")
     Header("Symbols for")
     Checkbox("leylines", "Leylines and convergences",
-        "High Order Skyborne get symbols on leylines while Read Leyline is ready, Windshaper Skyborne on elemental convergences while Skysight is ready. Needs Scan the minimap.",
+        "High Order Skyborne get symbols on leylines while Read Leyline is ready, Windshaper Skyborne on elemental convergences while Skysight is ready.",
         UpdateScanner)
     local _, rares = Checkbox("rares", "Rares on the minimap",
-        "For hunters and druids: a rare beast's or humanoid's dot gets a rare symbol. Needs Scan the minimap, and Track Beasts or Track Humanoids on.",
+        "For hunters and druids: a rare beast's or humanoid's dot gets a rare symbol. Needs Track Beasts or Track Humanoids on.",
         function() UpdateScanner() Redraw() end)
     local rareIcon = Dropdown("rareIcon", "Rare symbol", { "Rare icon", "Elite rare icon", "Star" },
         "Which of the game's own rare symbols a rare beast's or humanoid's dot gets.",
@@ -245,7 +299,7 @@ local function RegisterSettings()
     Indent(rareIcon, rares, function() return ns.db.rares end)
     Header("Look")
     Dropdown("shape", "Symbol shape", SHAPES,
-        "The shape of the herb and ore symbols on the minimap. Needs Scan the minimap.",
+        "The shape of the herb and ore symbols on the minimap.",
         UpdateScanner)
     Dropdown("skillLook", "Skill colors", ns.SKILL_LOOKS,
         "How a symbol shows your skill. Red when too low: red if you can't gather it yet. Colored ring and Colored gem: the profession window's skill-up colors, from red to gray. Colored ring needs a gold ring Symbol shape. Needs Herb and ore symbols.",
@@ -262,15 +316,30 @@ local function RegisterSettings()
     Slider("dotScale", "Size of the game's own dots", 50, 300,
         "Resizes the game's own minimap dots. 100 is the game's own size. Use it with Symbol size.",
         ApplyDotScale)
-    Header("Scanning")
+    Page("Scanning")
+    Header("When")
+    layout:AddInitializer(CreateSettingsButtonInitializer("Scan key", ScanKeyText, ScanKeyClicked,
+        "The key that scans the minimap. Click, then press a key (with Shift, Ctrl or Alt if you like); Esc cancels. "
+            .. "A key used for something else is taken from it. It's the Scan the minimap key binding (Keybindings > AddOns > NodeSight).",
+        false))
+    Checkbox("autoScan", "Scan as you move",
+        "Scans the minimap each time you've moved the distance below, not while flying, and out of combat unless Scan in combat is on, while your mouse is over the world (not a window, and not while you hold a mouse button to turn). The minimap is hidden for a moment while it scans. The Scan the minimap key binding scans any time.",
+        UpdateScanner)
+    Slider("autoScanYards", "Scan every (yards)", 10, 150,
+        "How far you move between scans. The default is " .. defaults.autoScanYards .. ".",
+        UpdateScanner, 5)
+    Slider("autoScanSeconds", "Scan every (seconds)", 0, 120,
+        "Also scans once this many seconds have passed since the last scan, as soon as you move (not while you stand still), so herbs and ore that appear or are taken show up. Same rules as Scan as you move (not while flying, your mouse over the world, out of combat unless Scan in combat is on). Off at 0, the default.",
+        UpdateScanner, 5, Off)
     Checkbox("combatScan", "Scan in combat",
-        "Keeps scanning during fights, so new herbs and ore still show up. With it off, new ones show up after the fight. Needs Scan the minimap.",
+        "Scan as you move and Scan every (seconds) keep scanning in combat too. The minimap is hidden for a moment each time, mid-fight. The Scan the minimap key binding scans in combat either way.",
         UpdateScanner)
-    Slider("scanDetail", "Scan detail", 1, 3,
-        "How closely the minimap is scanned: 3 is the most exact, 1 uses the least CPU but can place herbs poorly. The default is " .. defaults.scanDetail .. ". Needs Scan the minimap.",
+    Checkbox("skipRest", "Not in cities and inns",
+        "Scan as you move and Scan every (seconds) don't scan while you're resting: in capital cities and inns (the Zzz on your portrait). The Scan the minimap key binding scans there either way.",
         UpdateScanner)
+    Header("Minimap")
     Dropdown("minimapShape", "Minimap shape", ns.MapShapeChoices,
-        "Automatic asks your UI addon and shows its answer in brackets. Pick Square if herbs and ore in the corners of a square minimap don't show up. Needs Scan the minimap.",
+        "Automatic asks your UI addon and shows its answer in brackets. Pick Square if herbs and ore in the corners of a square minimap don't show up.",
         UpdateScanner)
 
     Page("Switch")
@@ -382,8 +451,11 @@ local function RegisterSettings()
     end
 
     Page("Beta")
+    local farNote = "Far away sparkles don't work as well since WoW Forever's latest update: whether a far herb is above or below you can't be read any more."
+    Header(RED_FONT_COLOR:WrapTextInColorCode("Far away sparkles don't work as well now"), farNote)
     local _, far = Checkbox("worldMark", "Far away sparkles (Beta)",
-        "Sparkles on the herb or ore you face, from far away. Not perfect yet, and uses a lot more CPU. Takes over your map pin while on. Needs Sparkles on herbs or ore.",
+        "Sparkles on the herb or ore you face, from far away. Not perfect yet, and uses a lot more CPU. Takes over your map pin while on. Needs Sparkles on herbs or ore.\n\n"
+            .. RED_FONT_COLOR:WrapTextInColorCode(farNote),
         function() world.Changed() Redraw() end)
     local _, sizeRow = Slider("worldSize", "Far away sparkle size", 50, 300,
         "How big far away sparkles are: wider, and a longer column. The default is " .. defaults.worldSize .. " %.",

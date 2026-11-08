@@ -87,19 +87,6 @@ function ns.InShape(dx, dy, half, quarters)
     return math.abs(dx) <= half and math.abs(dy) <= half * (quarters.height or 1)
 end
 
--- How far it is from (px, py) along (dx, dy) to the rim; nil from outside.
--- (dx, dy) must be one of the four unit axis vectors.
-function ns.RimDistance(px, py, dx, dy, rim, quarters)
-    if not ns.InShape(px, py, rim, quarters) then return nil end
-    -- The quarter the ray ends in: the ray's side on its axis, the point's on the other.
-    local ex, ey = dx ~= 0 and dx or px, dy ~= 0 and dy or py
-    local q = 1 + (ex < 0 and 1 or 0) + (ey > 0 and 2 or 0)
-    local along = px * dx + py * dy
-    if quarters[q] then return math.sqrt(math.max(0, along * along - (px * px + py * py - rim * rim))) - along end
-    if dy ~= 0 then return rim * (quarters.height or 1) - along end
-    return rim - along
-end
-
 ns.MAP_SHAPES = { "Automatic", "Round", "Square" } -- the Minimap shape setting's choices
 
 -- The setting's choice labels, Automatic with what it finds in brackets: Round, Square or Mixed.

@@ -1,4 +1,4 @@
--- NodeSight's What's New dialog (the patch notes).
+-- NodeSight's What's New dialog (the patch notes), and a notice shown once.
 
 local ADDON_NAME, ns = ...
 
@@ -8,9 +8,24 @@ local ipairs = ipairs
 -- What's new
 ---------------------------------------------------------------------------
 -- Newest version first; one without a version uses the .toc's.
-local ShowWhatsNew
+local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
+        { version = "1.8.0",
+            { "New", {
+                { "Scan the minimap (key binding).", "WoW Forever's latest update broke how NodeSight read the minimap, so it scans it now: press the key and your minimap is hidden for under a second while it reads where herbs and ore are. Your symbols, your arrow, the minimap's frame and the coordinates stay on screen meanwhile. Set the key with Scan key on the new Scanning page, or in Keybindings > AddOns > NodeSight" },
+                { "Scan as you move (off by default).", "Scans each time you've moved Scan every (yards) (30 by default): not while flying, turning the camera or with your mouse over a window. On the Scanning page" },
+                { "Scan every (seconds) (Off by default).", "Also scans once that many seconds have passed, as soon as you move, so herbs and ore that appear or are taken show up. On the Scanning page" },
+                { "Scan in combat (off by default).", "Scan as you move and the timer keep scanning in fights. On the Scanning page" },
+                { "Not in cities and inns (on by default).", "No scans as you move or on the timer there. On the Scanning page" },
+            } },
+            { "Changes", {
+                { "Far away sparkles (Beta).", "They don't work as well since WoW Forever's latest update: whether a far herb is above or below you can't be read any more. They were turned off once for everyone; turn them back on under Beta" },
+                { "Arrow.", "It lets go of a herb or ore as soon as it leaves the minimap" },
+                { "Gathered nodes.", "A herb or ore someone else gathers loses its symbol at the next scan" },
+                { "Scan the minimap checkbox.", "Gone: the scan only runs on its key, with Scan as you move or on its timer" },
+            } },
+        },
         { version = "1.7.0",
             { "New", {
                 { "Sparkles on skinnable corpses (Beta) (off by default).", "A looted corpse you can skin sparkles, so you don't run past it. Turn it on in the Sparkle window's new Skinning tab" },
@@ -324,6 +339,35 @@ do
         dialog.ShowPage()
         dialog.frame:Show()
     end
+
+    -- Notice: one message in the same look, with an OK button.
+    local notice
+    function ShowNotice(title, body)
+        if not notice then
+            notice = NewFrame("Frame", UIParent)
+            notice:SetFrameStrata("DIALOG")
+            notice:SetToplevel(true)
+            notice:EnableMouse(true)
+            notice:SetPoint("TOP", UIParent, "TOP", 0, -135)
+            notice:SetWidth(WIDTHS[1])
+            local background = notice:CreateTexture(nil, "BACKGROUND", nil, -7)
+            background:SetAtlas("UI-DialogBox-Background-Dark", true)
+            background:SetPoint("TOPLEFT", 7, -7)
+            background:SetPoint("BOTTOMRIGHT", -7, 7)
+            local edge = notice:CreateTexture(nil, "BACKGROUND", nil, -4)
+            edge:SetAtlas("UI-DiamondDialogBox-Border", true)
+            edge:SetAllPoints()
+            notice.text = notice:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+            notice.text:SetPoint("TOP", 0, -20)
+            notice.text:SetWidth(WIDTHS[1] - 40)
+            notice.text:SetJustifyH("LEFT")
+            notice.text:SetSpacing(3)
+            DialogButton(notice, OKAY, function() notice:Hide() end):SetPoint("BOTTOM", 0, 16)
+        end
+        notice.text:SetText(NORMAL_FONT_COLOR:WrapTextInColorCode(title) .. "\n\n" .. body)
+        notice:SetHeight(notice.text:GetStringHeight() + 73)
+        notice:Show()
+    end
 end
 
-ns.ShowWhatsNew = ShowWhatsNew
+ns.ShowWhatsNew, ns.ShowNotice = ShowWhatsNew, ShowNotice
