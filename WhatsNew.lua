@@ -16,10 +16,10 @@ do
                 { "Scan the minimap (key binding).", "WoW Forever's latest update broke how NodeSight read the minimap, so it scans it now: press the key and your minimap is hidden for under a second while it reads where herbs and ore are. Your symbols, your arrow, the minimap's frame and the coordinates stay on screen meanwhile. Set the key with Scan key on the new Scanning page, or in Keybindings > AddOns > NodeSight" },
                 { "Scan as you move (off by default).", "Scans each time you've moved Scan every (yards) (30 by default): not while flying, turning the camera or with your mouse over a window. On the Scanning page" },
                 { "Scan every (seconds) (Off by default).", "Also scans once that many seconds have passed, as soon as you move, so herbs and ore that appear or are taken show up. On the Scanning page" },
-                { "Scan in combat (off by default).", "Scan as you move and the timer keep scanning in fights. On the Scanning page" },
                 { "Not in cities and inns (on by default).", "No scans as you move or on the timer there. On the Scanning page" },
             } },
             { "Changes", {
+                { "Scan in combat (off by default now).", "Turned off once for everyone who had it on. On the Scanning page" },
                 { "Far away sparkles (Beta).", "They don't work as well since WoW Forever's latest update: whether a far herb is above or below you can't be read any more. They were turned off once for everyone; turn them back on under Beta" },
                 { "Arrow.", "It lets go of a herb or ore as soon as it leaves the minimap" },
                 { "Gathered nodes.", "A herb or ore someone else gathers loses its symbol at the next scan" },

@@ -2179,7 +2179,14 @@ local function OnAddonLoaded()
     if firstInstall then NodeSightDB.notesSeen = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") end
     ns.noticeDue = not NodeSightDB.scanNotice -- the notice about the scan, once, after the first loading screen
     -- Far away sparkles don't work as well since build 70862: turned off once where they were on.
-    if not settings.farTurnedOff then settings.worldMark, settings.farTurnedOff = false, true end
+    if not settings.farTurnedOff then
+        settings.worldMark, settings.farTurnedOff = false, true
+        -- In-Game Navigation back as it was before they turned it on (if it still is on).
+        if settings.navWas then
+            if C_CVar.GetCVar("showInGameNavigation") == "1" then C_CVar.SetCVar("showInGameNavigation", settings.navWas) end
+            settings.navWas = nil
+        end
+    end
     -- Scan in combat was on by default for the old scan; the new one hides the minimap: off once.
     if not settings.combatScanReset then settings.combatScan, settings.combatScanReset = false, true end
     ns.CarryOverLooks(settings)
