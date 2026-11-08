@@ -268,6 +268,7 @@ local function RegisterSettings()
     Checkbox("arrowSkip", "Skip the node you're at",
         "The arrow passes over a node within 5 yards of you and points to the next one.",
         UpdateScanner)
+    Checkbox("arrowCombat", "Hide in combat", "No arrow while you're in combat.", UpdateScanner)
     Slider("arrowSize", "Arrow size", 20, 100,
         "How big the arrow and its text are. The default is " .. defaults.arrowSize .. ".",
         ApplyArrowSize)

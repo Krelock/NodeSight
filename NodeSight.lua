@@ -41,6 +41,7 @@ local defaults = {
     arrowLocked = false, -- the arrow can't be dragged, and clicks go through it
     arrowSize = 40, -- arrow size
     arrowSkip = true, -- the arrow passes over the node you're at
+    arrowCombat = false, -- no arrow in combat
     arrowFirst = false, -- the arrow to herbs and ore before anything else
     arrowHerbs = true, -- what the arrow points to: herbs,
     arrowOre = true, -- ore,
@@ -800,7 +801,7 @@ local function ShowMarkers()
 end
 
 local function UpdateArrow()
-    local target = db.arrow and Target()
+    local target = db.arrow and not (db.arrowCombat and UnitAffectingCombat("player")) and Target()
     local facing = target and PlayerFacing()
     if not facing then
         if arrowOn then
@@ -931,6 +932,16 @@ end
 
 -- A scan finished: its places become the markers. Also keeps held symbols and plays
 -- the Sound setting's sound.
+-- Other addons' functions to call after each scan (NodeSightAPI.RegisterCallback).
+local apiCallbacks = {}
+local function Symbols()
+    local list = {}
+    for _, m in ipairs(markers) do
+        list[#list + 1] = { name = m.name, kind = m.kind, map = m.map, x = m.mx, y = m.my, yards = m.yards, held = m.held or nil }
+    end
+    return list
+end
+
 local function FinishScan()
     local places = scan.places
     scan = nil
@@ -1036,6 +1047,10 @@ local function FinishScan()
     markers = found
     lastMap = nil -- make Follow recompute
     ShowMarkers()
+    if apiCallbacks[1] then
+        local list = Symbols()
+        for _, callback in ipairs(apiCallbacks) do xpcall(callback, geterrorhandler(), list) end
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -1123,27 +1138,64 @@ end
     local phase = 0 -- which of the three honeycombs this scan uses (see StartKeyScan)
     local scans = 0 -- scans so far (every third checks the symbols already measured)
 
+    -- A controller's stick camera is mouselook to the game, but with hover events allowed in
+    -- free look (on while a scan runs) the minimap can still be read under the hidden cursor.
+    local function PadLooking()
+        return C_GamePad and C_GamePad.IsEnabled and C_GamePad.IsEnabled() and IsGamePadFreelookEnabled and IsGamePadFreelookEnabled()
+    end
+    -- Walking with a controller's stick: the game centers the cursor and acts as if a mouse
+    -- button is held (GamePadCursorCenteredEmulation), so that mustn't count as the mouse.
+    local function PadSticks()
+        if not (C_GamePad and C_GamePad.IsEnabled and C_GamePad.IsEnabled() and C_GamePad.GetDeviceMappedState) then return false end
+        local ok, state = pcall(C_GamePad.GetDeviceMappedState)
+        if not ok or issecretvalue(state) or type(state) ~= "table" or type(state.sticks) ~= "table" then return false end
+        for _, stick in ipairs(state.sticks) do
+            if type(stick) == "table" and not issecretvalue(stick.len) and type(stick.len) == "number" and stick.len > 0.2 then return true end
+        end
+        return false
+    end
+    -- With the controller's circle in the middle of the screen the game hovers nothing at
+    -- all, so the minimap can't be read there.
+    local function Hovering()
+        if not GetMouseFoci then return true end
+        local foci = GetMouseFoci()
+        return type(foci) ~= "table" or foci[1] ~= nil
+    end
     -- Turning the camera with either mouse button (the left one doesn't count as mouselook).
     local function Mouselooking()
-        return (IsMouselooking and IsMouselooking())
+        local looking = (IsMouselooking and IsMouselooking() and not PadLooking())
             or (IsMouseButtonDown and (IsMouseButtonDown("LeftButton") or IsMouseButtonDown("RightButton")))
+        return looking and not (PadSticks() and Hovering())
     end
 
     -- A window or button under the mouse that isn't the minimap's or NodeSight's (bags opened
     -- mid-scan, an item in them): the minimap can't be read through it.
     local COVERED_WAIT = 2 -- seconds a scan waits paused for the mouse to leave a window
+    -- A frame drawn under the minimap (a UI addon's full-screen layer) doesn't count: the
+    -- minimap is on top of it once it's under the mouse.
+    local STRATA = { BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4, DIALOG = 5, FULLSCREEN = 6, FULLSCREEN_DIALOG = 7, TOOLTIP = 8 }
+    local function Under(frame)
+        local ok, strata, level = pcall(function() return frame:GetFrameStrata(), frame:GetFrameLevel() end)
+        if not ok or issecretvalue(strata) or issecretvalue(level) then return false end
+        local ours, ourLevel = Minimap:GetFrameStrata(), Minimap:GetFrameLevel()
+        if issecretvalue(ours) or issecretvalue(ourLevel) then return false end
+        local theirs, mine = STRATA[strata], STRATA[ours]
+        if not (theirs and mine) then return false end
+        return theirs < mine or (theirs == mine and level < ourLevel)
+    end
     local function Covered()
         local foci = GetMouseFoci and GetMouseFoci()
         local focus = type(foci) == "table" and foci[1] or nil
         if focus == nil or focus == WorldFrame then return false end
+        local first = focus
         for _ = 1, 20 do
-            if focus == nil then return true end -- (the top: a window of its own)
+            if focus == nil then break end -- (the top: a window of its own)
             if focus == Minimap or focus == mapFrame or focus == arrow then return false end
             local ok, parent = pcall(focus.GetParent, focus)
-            if not ok then return true end
+            if not ok then break end
             focus = parent
         end
-        return true
+        return not Under(first)
     end
 
     -- Blizzard's coordinates under the minimap: anchored to it, so they move with it.
@@ -1160,9 +1212,34 @@ end
         end)
     end
 
+    -- While scanning, the minimap is hidden by an empty mask, not alpha: the game draws its
+    -- terrain blank if it redraws below alpha 1. The mask has no getter: the last one set is
+    -- kept, else a square one if GetMinimapShape says so, else the game's own.
+    local EMPTY_MASK = "Interface\\AddOns\\NodeSight\\EmptyMask"
+    local FOREVER_MASK = "ui-hud-minimap-frame-generic-mask" -- set by Blizzard_Minimap before addons load
+    local maskSet, ourMask
+    if Minimap.SetMaskTexture then
+        hooksecurefunc(Minimap, "SetMaskTexture", function(_, mask)
+            if not ourMask then maskSet = mask end
+        end)
+    end
+    local function Mask()
+        if maskSet ~= nil then return maskSet end
+        if GetMinimapShape then
+            local ok, shape = pcall(GetMinimapShape)
+            if ok and shape == "SQUARE" then return "Interface\\BUTTONS\\WHITE8X8" end
+        end
+        if C_Texture and C_Texture.GetAtlasExists and C_Texture.GetAtlasExists(FOREVER_MASK) then return FOREVER_MASK end
+        return "Textures\\MinimapMask"
+    end
+
     -- While scanning the minimap is under the mouse: its mouse wheel (zoom) and clicks
     -- (a ping) are off, so the wheel zooms the camera; hovering stays on for the scan.
     -- The group finder's eye is anchored to the minimap but not on it: hidden too.
+    local function Apart(frame)
+        return frame == mapFrame or frame == QueueStatusButton
+    end
+    local ourPad = false
     local function Disguise(s, on)
         if on and s.wheel == nil and Minimap.IsMouseWheelEnabled and Minimap.IsMouseClickEnabled then
             s.wheel, s.clicks = Minimap:IsMouseWheelEnabled(), Minimap:IsMouseClickEnabled()
@@ -1171,7 +1248,40 @@ end
             pcall(Minimap.EnableMouseWheel, Minimap, not on and s.wheel)
             pcall(Minimap.SetMouseClickEnabled, Minimap, not on and s.clicks)
         end
-        pcall(Minimap.SetAlpha, Minimap, on and 0 or s.alpha)
+        if Minimap.SetMaskTexture then
+            ourMask = true
+            pcall(Minimap.SetMaskTexture, Minimap, on and EMPTY_MASK or Mask())
+            ourMask = false
+        else
+            pcall(Minimap.SetAlpha, Minimap, on and 0 or s.alpha)
+        end
+        -- The mask clips only the map: the frames on it (its ring, the zoom buttons, addons'
+        -- buttons) are hidden by their own alpha, which doesn't touch the map's drawing.
+        -- Hidden ones too: some fade in when the minimap is hovered (KeepHidden).
+        if on and Minimap.SetMaskTexture and not s.kids then
+            s.kids = {}
+            for _, child in ipairs({ Minimap:GetChildren() }) do
+                local ok, alpha = pcall(child.GetAlpha, child)
+                if not Apart(child) and ok and not issecretvalue(alpha)
+                    and not (InCombatLockdown() and child:IsProtected()) then
+                    s.kids[#s.kids + 1] = { frame = child, alpha = alpha }
+                    child:SetAlpha(0)
+                end
+            end
+        elseif not on and s.kids then
+            for _, kid in ipairs(s.kids) do pcall(kid.frame.SetAlpha, kid.frame, kid.alpha) end
+            s.kids = nil
+        end
+        -- With a controller: hover events in free look, so the minimap is read under the stick camera.
+        if on and s.padHover == nil and C_GamePad and C_GamePad.IsEnabled and C_GamePad.IsEnabled()
+            and C_GamePad.GetAllowHoverEventsWithFreeLook then
+            s.padHover = C_GamePad.GetAllowHoverEventsWithFreeLook() and true or false
+        end
+        if s.padHover == false then
+            ourPad = true
+            pcall(C_GamePad.SetAllowHoverEventsWithFreeLook, on)
+            ourPad = false
+        end
         if s.coords then pcall(s.coords.SetAlpha, s.coords, on and 0 or s.coordsAlpha) end
         if Minimap.SetIconScale then
             ourScale = true
@@ -1180,15 +1290,22 @@ end
         end
         -- Buttons on the minimap (an addon's calendar or clock, map pins) move with it under the
         -- mouse: no clicks on them either (a quick click would land on one), back after.
+        -- No hover either: a frame over the whole map (BasicMinimap's click catcher) would be
+        -- under the mouse instead of the minimap, and the game names no dot then.
         -- The game's protected ones can't be changed in a fight: left alone.
         if on and not s.noClicks then
-            s.noClicks = {}
+            s.noClicks, s.noMotion = {}, {}
             local function Walk(frame, depth)
                 for _, child in ipairs({ frame:GetChildren() }) do
-                    if child ~= mapFrame and child.IsMouseClickEnabled and child:IsMouseClickEnabled()
+                    if not Apart(child) and child.IsMouseClickEnabled and child:IsMouseClickEnabled()
                         and not (InCombatLockdown() and child:IsProtected()) then
                         s.noClicks[#s.noClicks + 1] = child
                         child:SetMouseClickEnabled(false)
+                    end
+                    if not Apart(child) and child.IsMouseMotionEnabled and child:IsMouseMotionEnabled()
+                        and not (InCombatLockdown() and child:IsProtected()) then
+                        s.noMotion[#s.noMotion + 1] = child
+                        child:SetMouseMotionEnabled(false)
                     end
                     if depth < 3 then Walk(child, depth + 1) end
                 end
@@ -1196,7 +1313,8 @@ end
             pcall(Walk, Minimap, 1)
         elseif not on and s.noClicks then
             for _, child in ipairs(s.noClicks) do pcall(child.SetMouseClickEnabled, child, true) end
-            s.noClicks = nil
+            for _, child in ipairs(s.noMotion) do pcall(child.SetMouseMotionEnabled, child, true) end
+            s.noClicks, s.noMotion = nil, nil
         end
         local eye = QueueStatusButton
         if eye then
@@ -1206,7 +1324,95 @@ end
                 pcall(eye.EnableMouse, eye, not on and s.eyeMouse)
             end
         end
+        -- Frames anchored to the minimap from outside it (a UI addon's border, a clock or the
+        -- day/night dial moved onto it) move with it but don't fade with it: hidden too, no
+        -- clicks and no hover (one above the minimap would pause the scan every other frame).
+        if on and not s.followers then
+            s.followers = {}
+            local seen = { [mapFrame] = true, [arrow] = true } -- (the eye and the coordinates have their own)
+            if QueueStatusButton then seen[QueueStatusButton] = true end
+            if s.coords then seen[s.coords] = true end
+            local function Inside(frame)
+                for _ = 1, 10 do
+                    if frame == Minimap then return true end
+                    local ok, parent = pcall(frame.GetParent, frame)
+                    if not ok or not parent then return false end
+                    frame = parent
+                end
+                return false
+            end
+            local function Follows(frame, depth)
+                local ok, count = pcall(frame.GetNumPoints, frame)
+                if not ok or type(count) ~= "number" or issecretvalue(count) then return false end
+                for i = 1, count do
+                    local fine, _, relative = pcall(frame.GetPoint, frame, i)
+                    if fine and type(relative) == "table" and not issecretvalue(relative)
+                        and (Inside(relative) or (depth < 3 and Follows(relative, depth + 1))) then return true end
+                end
+                return false
+            end
+            local function Look(parent, depth)
+                local ok, kids = pcall(function() return { parent:GetChildren() } end)
+                if not ok then return end
+                for _, frame in ipairs(kids) do
+                    if not seen[frame] and frame ~= Minimap then
+                        seen[frame] = true
+                        if Follows(frame, 1) and not Inside(frame) and not (InCombatLockdown() and frame:IsProtected())
+                            and not issecretvalue(frame:GetAlpha()) then
+                            local clicks = frame.IsMouseClickEnabled and frame:IsMouseClickEnabled()
+                            local motion = frame.IsMouseMotionEnabled and frame:IsMouseMotionEnabled()
+                            s.followers[#s.followers + 1] = { frame = frame, alpha = frame:GetAlpha(), clicks = clicks, motion = motion }
+                            frame:SetAlpha(0)
+                            if clicks then frame:SetMouseClickEnabled(false) end
+                            if motion then frame:SetMouseMotionEnabled(false) end
+                        elseif depth < 3 and parent ~= UIParent then
+                            Look(frame, depth + 1)
+                        end
+                    end
+                end
+            end
+            pcall(Look, UIParent, 1)
+            if MinimapCluster then pcall(Look, MinimapCluster, 1) end
+        elseif not on and s.followers then
+            for _, f in ipairs(s.followers) do
+                pcall(f.frame.SetAlpha, f.frame, f.alpha)
+                if f.clicks then pcall(f.frame.SetMouseClickEnabled, f.frame, true) end
+                if f.motion then pcall(f.frame.SetMouseMotionEnabled, f.frame, true) end
+            end
+            s.followers = nil
+        end
         ns.HideQuestAreas(s, on)
+    end
+
+    -- Each frame of a scan: frames that faded in (an addon's buttons shown on the minimap's
+    -- hover) hidden again.
+    local function KeepHidden(s)
+        for _, list in ipairs({ s.kids, s.followers }) do
+            for _, f in ipairs(list) do
+                local ok, alpha = pcall(f.frame.GetAlpha, f.frame)
+                if ok and not issecretvalue(alpha) and alpha > 0 then pcall(f.frame.SetAlpha, f.frame, 0) end
+            end
+        end
+    end
+
+    -- Clicks and hover can't be given back to a protected frame in a fight: a scan that
+    -- took them stops as the fight starts, while that's still allowed.
+    function key.HoldsProtected()
+        local s = key.scan
+        if not s then return false end
+        local function Any(list, field)
+            for _, f in ipairs(list or {}) do
+                local frame = field and f[field] or f
+                local ok, protected = pcall(frame.IsProtected, frame)
+                if ok and protected then return true end
+            end
+            return false
+        end
+        return Any(s.noClicks) or Any(s.noMotion) or Any(s.followers, "frame")
+    end
+    -- Something else (Blizzard's gamepad menus) changed the hover switch mid-scan: theirs to keep.
+    function key.PadHoverChanged()
+        if not ourPad and key.scan then key.scan.padHover = nil end
     end
 
     -- Stand-in while the minimap moves about unseen: our symbols' frame goes onto UIParent
@@ -1766,6 +1972,7 @@ end
             Pause(s, false)
             if s.at then return KeyPlace(s, s.at) end -- that spot looked at again
         end
+        KeepHidden(s)
         StandArrow()
         if s.at then
             local spot = s.spots[s.at]
@@ -1971,7 +2178,7 @@ end
             or (UnitOnTaxi and UnitOnTaxi("player")) then return end
         local foci = GetMouseFoci and GetMouseFoci()
         local focus = type(foci) == "table" and foci[1] or nil
-        if focus ~= nil and focus ~= WorldFrame then return end
+        if focus ~= nil and focus ~= WorldFrame and not Under(focus) then return end
         local map, x, y, width, height = MapPosition()
         if not map then return end
         local last = key.last
@@ -2179,6 +2386,17 @@ ns.ApplyArrowSize = ApplyArrowSize
 ns.turns, ns.SWITCH_WAIT, ns.Finders = turns, SWITCH_WAIT, Finders
 -- A getter, since each scan replaces the list.
 function ns.Markers() return markers end
+
+-- For other addons: the symbols NodeSight has, each { name, kind ("herbs", "ore", "treasure",
+-- "rares", "leyline", "convergence"), map (uiMapID), x, y (0-1 on that map), yards (from you,
+-- as of the last update), held (another finder's, kept by Switch) }. A fresh list each call.
+NodeSightAPI = {
+    GetSymbols = function() return Symbols() end,
+    -- callback(symbols) after each scan; an error in it is reported and doesn't stop NodeSight.
+    RegisterCallback = function(callback)
+        if type(callback) == "function" then apiCallbacks[#apiCallbacks + 1] = callback end
+    end,
+}
 function ns.KeyLastJobs() return key.lastJobs, key.lastSkipped, key.lastSpots end
 
 local MINIMAP_TOOLTIP = Enum.TooltipDataType.MinimapMouseover -- the minimap dots' tooltip type
@@ -2297,6 +2515,7 @@ events:RegisterEvent("PLAYER_ENTERING_WORLD")
 events:RegisterEvent("PLAYER_LEAVING_WORLD")
 events:RegisterEvent("PLAYER_REGEN_ENABLED")
 events:RegisterEvent("PLAYER_REGEN_DISABLED")
+events:RegisterEvent("GAME_PAD_ALLOW_HOVER_EVENTS_WITH_FREE_LOOK_CHANGED")
 events:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
 events:RegisterEvent("LOOT_READY")
 events:RegisterEvent("LOOT_CLOSED")
@@ -2345,9 +2564,11 @@ events:SetScript("OnEvent", function(_, event, arg1, arg2)
         -- A reload, a logout or a loading screen: a scan under way stops now, so the quest
         -- areas and the minimap are put back before the game saves anything.
         if ns.KeyScanning() then pcall(key.Stop) end
+    elseif event == "GAME_PAD_ALLOW_HOVER_EVENTS_WITH_FREE_LOOK_CHANGED" then
+        key.PadHoverChanged()
     elseif event == "PLAYER_REGEN_DISABLED" then
         -- Another addon made the minimap protected: put it back before the lockdown.
-        if key.scan and Minimap:IsProtected() then pcall(key.Stop) end
+        if key.scan and (Minimap:IsProtected() or key.HoldsProtected()) then pcall(key.Stop) end
         world.Fight()
         if db.combatHide then ns.UpdateAll() end
     else -- PLAYER_REGEN_ENABLED
