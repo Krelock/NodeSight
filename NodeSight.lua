@@ -1131,6 +1131,7 @@ end
 
     -- A window or button under the mouse that isn't the minimap's or NodeSight's (bags opened
     -- mid-scan, an item in them): the minimap can't be read through it.
+    local COVERED_WAIT = 2 -- seconds a scan waits paused for the mouse to leave a window
     local function Covered()
         local foci = GetMouseFoci and GetMouseFoci()
         local focus = type(foci) == "table" and foci[1] or nil
@@ -1748,7 +1749,16 @@ end
             key.wanted, key.wantedAt = true, GetTime() + 0.3
             return
         end
-        if Mouselooking() then
+        -- A window under the mouse (bags opened mid-scan) pauses it too, for 2 s at most: then
+        -- it's dropped (the symbols as they were), so the minimap doesn't vanish much later.
+        local covered = Covered()
+        if covered then
+            s.coveredAt = s.coveredAt or GetTime()
+            if GetTime() - s.coveredAt > COVERED_WAIT then return KeyStop() end
+        else
+            s.coveredAt = nil
+        end
+        if covered or Mouselooking() then
             if not s.paused then Pause(s, true) end
             return
         end
@@ -1756,7 +1766,6 @@ end
             Pause(s, false)
             if s.at then return KeyPlace(s, s.at) end -- that spot looked at again
         end
-        if Covered() then return KeyStop() end -- (the symbols as they were)
         StandArrow()
         if s.at then
             local spot = s.spots[s.at]
