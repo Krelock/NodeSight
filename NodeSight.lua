@@ -1930,7 +1930,7 @@ end
         if not key.iconTip and type(iconTip) == "table" and iconTip.HookScript then
             key.iconTip = true
             iconTip:HookScript("OnShow", function(tip)
-                if key.scan or GetTime() < quietUntil then tip:Hide() end
+                if (key.scan or GetTime() < quietUntil) and not Covered() then tip:Hide() end
             end)
         end
         if type(iconTip) == "table" and iconTip.IsShown and iconTip:IsShown() then iconTip:Hide() end
@@ -1939,8 +1939,9 @@ end
     -- The minimap opens its tooltip every frame the mouse is over it, and buttons and map
     -- pins on it (addons' and Blizzard's) move with it, unseen, opening theirs as they pass
     -- under the mouse: every tooltip is closed while scanning and a moment after.
+    -- Not a window's own (an item in your bags hovered mid-scan): that one stays.
     GameTooltip:HookScript("OnShow", function(tip)
-        if key.scan or GetTime() < quietUntil then tip:Hide() end
+        if (key.scan or GetTime() < quietUntil) and not Covered() then tip:Hide() end
     end)
     -- A tooltip already shown (a unit's, say) gets the minimap's text without opening again:
     -- closed after the minimap fills it.

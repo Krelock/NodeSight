@@ -16,7 +16,7 @@ do
                 { "Scan look.", "While a scan runs, the minimap's circle is see-through instead of dark, so you still see the world around your symbols" },
             } },
             { "Fixes", {
-                { "Windows during a scan.", "Opening your bags or moving your mouse onto a window mid-scan pauses the scan, so your minimap comes right back; it carries on if you're back within 2 seconds. The scan key does nothing while your mouse is over one" },
+                { "Windows during a scan.", "Opening your bags or moving your mouse onto a window mid-scan pauses the scan, so your minimap comes right back and item tooltips show; it carries on if you're back within 2 seconds. The scan key does nothing while your mouse is over one" },
                 { "Minimap buttons.", "A click during a scan no longer lands on another addon's button on the minimap (a calendar opening by itself, say)" },
             } },
         },
