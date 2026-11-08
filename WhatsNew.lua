@@ -11,6 +11,15 @@ local ipairs = ipairs
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
+        { version = "1.8.1",
+            { "Changes", {
+                { "Scan look.", "While a scan runs, the minimap's circle is see-through instead of dark, so you still see the world around your symbols" },
+            } },
+            { "Fixes", {
+                { "Windows during a scan.", "Opening your bags or moving your mouse onto a window mid-scan stops the scan at once, so your minimap comes right back; the scan key does nothing while your mouse is over one" },
+                { "Minimap buttons.", "A click during a scan no longer lands on another addon's button on the minimap (a calendar opening by itself, say)" },
+            } },
+        },
         { version = "1.8.0",
             { "New", {
                 { "Scan the minimap (key binding).", "WoW Forever's latest update broke how NodeSight read the minimap, so it scans it now: press the key and your minimap is hidden for under a second while it reads where herbs and ore are. Your symbols, your arrow, the minimap's frame and the coordinates stay on screen meanwhile. Set the key with Scan key on the new Scanning page, or in Keybindings > AddOns > NodeSight" },

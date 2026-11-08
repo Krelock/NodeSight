@@ -1129,6 +1129,22 @@ end
             or (IsMouseButtonDown and (IsMouseButtonDown("LeftButton") or IsMouseButtonDown("RightButton")))
     end
 
+    -- A window or button under the mouse that isn't the minimap's or NodeSight's (bags opened
+    -- mid-scan, an item in them): the minimap can't be read through it.
+    local function Covered()
+        local foci = GetMouseFoci and GetMouseFoci()
+        local focus = type(foci) == "table" and foci[1] or nil
+        if focus == nil or focus == WorldFrame then return false end
+        for _ = 1, 20 do
+            if focus == nil then return true end -- (the top: a window of its own)
+            if focus == Minimap or focus == mapFrame or focus == arrow then return false end
+            local ok, parent = pcall(focus.GetParent, focus)
+            if not ok then return true end
+            focus = parent
+        end
+        return true
+    end
+
     -- Blizzard's coordinates under the minimap: anchored to it, so they move with it.
     local function Coords()
         local parent = Minimap:GetParent()
@@ -1160,6 +1176,26 @@ end
             ourScale = true
             pcall(Minimap.SetIconScale, Minimap, on and TINY or db.dotScale ~= NORMAL_DOTS and db.dotScale / 100 or iconScale)
             ourScale = false
+        end
+        -- Buttons on the minimap (an addon's calendar or clock, map pins) move with it under the
+        -- mouse: no clicks on them either (a quick click would land on one), back after.
+        -- The game's protected ones can't be changed in a fight: left alone.
+        if on and not s.noClicks then
+            s.noClicks = {}
+            local function Walk(frame, depth)
+                for _, child in ipairs({ frame:GetChildren() }) do
+                    if child ~= mapFrame and child.IsMouseClickEnabled and child:IsMouseClickEnabled()
+                        and not (InCombatLockdown() and child:IsProtected()) then
+                        s.noClicks[#s.noClicks + 1] = child
+                        child:SetMouseClickEnabled(false)
+                    end
+                    if depth < 3 then Walk(child, depth + 1) end
+                end
+            end
+            pcall(Walk, Minimap, 1)
+        elseif not on and s.noClicks then
+            for _, child in ipairs(s.noClicks) do pcall(child.SetMouseClickEnabled, child, true) end
+            s.noClicks = nil
         end
         local eye = QueueStatusButton
         if eye then
@@ -1212,7 +1248,7 @@ end
                 stand = CreateFrame("Frame")
                 stand:SetParent(UIParent)
                 stand.ground = stand:CreateTexture(nil, "BACKGROUND")
-                stand.ground:SetColorTexture(0, 0, 0, 0.75)
+                stand.ground:SetColorTexture(0, 0, 0, 0.35) -- light: the world shows through
                 stand.mask = stand:CreateMaskTexture()
                 stand.mask:SetAtlas(CIRCLE)
                 stand.mask:SetAllPoints(stand.ground)
@@ -1720,6 +1756,7 @@ end
             Pause(s, false)
             if s.at then return KeyPlace(s, s.at) end -- that spot looked at again
         end
+        if Covered() then return KeyStop() end -- (the symbols as they were)
         StandArrow()
         if s.at then
             local spot = s.spots[s.at]
@@ -1799,7 +1836,7 @@ end
         -- position to follow the symbols by).
         local inside = IsInInstance()
         if issecretvalue(inside) or inside then return end
-        if InCombatLockdown() and Minimap:IsProtected() then return end
+        if (InCombatLockdown() and Minimap:IsProtected()) or Covered() then return end
         if Mouselooking() then
             key.wanted = true
             return
