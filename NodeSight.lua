@@ -1341,13 +1341,21 @@ end
                 end
                 return false
             end
-            local function Follows(frame, depth)
+            -- Each frame answered once: frames anchored by two points each (a grid) would
+            -- otherwise be walked again for every path through them.
+            local answered = {}
+            local function Follows(frame)
+                if answered[frame] ~= nil then return answered[frame] end
+                answered[frame] = false
                 local ok, count = pcall(frame.GetNumPoints, frame)
                 if not ok or type(count) ~= "number" or issecretvalue(count) then return false end
                 for i = 1, count do
                     local fine, _, relative = pcall(frame.GetPoint, frame, i)
                     if fine and type(relative) == "table" and not issecretvalue(relative)
-                        and (Inside(relative) or (depth < 3 and Follows(relative, depth + 1))) then return true end
+                        and (Inside(relative) or Follows(relative)) then
+                        answered[frame] = true
+                        return true
+                    end
                 end
                 return false
             end
@@ -1357,7 +1365,7 @@ end
                 for _, frame in ipairs(kids) do
                     if not seen[frame] and frame ~= Minimap then
                         seen[frame] = true
-                        if Follows(frame, 1) and not Inside(frame) and not (InCombatLockdown() and frame:IsProtected())
+                        if Follows(frame) and not Inside(frame) and not (InCombatLockdown() and frame:IsProtected())
                             and not issecretvalue(frame:GetAlpha()) then
                             local clicks = frame.IsMouseClickEnabled and frame:IsMouseClickEnabled()
                             local motion = frame.IsMouseMotionEnabled and frame:IsMouseMotionEnabled()
@@ -1393,6 +1401,17 @@ end
                 if ok and not issecretvalue(alpha) and alpha > 0 then pcall(f.frame.SetAlpha, f.frame, 0) end
             end
         end
+    end
+
+    -- Mappy fades its minimap buttons in while the minimap is hovered, as it is in a scan,
+    -- setting their alpha every frame of the fade: hidden again right after.
+    local mappyHooked = false
+    local function HookMappy()
+        if mappyHooked or type(Mappy) ~= "table" or type(Mappy.SetButtonsAlpha) ~= "function" then return end
+        mappyHooked = true
+        hooksecurefunc(Mappy, "SetButtonsAlpha", function()
+            if key.scan then KeepHidden(key.scan) end
+        end)
     end
 
     -- Clicks and hover can't be given back to a protected frame in a fight: a scan that
@@ -1972,6 +1991,7 @@ end
             Pause(s, false)
             if s.at then return KeyPlace(s, s.at) end -- that spot looked at again
         end
+        HookMappy()
         KeepHidden(s)
         StandArrow()
         if s.at then
