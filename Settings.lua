@@ -330,7 +330,7 @@ local function RegisterSettings()
         "How far you move between scans. The default is " .. defaults.autoScanYards .. ".",
         UpdateScanner, 5)
     Slider("autoScanSeconds", "Scan every (seconds)", 0, 120,
-        "Also scans once this many seconds have passed since the last scan, as soon as you move (not while you stand still), so herbs and ore that appear or are taken show up. Same rules as Scan as you move (not while flying, your mouse over the world, out of combat unless Scan in combat is on). Off at 0, the default.",
+        "Also scans once this many seconds have passed since the last scan, as soon as you move (not while you stand still), so herbs and ore that appear or are taken show up. Same rules as Scan as you move (not while flying, your mouse over the world, out of combat unless Scan in combat is on). Off at 0. The default is " .. defaults.autoScanSeconds .. ".",
         UpdateScanner, 5, Off)
     Checkbox("combatScan", "Scan in combat",
         "Scan as you move and Scan every (seconds) keep scanning in combat too. The minimap is hidden for a moment each time, mid-fight. The Scan the minimap key binding scans in combat either way.",
@@ -341,6 +341,15 @@ local function RegisterSettings()
     Header("Minimap")
     Dropdown("minimapShape", "Minimap shape", ns.MapShapeChoices,
         "Automatic asks your UI addon and shows its answer in brackets. Pick Square if herbs and ore in the corners of a square minimap don't show up.",
+        UpdateScanner)
+    Checkbox("scanMap", "Map while scanning (Beta)",
+        "While the minimap is hidden for a scan, shows the world map's picture of where you are in its place, moving with you. Not with a rotating minimap, or where the zone has no world map.",
+        UpdateScanner)
+    Checkbox("scanFade", "Fade in and out",
+        "The minimap fades into its stand-in (the map picture, or a dark fill) before a scan and back after, instead of blinking. Each scan starts a moment later.",
+        UpdateScanner)
+    Checkbox("windowWait", "Fewer blinks",
+        "When your mouse goes over a window (your bags) during a scan, or you hold a mouse button to turn, the minimap stays hidden for a moment (up to 2 seconds over a window, 1 while you hold a button) instead of coming back at once. Meanwhile a click on a gap in a window does nothing.",
         UpdateScanner)
 
     Page("Switch")

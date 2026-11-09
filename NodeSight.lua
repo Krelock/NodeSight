@@ -60,10 +60,13 @@ local defaults = {
     soundSkillUps = false, -- the sound only for herbs and ore that can give a skill-up
     autoScan = false, -- scan each time you've moved autoScanYards, out of combat, not flying
     autoScanYards = 30, -- yards between scans as you move
-    autoScanSeconds = 0, -- also a scan once this many seconds have passed and you move (0: off)
+    autoScanSeconds = 10, -- also a scan once this many seconds have passed and you move (0: off)
     combatScan = false, -- Scan as you move and the timer in combat too
     skipRest = true, -- no Scan as you move or timer while resting (capital cities and inns)
     minimapShape = 1, -- 1 automatic (asks your UI addon), 2 round, 3 square
+    scanMap = true, -- Beta: the world map's picture where the minimap was while it scans
+    windowWait = true, -- Fewer blinks: a window under the mouse or a held mouse button mid-scan: the minimap stays hidden a moment
+    scanFade = true, -- the stand-in fades in over the minimap before a scan moves it, and out over it after
     switchFinders = false, -- Find Herbs and Find Minerals in turn
     switchMeasure = 1, -- how the distance between switches is measured: 1 percent, 2 yards, 3 seconds
     switchPercent = 40, -- distance between switches, in percent of the minimap's view radius
@@ -1171,6 +1174,7 @@ end
     -- A window or button under the mouse that isn't the minimap's or NodeSight's (bags opened
     -- mid-scan, an item in them): the minimap can't be read through it.
     local COVERED_WAIT = 2 -- seconds a scan waits paused for the mouse to leave a window
+    local LOOK_WAIT = 1 -- Fewer blinks: seconds the minimap stays hidden while a mouse button is held
     -- A frame drawn under the minimap (a UI addon's full-screen layer) doesn't count: the
     -- minimap is on top of it once it's under the mouse.
     local STRATA = { BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4, DIALOG = 5, FULLSCREEN = 6, FULLSCREEN_DIALOG = 7, TOOLTIP = 8 }
@@ -1183,14 +1187,28 @@ end
         if not (theirs and mine) then return false end
         return theirs < mine or (theirs == mine and level < ourLevel)
     end
+    -- An NPC's window open (a vendor, quest giver, bank, mailbox, trade): no scans, so addons
+    -- that sell or turn in quests right away aren't in a scan's way.
+    local NPC_WINDOWS = { "TradePartner", "Gossip", "QuestGiver", "Merchant", "Banker", "MailInfo", "Auctioneer" }
+    local function AtNpc()
+        local types = Enum and Enum.PlayerInteractionType
+        local manager = C_PlayerInteractionManager
+        if not (types and manager and manager.IsInteractingWithNpcOfType) then return false end
+        for _, name in ipairs(NPC_WINDOWS) do
+            local open = types[name] and manager.IsInteractingWithNpcOfType(types[name])
+            if not issecretvalue(open) and open then return true end
+        end
+        return false
+    end
     local function Covered()
         local foci = GetMouseFoci and GetMouseFoci()
         local focus = type(foci) == "table" and foci[1] or nil
         if focus == nil or focus == WorldFrame then return false end
         local first = focus
+        local riding = key.scan and key.scan.riding
         for _ = 1, 20 do
             if focus == nil then break end -- (the top: a window of its own)
-            if focus == Minimap or focus == mapFrame or focus == arrow then return false end
+            if focus == Minimap or focus == mapFrame or focus == arrow or (riding and riding[focus]) then return false end
             local ok, parent = pcall(focus.GetParent, focus)
             if not ok then break end
             focus = parent
@@ -1239,6 +1257,79 @@ end
     local function Apart(frame)
         return frame == mapFrame or frame == QueueStatusButton
     end
+    -- No clicks or hover on a frame for the scan, given back with the minimap's own.
+    local function QuietOne(s, frame)
+        if Apart(frame) or (InCombatLockdown() and frame:IsProtected()) then return end
+        if frame.IsMouseClickEnabled and frame:IsMouseClickEnabled() then
+            s.noClicks[#s.noClicks + 1] = frame
+            frame:SetMouseClickEnabled(false)
+        end
+        if frame.IsMouseMotionEnabled and frame:IsMouseMotionEnabled() then
+            s.noMotion[#s.noMotion + 1] = frame
+            frame:SetMouseMotionEnabled(false)
+        end
+    end
+    local function QuietTree(s, parent, depth)
+        for _, child in ipairs({ parent:GetChildren() }) do
+            if not issecretvalue(child) then
+                QuietOne(s, child)
+                if depth < 6 then QuietTree(s, child, depth + 1) end
+            end
+        end
+    end
+
+    -- Fade in and out: the frames the scan hid, fading back with the stand-in after it.
+    local fadeBack = {}
+
+    -- A frame hidden until the minimap is hovered (a UI's zoom buttons, addon buttons shown on
+    -- mouseover), as it is in a scan: shrunk from the start, so it never shows at the mouse.
+    -- (One that was shown and comes back: KeepHidden.)
+    -- After the scan the minimap leaving the mouse reads as the mouse leaving it, and some show
+    -- them a moment before fading them out (LibDBIcon: a second): they stay shrunk until
+    -- hidden again, unless the mouse really is over the minimap.
+    local settling, settledAt = {}, 0
+    -- Hidden by its alpha or by Hide() (EllesmereUI's zoom buttons).
+    local function Unseen(frame, alpha)
+        if alpha == 0 then return true end
+        local ok, shown = pcall(frame.IsShown, frame)
+        return ok and not issecretvalue(shown) and not shown
+    end
+    local function ShrinkHidden(f)
+        if settling[f.frame] then -- (still settling from the last scan: its own alpha is 0)
+            f.alpha, f.scale, f.hover = 0, settling[f.frame], true
+            settling[f.frame] = nil
+            return
+        end
+        if not Unseen(f.frame, f.alpha) then return end
+        local fine, scale = pcall(f.frame.GetScale, f.frame)
+        if fine and type(scale) == "number" and not issecretvalue(scale) then
+            f.scale, f.hover = scale, true
+            pcall(f.frame.SetScale, f.frame, 0.001)
+        end
+    end
+    local function Unshrink(f)
+        if f.hover then
+            settling[f.frame], settledAt = f.scale, GetTime()
+        else
+            pcall(f.frame.SetScale, f.frame, f.scale)
+        end
+    end
+    -- Each frame without a scan: their size back once hidden again (or after 3 seconds).
+    local function Settle()
+        if not next(settling) then return end
+        local wait = GetTime() - settledAt
+        if wait < 0.3 then return end
+        local over = Minimap:IsMouseOver()
+        for frame, scale in pairs(settling) do
+            local ok, alpha = pcall(frame.GetAlpha, frame)
+            if (over or wait > 3 or not ok or issecretvalue(alpha) or Unseen(frame, alpha))
+                and not (InCombatLockdown() and frame:IsProtected()) then
+                pcall(frame.SetScale, frame, scale)
+                settling[frame] = nil
+            end
+        end
+    end
+
     local ourPad = false
     local function Disguise(s, on)
         if on and s.wheel == nil and Minimap.IsMouseWheelEnabled and Minimap.IsMouseClickEnabled then
@@ -1265,19 +1356,38 @@ end
         -- The mask clips only the map: the frames on it (its ring, the zoom buttons, addons'
         -- buttons) are hidden by their own alpha, which doesn't touch the map's drawing.
         -- Hidden ones too: some fade in when the minimap is hovered (KeepHidden).
+        -- Text and textures drawn on the minimap itself (a UI's coordinates) the same way.
         if on and Minimap.SetMaskTexture and not s.kids then
-            s.kids = {}
-            for _, child in ipairs({ Minimap:GetChildren() }) do
-                local ok, alpha = pcall(child.GetAlpha, child)
-                if not Apart(child) and ok and not issecretvalue(alpha)
+            s.kids, s.kidCount = {}, Minimap:GetNumChildren()
+            local parts = { Minimap:GetChildren() }
+            for _, region in ipairs({ Minimap:GetRegions() }) do parts[#parts + 1] = region end
+            for _, child in ipairs(parts) do
+                local ok, alpha = false, nil
+                if not issecretvalue(child) then ok, alpha = pcall(child.GetAlpha, child) end
+                if ok and not Apart(child) and not issecretvalue(alpha)
                     and not (InCombatLockdown() and child:IsProtected()) then
-                    s.kids[#s.kids + 1] = { frame = child, alpha = alpha }
+                    local kid = { frame = child, alpha = s.orig and s.orig[child] or alpha }
+                    s.kids[#s.kids + 1] = kid
                     child:SetAlpha(0)
+                    ShrinkHidden(kid)
                 end
             end
         elseif not on and s.kids then
-            for _, kid in ipairs(s.kids) do pcall(kid.frame.SetAlpha, kid.frame, kid.alpha) end
+            s.restored = s.restored or {}
+            for _, kid in ipairs(s.kids) do
+                pcall(kid.frame.SetAlpha, kid.frame, kid.alpha)
+                if kid.scale then Unshrink(kid) end
+                s.restored[kid.frame] = kid.alpha
+            end
             s.kids = nil
+        end
+        if not on and s.orig then -- (a fade-in cut short)
+            s.restored = s.restored or {}
+            for frame, alpha in pairs(s.orig) do
+                pcall(frame.SetAlpha, frame, alpha)
+                s.restored[frame] = alpha
+            end
+            s.orig = nil
         end
         -- With a controller: hover events in free look, so the minimap is read under the stick camera.
         if on and s.padHover == nil and C_GamePad and C_GamePad.IsEnabled and C_GamePad.IsEnabled()
@@ -1314,7 +1424,7 @@ end
                         s.noMotion[#s.noMotion + 1] = child
                         child:SetMouseMotionEnabled(false)
                     end
-                    if depth < 3 then Walk(child, depth + 1) end
+                    if depth < 6 then Walk(child, depth + 1) end
                 end
             end
             pcall(Walk, Minimap, 1)
@@ -1335,7 +1445,7 @@ end
         -- day/night dial moved onto it) move with it but don't fade with it: hidden too, no
         -- clicks and no hover (one above the minimap would pause the scan every other frame).
         if on and not s.followers then
-            s.followers = {}
+            s.followers, s.riding = {}, {}
             local seen = { [mapFrame] = true, [arrow] = true } -- (the eye and the coordinates have their own)
             if QueueStatusButton then seen[QueueStatusButton] = true end
             if s.coords then seen[s.coords] = true end
@@ -1376,10 +1486,15 @@ end
                             and not issecretvalue(frame:GetAlpha()) then
                             local clicks = frame.IsMouseClickEnabled and frame:IsMouseClickEnabled()
                             local motion = frame.IsMouseMotionEnabled and frame:IsMouseMotionEnabled()
-                            s.followers[#s.followers + 1] = { frame = frame, alpha = frame:GetAlpha(), clicks = clicks, motion = motion }
+                            local follower = { frame = frame, alpha = s.orig and s.orig[frame] or frame:GetAlpha(), clicks = clicks, motion = motion }
+                            s.followers[#s.followers + 1] = follower
                             frame:SetAlpha(0)
+                            ShrinkHidden(follower)
                             if clicks then frame:SetMouseClickEnabled(false) end
                             if motion then frame:SetMouseMotionEnabled(false) end
+                            -- Its buttons too (the mail icon a minimap addon put there).
+                            if s.noClicks then QuietTree(s, frame, 1) end
+                            s.riding[frame] = true
                         elseif depth < 3 and parent ~= UIParent then
                             Look(frame, depth + 1)
                         end
@@ -1389,23 +1504,34 @@ end
             pcall(Look, UIParent, 1)
             if MinimapCluster then pcall(Look, MinimapCluster, 1) end
         elseif not on and s.followers then
+            s.restored = s.restored or {}
             for _, f in ipairs(s.followers) do
                 pcall(f.frame.SetAlpha, f.frame, f.alpha)
+                if f.scale then Unshrink(f) end
+                s.restored[f.frame] = f.alpha
                 if f.clicks then pcall(f.frame.SetMouseClickEnabled, f.frame, true) end
                 if f.motion then pcall(f.frame.SetMouseMotionEnabled, f.frame, true) end
             end
-            s.followers = nil
+            s.followers, s.riding = nil, nil
         end
         ns.HideQuestAreas(s, on)
     end
 
     -- Each frame of a scan: frames that faded in (an addon's buttons shown on the minimap's
-    -- hover) hidden again.
+    -- hover) hidden again. One that comes back (an addon raising it on a timer, between our
+    -- frames) is also shrunk out of sight for the rest of the scan; its size back after.
     local function KeepHidden(s)
         for _, list in ipairs({ s.kids, s.followers }) do
             for _, f in ipairs(list) do
                 local ok, alpha = pcall(f.frame.GetAlpha, f.frame)
-                if ok and not issecretvalue(alpha) and alpha > 0 then pcall(f.frame.SetAlpha, f.frame, 0) end
+                if ok and not issecretvalue(alpha) and alpha > 0 then
+                    pcall(f.frame.SetAlpha, f.frame, 0)
+                    local fine, scale = pcall(f.frame.GetScale, f.frame)
+                    if f.scale == nil and fine and type(scale) == "number" and not issecretvalue(scale) then
+                        f.scale = scale
+                        pcall(f.frame.SetScale, f.frame, 0.001)
+                    end
+                end
             end
         end
     end
@@ -1419,6 +1545,46 @@ end
         hooksecurefunc(Mappy, "SetButtonsAlpha", function()
             if key.scan then KeepHidden(key.scan) end
         end)
+    end
+
+    -- Frames put on the minimap mid-scan (a map pin added): hidden and quiet too.
+    local function Adopt(s)
+        if not s.kids or not s.noClicks then return end
+        local count = Minimap:GetNumChildren()
+        if issecretvalue(count) or count == s.kidCount then return end
+        s.kidCount = count
+        local known = {}
+        for _, kid in ipairs(s.kids) do known[kid.frame] = true end
+        for _, child in ipairs({ Minimap:GetChildren() }) do
+            if not known[child] and not issecretvalue(child) and not Apart(child)
+                and not (InCombatLockdown() and child:IsProtected()) then
+                local ok, alpha = pcall(child.GetAlpha, child)
+                if ok and not issecretvalue(alpha) then
+                    s.kids[#s.kids + 1] = { frame = child, alpha = alpha } -- (KeepHidden hides it)
+                    QuietOne(s, child)
+                    QuietTree(s, child, 1)
+                end
+            end
+        end
+    end
+
+    -- Anything on the minimap, or riding with it, that still has the mouse: quieted now (the
+    -- game names no dot while another frame has the mouse; Covered counts it as no window,
+    -- so its tooltip is closed like the minimap's).
+    local function Unhover(s)
+        if not s.noMotion then return end
+        local foci = GetMouseFoci and GetMouseFoci()
+        local focus = type(foci) == "table" and foci[1] or nil
+        if focus == nil or issecretvalue(focus) or focus == Minimap or focus == WorldFrame or focus == arrow or Apart(focus) then return end
+        local tied, frame = s.riding and s.riding[focus], focus
+        for _ = 1, 20 do
+            if tied then break end
+            local ok, parent = pcall(frame.GetParent, frame)
+            if not ok or not parent then break end
+            tied = parent == Minimap or (s.riding and s.riding[parent])
+            frame = parent
+        end
+        if tied then QuietOne(s, focus) end
     end
 
     -- Clicks and hover can't be given back to a protected frame in a fight: a scan that
@@ -1470,6 +1636,139 @@ end
         if text ~= stand.text then stand.text = text stand.coords:SetText(text) end
     end
 
+    -- The world map's art of the zone over the dark ground, centered on you at the minimap's
+    -- zoom, so the stand-in looks like a map: its base art and the parts you explored, as the
+    -- world map lays them, each piece cut to the minimap's square. Each frame of a scan it
+    -- moves with you, as the minimap would; laid again only when something changed.
+    -- Only with Map while scanning on; not with a rotating minimap, or where the zone has no art.
+    local function StandArt(width, height, round)
+        local map, px, py, mapWidth, mapHeight = MapPosition()
+        local radius = C_Minimap.GetViewRadius()
+        if map ~= stand.artMap then -- the art's list: once a scan, and on a new map
+            stand.artMap = map
+            stand.layer = map and (C_Map.GetMapArtLayers(map) or {})[1]
+            stand.files = stand.layer and C_Map.GetMapArtLayerTextures(map, 1)
+            stand.explored = stand.files and C_MapExplorationInfo and C_MapExplorationInfo.GetExploredMapTextures(map) or {}
+        end
+        local layer, files, explored = stand.layer, stand.files, stand.explored
+        if not db.scanMap or not (files and files[1]) or not radius or issecretvalue(radius) or radius <= 0
+            or C_CVar.GetCVar("rotateMinimap") == "1" then
+            for _, tile in ipairs(stand.tiles) do tile:Hide() end
+            stand.artKey = nil
+            return
+        end
+        local artKey = table.concat({ map, px, py, radius, width, height, tostring(round), layer.tileWidth, #files, #explored }, " ")
+        if artKey == stand.artKey then return end
+        stand.artKey = artKey
+        local mask = round and stand.artMask or nil
+        local perYard = width / 2 / radius -- stand units per yard
+        local sx, sy = perYard * mapWidth / layer.layerWidth, perYard * mapHeight / layer.layerHeight
+        local tw, th = layer.tileWidth, layer.tileHeight
+        local hw, hh = width / 2, height / 2
+        local used = 0
+        -- One piece of art at x, y (from the map's top left) w by h in the art's units, its
+        -- picture filling umax, vmax of its file: the part inside the minimap's square.
+        local function Lay(file, x, y, w, h, umax, vmax, sublevel)
+            local left, top = (x - px * layer.layerWidth) * sx, (py * layer.layerHeight - y) * sy
+            local right, bottom = left + w * sx, top - h * sy
+            local l, r = math.max(left, -hw), math.min(right, hw)
+            local t, b = math.min(top, hh), math.max(bottom, -hh)
+            if l >= r or b >= t then return end
+            used = used + 1
+            local tile = stand.tiles[used]
+            if not tile then
+                tile = stand:CreateTexture(nil, "BACKGROUND", nil, 1)
+                tile:SetVertexColor(0.6, 0.6, 0.6) -- darker, nearer the minimap's colors
+                stand.tiles[used] = tile
+            end
+            if tile.mask ~= mask then
+                if tile.mask then tile:RemoveMaskTexture(tile.mask) end
+                if mask then tile:AddMaskTexture(mask) end
+                tile.mask = mask
+            end
+            tile:SetDrawLayer("BACKGROUND", sublevel)
+            tile:SetTexture(file, nil, nil, "TRILINEAR")
+            tile:SetTexCoord((l - left) / (right - left) * umax, (r - left) / (right - left) * umax,
+                (top - t) / (top - bottom) * vmax, (top - b) / (top - bottom) * vmax)
+            tile:SetSize(r - l, t - b)
+            tile:ClearAllPoints()
+            tile:SetPoint("TOPLEFT", stand, "CENTER", l, t)
+            tile:Show()
+        end
+        local cols = math.ceil(layer.layerWidth / tw)
+        for row = 1, math.ceil(layer.layerHeight / th) do
+            for col = 1, cols do
+                Lay(files[(row - 1) * cols + col], (col - 1) * tw, (row - 1) * th, tw, th, 1, 1, 1)
+            end
+        end
+        -- The explored parts: tiles of the art's size, the last ones in a row or column
+        -- partly filled (their file rounded up to a power of two), as the world map does.
+        for _, info in ipairs(explored) do
+            if not info.isShownByMouseOver then
+                local wide, tall = math.ceil(info.textureWidth / tw), math.ceil(info.textureHeight / th)
+                for j = 1, tall do
+                    local h, fileH = th, th
+                    if j == tall then
+                        h = info.textureHeight % th
+                        if h == 0 then h = th end
+                        fileH = 16
+                        while fileH < h do fileH = fileH * 2 end
+                    end
+                    for k = 1, wide do
+                        local w, fileW = tw, tw
+                        if k == wide then
+                            w = info.textureWidth % tw
+                            if w == 0 then w = tw end
+                            fileW = 16
+                            while fileW < w do fileW = fileW * 2 end
+                        end
+                        Lay(info.fileDataIDs[(j - 1) * wide + k], info.offsetX + tw * (k - 1), info.offsetY + th * (j - 1),
+                            w, h, w / fileW, h / fileH, info.isDrawOnTopLayer and 3 or 2)
+                    end
+                end
+            end
+        end
+        for i = used + 1, #stand.tiles do stand.tiles[i]:Hide() end
+    end
+
+    -- The stand-in fades in over the minimap before a scan moves it away, and out over it
+    -- when it's back (Fade in and out): the minimap itself can't fade (drawn below full
+    -- alpha it draws wrong), the stand-in over it can. Returns the seconds left to fade in.
+    local FADE = 0.3
+    local StandMove -- (below)
+    local function StandFading(self)
+        StandMove() -- it goes on moving with you while it fades
+        local t = (GetTime() - self.fadeAt) / FADE
+        if t >= 1 then
+            self:SetAlpha(self.fadeTo)
+            self:SetScript("OnUpdate", nil)
+            if self.fadeTo == 0 then self:Hide() end
+        else
+            self:SetAlpha(self.fadeFrom + (self.fadeTo - self.fadeFrom) * t)
+        end
+        if self.fadeTo == 0 then -- the minimap's frames back as it goes
+            local done = t >= 1
+            for frame, alpha in pairs(fadeBack) do
+                pcall(frame.SetAlpha, frame, done and alpha or alpha * (1 - self:GetAlpha()))
+            end
+            if done then wipe(fadeBack) end
+        end
+    end
+    local function StandFade(to)
+        if not db.scanFade then
+            if stand:GetScript("OnUpdate") then stand:SetScript("OnUpdate", nil) end
+            if stand:GetAlpha() ~= 1 then stand:SetAlpha(1) end
+            stand:SetShown(to == 1)
+            return 0
+        end
+        local from = stand:IsShown() and stand:GetAlpha() or 0
+        stand.fadeTo, stand.fadeFrom, stand.fadeAt = to, from, GetTime() - FADE * (to == 1 and from or 1 - from)
+        stand:SetAlpha(from)
+        stand:Show()
+        stand:SetScript("OnUpdate", StandFading)
+        return FADE * (1 - from) * to
+    end
+
     local function PinSymbols(s, on)
         if on then
             local left, bottom = Minimap:GetLeft(), Minimap:GetBottom()
@@ -1480,16 +1779,22 @@ end
             if not stand then
                 stand = CreateFrame("Frame")
                 stand:SetParent(UIParent)
+                stand:Hide() -- (shown by its fade)
                 stand.ground = stand:CreateTexture(nil, "BACKGROUND")
                 stand.ground:SetColorTexture(0, 0, 0, 0.35) -- light: the world shows through
                 stand.mask = stand:CreateMaskTexture()
                 stand.mask:SetAtlas(CIRCLE)
                 stand.mask:SetAllPoints(stand.ground)
+                stand.artMask = stand:CreateMaskTexture() -- the minimap's own shape, for the art
+                stand.artMask:SetAllPoints(stand.ground)
+                stand.tiles = {}
                 stand.round = false -- the mask goes on when the minimap is round
                 stand.frame = stand:CreateTexture(nil, "OVERLAY")
                 stand.arrow = stand:CreateTexture(nil, "OVERLAY", nil, 1)
                 stand.arrow:SetPoint("CENTER")
                 stand.coords = stand:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                stand.dielBack = stand:CreateTexture(nil, "OVERLAY", nil, 2) -- the day/night dial, over the frame
+                stand.dielRim = stand:CreateTexture(nil, "OVERLAY", nil, 3)
             end
             for _, f in ipairs({ stand, mapFrame }) do
                 f:SetParent(UIParent)
@@ -1511,6 +1816,18 @@ end
                 stand.round = round
                 if round then stand.ground:AddMaskTexture(stand.mask) else stand.ground:RemoveMaskTexture(stand.mask) end
             end
+            stand.artWidth, stand.artHeight = width, round and height or height * (quarters.height or 1)
+            local shape = round and Mask()
+            if shape and shape ~= stand.artShape then
+                stand.artShape = shape
+                if type(shape) == "string" and C_Texture.GetAtlasExists and C_Texture.GetAtlasExists(shape) then
+                    stand.artMask:SetAtlas(shape)
+                else
+                    stand.artMask:SetTexture(shape, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+                end
+            end
+            stand.artMap = false
+            StandArt(stand.artWidth, stand.artHeight, round)
             -- Blizzard's gold frame, where shown (UI addons hide it).
             local compass = MinimapCompassTexture
             local cx, cy, cw, ch
@@ -1520,6 +1837,34 @@ end
                 stand.frame:SetAtlas(compass:GetAtlas())
                 stand.frame:SetSize(cw, ch)
                 stand.frame:SetPoint("CENTER", cx, cy)
+            end
+            -- Forever's day/night dial sits on the gold frame, beside the minimap (it doesn't move
+            -- with it): copied over the copied frame too, so the frame's line doesn't cross it.
+            -- Only as much as the real one is seen: a UI that hides or fades it does the same to the copy.
+            local diel = MinimapCluster and MinimapCluster.DielFrame
+            local seen = diel and diel:IsVisible() and diel.GetEffectiveAlpha and diel:GetEffectiveAlpha()
+            if seen and (issecretvalue(seen) or seen <= 0) then seen = nil end
+            local back = seen and diel.Background
+            local rim
+            if back then
+                for _, region in ipairs({ diel:GetRegions() }) do
+                    if region ~= back and region.GetAtlas and region:GetAtlas() then rim = region end
+                end
+            end
+            for _, pair in ipairs({ { stand.dielBack, back }, { stand.dielRim, rim } }) do
+                local copy, real = pair[1], pair[2]
+                local x, y, w, h
+                local alpha = real and real:IsShown() and real:GetAtlas() and real:GetAlpha()
+                if alpha and (issecretvalue(alpha) or alpha <= 0) then alpha = nil end
+                if alpha then x, y, w, h = Measure(real, eff) end
+                copy:SetShown(x ~= nil)
+                if x then
+                    copy:SetAlpha(seen * alpha)
+                    copy:SetAtlas(real:GetAtlas())
+                    copy:SetSize(w, h)
+                    copy:ClearAllPoints()
+                    copy:SetPoint("CENTER", x, y)
+                end
             end
             local size = 20 * (db.dotScale or 100) / 100 -- about the game's arrow, at the dots' size
             stand.arrow:SetSize(size, size)
@@ -1532,7 +1877,7 @@ end
                 stand.coords:SetFontObject(coords.CoordText:GetFontObject() or GameFontHighlightSmall)
                 stand.coords:SetPoint("CENTER", tx, ty)
             end
-            stand:Show()
+            s.fadeIn = StandFade(1) > 0 and GetTime() + FADE * (1 - stand:GetAlpha()) or nil
             StandArrow()
         elseif s.pinned then
             mapFrame:SetParent(Minimap)
@@ -1540,7 +1885,14 @@ end
             mapFrame:SetFrameLevel(s.pinned.level)
             mapFrame:ClearAllPoints()
             mapFrame:SetAllPoints(Minimap)
-            stand:Hide()
+            if db.scanFade then -- the frames the scan hid fade back with it
+                for frame, alpha in pairs(s.restored or {}) do
+                    pcall(frame.SetAlpha, frame, 0)
+                    fadeBack[frame] = alpha
+                end
+            end
+            s.restored = nil
+            StandFade(0)
             s.pinned = nil
         end
     end
@@ -1964,15 +2316,52 @@ end
             PinSymbols(s, false)
         else
             PinSymbols(s, true)
-            Disguise(s, true)
+            if not s.fadeIn then Disguise(s, true) end
             s.lastX, s.lastY = nil, nil -- the mouse's last move says nothing now
         end
         s.paused = on
     end
 
+    -- Fade in and out: the minimap's own frames and their alpha, to fade with the stand-in
+    -- (ones still fading back from the last scan: their own alpha, taken from there).
+    local function MinimapAlphas()
+        local alphas = {}
+        for frame, alpha in pairs(fadeBack) do alphas[frame] = alpha end
+        wipe(fadeBack)
+        local parts = { Minimap:GetChildren() }
+        for _, region in ipairs({ Minimap:GetRegions() }) do parts[#parts + 1] = region end
+        for _, child in ipairs(parts) do
+            if alphas[child] == nil and not issecretvalue(child) and not Apart(child)
+                and not (InCombatLockdown() and child:IsProtected()) then
+                local ok, alpha = pcall(child.GetAlpha, child)
+                if ok and not issecretvalue(alpha) then alphas[child] = alpha end
+            end
+        end
+        return alphas
+    end
+
+    -- The stand-in each frame of a scan (and of its fades): its arrow turned, its map moved with you.
+    function StandMove()
+        StandArrow()
+        if stand and stand:IsShown() then StandArt(stand.artWidth, stand.artHeight, stand.round) end
+    end
+
     local function KeyScanFrame()
         local s = key.scan
-        if not Minimap:IsVisible() then return KeyStop() end
+        if not Minimap:IsVisible() or AtNpc() then return KeyStop() end
+        -- Fade in and out: the minimap goes once the stand-in over it is in.
+        if s.fadeIn then
+            s.orig = s.orig or MinimapAlphas()
+            if GetTime() < s.fadeIn then
+                local t = stand and stand:GetAlpha() or 1
+                for frame, alpha in pairs(s.orig) do pcall(frame.SetAlpha, frame, alpha * (1 - t)) end
+                return
+            end
+            s.fadeIn = nil
+            Disguise(s, true)
+            s.orig = nil
+            if s.at then return KeyPlace(s, s.at) end -- after a pause: that spot looked at again
+        end
         -- A rotating minimap turned mid-scan has turned its picture: the scan stops (the
         -- minimap back, the symbols as they were) and runs again a moment after.
         local facing = s.facing and PlayerFacing()
@@ -1983,6 +2372,7 @@ end
         end
         -- A window under the mouse (bags opened mid-scan) pauses it too, for 2 s at most: then
         -- it's dropped (the symbols as they were), so the minimap doesn't vanish much later.
+        Unhover(s)
         local covered = Covered()
         if covered then
             s.coveredAt = s.coveredAt or GetTime()
@@ -1990,17 +2380,35 @@ end
         else
             s.coveredAt = nil
         end
-        if covered or Mouselooking() then
+        local looking = Mouselooking()
+        if not looking then s.lookAt = nil end
+        -- Fewer blinks: the minimap stays hidden where it is while a window is under the mouse
+        -- (up to 2 s, above) or a mouse button is held to turn (up to 1 s, then paused).
+        if db.windowWait and not s.paused and (covered or looking) then
+            s.lookAt = looking and (s.lookAt or GetTime()) or nil
+            if not looking or GetTime() - s.lookAt <= LOOK_WAIT then
+                s.waited = true
+                KeepHidden(s)
+                return StandMove()
+            end
+        end
+        if looking or covered then
             if not s.paused then Pause(s, true) end
             return
         end
         if s.paused then
             Pause(s, false)
+            if s.fadeIn then return end -- placed once the stand-in is in (above)
             if s.at then return KeyPlace(s, s.at) end -- that spot looked at again
         end
+        if s.waited then
+            s.waited, s.lastX, s.lastY = nil, nil, nil -- the mouse's last move says nothing now
+            if s.at then return KeyPlace(s, s.at) end
+        end
         HookMappy()
+        Adopt(s)
         KeepHidden(s)
-        StandArrow()
+        StandMove()
         if s.at then
             local spot = s.spots[s.at]
             -- The game looks under the mouse a frame after the minimap was placed: where the
@@ -2079,7 +2487,7 @@ end
         -- position to follow the symbols by).
         local inside = IsInInstance()
         if issecretvalue(inside) or inside then return end
-        if (InCombatLockdown() and Minimap:IsProtected()) or Covered() then return end
+        if (InCombatLockdown() and Minimap:IsProtected()) or Covered() or AtNpc() then return end
         if Mouselooking() then
             key.wanted = true
             return
@@ -2152,12 +2560,12 @@ end
         local gridSpots = #spots
         local pin = {}
         PinSymbols(pin, true)
-        key.scan = { pinned = pin.pinned, facing = C_CVar.GetCVar("rotateMinimap") == "1" and PlayerFacing() or nil, spots = spots, gridSpots = gridSpots, width = width, step = step, skipped = skipped, precision = PRECISION,
+        key.scan = { pinned = pin.pinned, fadeIn = pin.fadeIn, facing = C_CVar.GetCVar("rotateMinimap") == "1" and PlayerFacing() or nil, spots = spots, gridSpots = gridSpots, width = width, step = step, skipped = skipped, precision = PRECISION,
             ox = 0, oy = 0, hits = {},
             p0 = map and { map = map, x = px, y = py, width = mapWidth, height = mapHeight } or nil,
             left = Minimap:GetLeft(), bottom = Minimap:GetBottom(), alpha = Minimap:GetAlpha(), coords = Coords() }
         if key.scan.coords then key.scan.coordsAlpha = key.scan.coords:GetAlpha() end
-        Disguise(key.scan, true)
+        if not key.scan.fadeIn then Disguise(key.scan, true) end
         -- Most addons' round minimap buttons (LibDBIcon) open their own tooltip, not
         -- GameTooltip, as the moving minimap passes them under the mouse: closed too.
         local iconTip = _G["LibDBIconTooltip"]
@@ -2223,7 +2631,7 @@ end
         local timed = seconds > 0 and now - (key.lastAt or now) >= seconds and stepping
         if moved or timed then StartKeyScan(true) end
     end
-    key.Start, key.Frame, key.Stop, key.Mouselooking = StartKeyScan, KeyScanFrame, KeyStop, Mouselooking
+    key.Start, key.Frame, key.Stop, key.Mouselooking, key.Settle = StartKeyScan, KeyScanFrame, KeyStop, Mouselooking, Settle
     function ns.KeyScanning() return key.scan ~= nil end -- (Switch: no switch during a scan)
 end)()
 
@@ -2242,6 +2650,7 @@ local function OnUpdate()
         ns.QuestAreasBack()
     end
     -- The scan: on its key, or as you move (Scan as you move).
+    if not key.scan then xpcall(key.Settle, geterrorhandler()) end
     if key.scan then
         if not xpcall(key.Frame, geterrorhandler()) then pcall(key.Stop) end
     elseif key.stopped then -- (an error starting a scan: reported once, off until a reload)
@@ -2481,6 +2890,12 @@ local function OnAddonLoaded()
     end
     -- Scan in combat was on by default for the old scan; the new one hides the minimap: off once.
     if not settings.combatScanReset then settings.combatScan, settings.combatScanReset = false, true end
+    -- Scan every (seconds) was off by default; now 10: moved there once, unless they scan as
+    -- they move or chose another number.
+    if not settings.autoScanTimerOn then
+        if tonumber(settings.autoScanSeconds) == 0 and not settings.autoScan then settings.autoScanSeconds = 10 end
+        settings.autoScanTimerOn = true
+    end
     ns.CarryOverLooks(settings)
     -- Red symbols turned off, from before Skill colors: Off.
     if settings.skillLook == nil and settings.hard == false then settings.skillLook = SKILL.OFF end

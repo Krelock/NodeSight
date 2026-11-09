@@ -11,6 +11,24 @@ local ipairs = ipairs
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
+        { version = "1.9.0",
+            { "New", {
+                { "Map while scanning (Beta) (on by default).", "While the minimap is hidden for a scan, the world map's picture of where you are shows in its place, moving as you walk. Not with a rotating minimap. On the Scanning page" },
+                { "Fade in and out (on by default).", "The minimap and its buttons fade into the map picture before a scan and back after, instead of blinking. Each scan starts a moment later. On the Scanning page" },
+                { "Fewer blinks (on by default).", "When your mouse goes over a window (your bags) or you hold a mouse button to turn mid-scan, the minimap stays hidden for a moment instead of flashing back: up to 2 seconds over a window, 1 while you hold a button. On the Scanning page" },
+            } },
+            { "Changes", {
+                { "Scan every (seconds) (10 by default).", "Turned on at 10 once for everyone who had it off and doesn't use Scan as you move. On the Scanning page" },
+                { "NPC windows.", "Scans wait while a vendor, quest giver, bank, mailbox, auction house or trade window is open, so addons that sell junk or turn in quests for you aren't interrupted" },
+            } },
+            { "Fixes", {
+                { "EllesmereUI.", "Its coordinates and zoom buttons no longer show up under your mouse during a scan" },
+                { "Mail icon.", "With Leatrix Plus or another minimap addon, the mail tooltip no longer pops up and pauses scans" },
+                { "Minimap icons.", "Icons other addons put on or next to the minimap stay hidden and can't be hovered during a scan, including ones added mid-scan" },
+                { "Buttons shown on hover.", "Addon buttons that only show when you hover the minimap (Leatrix Plus) no longer flash under your mouse at the start of a scan" },
+                { "Day/night dial.", "It stays on top of the minimap's border during a scan, and hidden if your UI hides it" },
+            } },
+        },
         { version = "1.8.1",
             { "Changes", {
                 { "Scan look.", "While a scan runs, the minimap's circle is see-through instead of dark, so you still see the world around your symbols" },
