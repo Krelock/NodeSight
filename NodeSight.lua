@@ -1249,8 +1249,15 @@ end
             pcall(Minimap.SetMouseClickEnabled, Minimap, not on and s.clicks)
         end
         if Minimap.SetMaskTexture then
+            -- The empty mask goes past hooks on the frame: one that puts its own mask back at once
+            -- (Leatrix Plus' square minimap) would undo it. The real one goes back the usual way.
+            local set = Minimap.SetMaskTexture
+            local mt = on and getmetatable(Minimap)
+            if type(mt) == "table" and type(mt.__index) == "table" and type(mt.__index.SetMaskTexture) == "function" then
+                set = mt.__index.SetMaskTexture
+            end
             ourMask = true
-            pcall(Minimap.SetMaskTexture, Minimap, on and EMPTY_MASK or Mask())
+            pcall(set, Minimap, on and EMPTY_MASK or Mask())
             ourMask = false
         else
             pcall(Minimap.SetAlpha, Minimap, on and 0 or s.alpha)
