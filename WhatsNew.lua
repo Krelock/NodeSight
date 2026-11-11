@@ -51,6 +51,11 @@ end
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
+        { version = "2.0.5.1",
+            { "Fixes", {
+                { "Bug report button.", "Its report is shorter to paste, and says more about what was under the mouse" },
+            } },
+        },
         { version = "2.0.5",
             { "Fixes", {
                 { "Scans with EllesmereUI.", "Scans no longer find nothing, or put symbols beside the nodes, when your mouse is near the edge of the screen" },

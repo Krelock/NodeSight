@@ -127,12 +127,17 @@ ns.db = db -- shared with the other files
 
 -- The bug report (its button is by What's New): a short log of what scans did, the newest
 -- lines kept with the saved settings so a /reload doesn't lose them.
-local REPORT_LINES = 300
+local REPORT_LINES = 120
 local reportLines = {} -- (until the saved settings load)
+function ns.LogList()
+    return type(NodeSightDB) == "table" and type(NodeSightDB.report) == "table" and NodeSightDB.report or reportLines
+end
 function ns.Log(text)
-    local list = type(NodeSightDB) == "table" and type(NodeSightDB.report) == "table" and NodeSightDB.report or reportLines
-    list[#list + 1] = ("%.1f %s"):format(GetTime(), text)
+    local list = ns.LogList()
+    local line = ("%.1f %s"):format(GetTime(), text)
+    list[#list + 1] = line
     while #list > REPORT_LINES do table.remove(list, 1) end
+    return line
 end
 -- Once a session for each key (a frame hidden every scan is said once).
 local logged = {}
@@ -150,6 +155,17 @@ function ns.NameOf(frame)
         if ok and type(name) == "string" and not issecretvalue(name) and name ~= "" then return name end
     end
     return "an unnamed frame"
+end
+-- What has the mouse, and whose tooltip is open, for the log.
+function ns.MouseNow()
+    local foci = GetMouseFoci and GetMouseFoci()
+    local text = "under the mouse: " .. ns.NameOf(type(foci) == "table" and foci[1] or nil)
+    local shown = GameTooltip:IsShown()
+    if not issecretvalue(shown) and shown then
+        local ok, owner = pcall(GameTooltip.GetOwner, GameTooltip)
+        text = text .. "; a tooltip open, owned by " .. (ok and ns.NameOf(owner) or "?")
+    end
+    return text
 end
 -- A scan's parts timed for the bug report (the game's clock, in ms; nothing without it).
 local function Now() return debugprofilestop and debugprofilestop() end
@@ -3112,7 +3128,8 @@ end
         local s = key.scan
         key.scan = nil
         local took = s.startedAt and (" in %.1f s"):format(GetTime() - s.startedAt) or ""
-        ns.Log(finds and ("scan done%s: %d found"):format(took, #finds) or ("scan stopped%s: %s"):format(took, key.stopWhy or "other"))
+        local said = ns.Log(finds and ("scan done%s: %d found"):format(took, #finds) or ("scan stopped%s: %s"):format(took, key.stopWhy or "other"))
+        if finds then s.doneLine = said end
         key.stopWhy = nil
         key.lastJobs, key.lastSpots = s.jobs or 0, s.gridSpots -- dots measured closely, grid spots
         quietUntil = GetTime() + 0.25
@@ -3311,7 +3328,7 @@ end
         if looking or covered then
             if not s.paused then
                 ns.Log("paused: " .. (covered and ("window under the mouse: " .. ns.NameOf(GetMouseFoci and (GetMouseFoci() or {})[1]))
-                    or "a mouse button held or the camera turned"))
+                    or ("a mouse button held or the camera turned (%s)"):format(ns.MouseNow())))
                 Pause(s, true)
             end
             return
@@ -3540,7 +3557,7 @@ end
             left = Minimap:GetLeft(), bottom = Minimap:GetBottom(), height = Minimap:GetHeight(), alpha = Minimap:GetAlpha(), coords = Coords() }
         if key.scan.coords then key.scan.coordsAlpha = key.scan.coords:GetAlpha() end
         key.scan.startedAt = GetTime()
-        ns.Log(("scan %s: %d spots%s, map %s"):format(auto and "auto" or "key", #spots, behind and ", edge" or "", tostring(map)))
+        key.scan.startLine = ns.Log(("scan %s: %d spots%s, map %s"):format(auto and "auto" or "key", #spots, behind and ", edge" or "", tostring(map)))
         if not key.scan.fadeIn then Disguise(key.scan, true) end
         -- Most addons' round minimap buttons (LibDBIcon) open their own tooltip, not
         -- GameTooltip, as the moving minimap passes them under the mouse: closed too.
@@ -3635,10 +3652,18 @@ end
     -- a city or an inn, unless that's turned off), not flying (on a mount or a flight path),
     -- with a finder on and the mouse over the world.
     -- Why automatic scans aren't running now (the bug report); a lasting reason goes in its log.
-    local function Why(reason, passing)
-        if reason == key.why then return end
-        key.why = reason
-        if not passing then ns.Log("automatic scans: " .. reason) end
+    -- A passing reason that lasts (watch: a tooltip, the camera or a frame that won't let the
+    -- mouse go) is said once it has held scans off for HELD_LOG seconds.
+    local HELD_LOG = 10
+    local function Why(reason, passing, watch)
+        local now = GetTime()
+        if reason ~= key.why then
+            key.why, key.whySince, key.whySaid = reason, now, nil
+            if not passing then ns.Log("automatic scans: " .. reason) end
+        elseif watch and not key.whySaid and now - key.whySince >= HELD_LOG then
+            key.whySaid = true
+            ns.Log(("automatic scans held off %d s: %s (%s)"):format(HELD_LOG, reason, ns.MouseNow()))
+        end
     end
     function key.Auto()
         local now = GetTime()
@@ -3665,16 +3690,16 @@ end
         if db.lootWait and key.foughtAt and now < key.foughtAt + (tonumber(db.lootSeconds) or 3) then return Why("looting after a fight", true) end
         if db.skipRest and IsResting() then return Why("resting (Not in cities and inns)") end
         if not (PadLooking() or Hovering()) then return Why("nothing under the mouse (a controller)", true) end
-        if Mouselooking() then return Why("the camera turning", true) end
+        if Mouselooking() then return Why("the camera turning", true, true) end
         if (IsFlying and IsFlying()) or (UnitOnTaxi and UnitOnTaxi("player")) then return Why("flying") end
         local foci = GetMouseFoci and GetMouseFoci()
         local focus = type(foci) == "table" and foci[1] or nil
-        if focus ~= nil and focus ~= WorldFrame and not Under(focus) then return Why("the mouse over " .. ns.NameOf(focus), true) end
+        if focus ~= nil and focus ~= WorldFrame and not Under(focus) then return Why("the mouse over " .. ns.NameOf(focus), true, true) end
         -- A mob or corpse under the mouse: about to loot or click it. Anything else with a
         -- tooltip there (a herb, a chest, a mailbox): a scan would take its tooltip away.
-        if db.mobWait and UnitExists("mouseover") then return Why("a mob under the mouse", true) end
+        if db.mobWait and UnitExists("mouseover") then return Why("a mob under the mouse", true, true) end
         local tip = db.mobWait and GameTooltip:IsVisible()
-        if not issecretvalue(tip) and tip then return Why("a tooltip under the mouse", true) end
+        if not issecretvalue(tip) and tip then return Why("a tooltip under the mouse", true, true) end
         if db.mouseStill and now - (key.stillAt or now) < STILL_WAIT then return Why("the mouse moving", true) end
         -- Casting or gathering, looting, aiming a spell or holding an item.
         if ns.Busy() then return Why("busy (casting, looting or gathering)", true) end
@@ -3746,6 +3771,7 @@ end
 
 -- A scan's own work this frame (began: debugprofilestop() before it), added to the scan;
 -- at its end, the bug report's log gets its total and its worst frame.
+local SLOW_FRAME = 100 -- ms: a scan with a slower frame keeps its full work line
 local function Timed(s, began, memory)
     if s and memory then s.garbage = (s.garbage or 0) + math.max(0, collectgarbage("count") - memory) end
     if not (s and began) then return end
@@ -3753,12 +3779,21 @@ local function Timed(s, began, memory)
     s.work, s.frames = (s.work or 0) + took, (s.frames or 0) + 1
     if took > (s.worst or 0) then s.worst, s.worstAt = took, s.frames end
     if key.scan ~= s then
+        if (s.worst or 0) > (key.worstEver or 0) then key.worstEver = s.worst end
+        -- An ordinary scan (done, not slow, nothing else said while it ran): its start, end and
+        -- work joined on one line. The full work line only for the others.
+        local list = ns.LogList()
+        local n = #list
+        if s.startLine and s.doneLine and n >= 2 and list[n - 1] == s.startLine and (s.worst or 0) <= SLOW_FRAME then
+            list[n - 1] = ("%s; %s; work %.1f ms, most in a frame %.1f ms"):format(s.startLine, s.doneLine:match(" scan (done.*)$") or "done", s.work, s.worst or 0)
+            list[n] = nil
+            return
+        end
         local parts = {}
         for part, ms in pairs(s.parts or {}) do parts[#parts + 1] = ("%s %.1f"):format(part, ms) end
         table.sort(parts)
         ns.Log(("  its work: %.1f ms over %d frames, the most in one frame %.1f ms (frame %d); looked again %d times, %d dots measured closely; %d frames hidden (%d shrunk); %d KB of memory used; in ms: %s"):format(
             s.work, s.frames, s.worst or 0, s.worstAt or 0, s.waits or 0, s.jobs or 0, s.hidMost or 0, s.shrunkMost or 0, s.garbage or 0, table.concat(parts, ", ")))
-        if (s.worst or 0) > (key.worstEver or 0) then key.worstEver = s.worst end
     end
 end
 
