@@ -122,6 +122,7 @@ local function Busy()
     local loot = GetNumLootItems()
     return not issecretvalue(loot) and type(loot) == "number" and loot > 0
 end
+ns.Busy = Busy -- (automatic scans wait for it too)
 
 -- A herb or ore symbol closer than yards. Only ones with a map position, as only
 -- those keep their distance while you move, and none outside the minimap.

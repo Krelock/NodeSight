@@ -227,7 +227,32 @@ function world.Back()
     C_SuperTrack.SetSuperTrackedUserWaypoint(world.tracked == true)
     if world.quest and world.quest ~= 0 then C_SuperTrack.SetSuperTrackedQuestID(world.quest) end
     world.at, world.pin, world.quest, world.peek = nil, nil, nil, nil
+    NodeSightDB.pinWas = nil
     world.MapPin()
+end
+
+-- Your pin and tracked quest while the far sparkles have the pin, kept in the saved settings:
+-- if giving it back fails as the game closes, PinBack does at the next login.
+function world.Keep()
+    local pin = world.pin
+    local quest = not issecretvalue(world.quest) and type(world.quest) == "number" and world.quest or nil
+    local saved = { quest = quest, tracked = world.tracked == true }
+    if pin then
+        local ok, at = pcall(C_Map.GetUserWaypointPositionForMap, pin.uiMapID)
+        if not (ok and type(at) == "table" and type(at.x) == "number" and type(at.y) == "number"
+            and not issecretvalue(at.x) and not issecretvalue(at.y)) then return end
+        saved.map, saved.x, saved.y = pin.uiMapID, at.x, at.y
+        if type(pin.z) == "number" and not issecretvalue(pin.z) then saved.z = pin.z end
+    end
+    NodeSightDB.pinWas = saved
+end
+function world.PinBack()
+    local was = NodeSightDB.pinWas
+    if type(was) ~= "table" or world.at then return end
+    NodeSightDB.pinWas = nil
+    if was.map then C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(was.map, was.x, was.y, was.z)) else C_Map.ClearUserWaypoint() end
+    C_SuperTrack.SetSuperTrackedUserWaypoint(was.tracked == true)
+    if was.quest and was.quest ~= 0 then C_SuperTrack.SetSuperTrackedQuestID(was.quest) end
 end
 
 -- Fades a sparkle frame in over FADE seconds from `from`; LET_GO: out, once let go of.
@@ -603,6 +628,7 @@ function world.Questing(busy)
         and not issecretvalue(quest) and world.Pick()
     if target and C_Map.CanSetUserWaypointOnMap(target.map) then
         world.pin, world.quest, world.tracked = C_Map.GetUserWaypoint(), quest, C_SuperTrack.IsSuperTrackingUserWaypoint()
+        world.Keep()
         world.at = { map = target.map, mx = target.mx, my = target.my, kind = target.kind, name = target.name }
         world.Set(world.at)
         world.peek, world.peeked = { due = now + (world.wait or 0.3) + 0.1 }, now
@@ -665,6 +691,7 @@ function world.Update()
                 if not at then
                     world.pin, world.quest = C_Map.GetUserWaypoint(), C_SuperTrack.GetSuperTrackedQuestID()
                     world.tracked = C_SuperTrack.IsSuperTrackingUserWaypoint()
+                    world.Keep()
                 end
                 -- Same herb, slightly better position: keep its state.
                 local same = at and at.map == target.map and at.name == target.name
@@ -866,6 +893,22 @@ function ns.RefreshFarSparkles()
     if world.frame and world.frame:IsShown() then world.Fill(world.frame, world.frame.kind) end
     for _, frame in ipairs(world.others) do
         if frame:IsShown() then world.Fill(frame, frame.kind) end
+    end
+end
+
+-- Logging out or reloading: In-Game Navigation back as it was (an account setting); on again at
+-- login. Not in a fight (the game blocks the change then): left, still noted.
+function world.NavOut()
+    if not (ns.db.worldMark and ns.db.navWas) or InCombatLockdown() then return end
+    C_CVar.SetCVar("showInGameNavigation", ns.db.navWas)
+    if C_CVar.GetCVar("showInGameNavigation") == ns.db.navWas then ns.db.navWas = nil end
+end
+function world.NavIn()
+    if not ns.db.worldMark or InCombatLockdown() then return end
+    local now = C_CVar.GetCVar("showInGameNavigation")
+    if now ~= "1" then
+        ns.db.navWas = now or "0"
+        C_CVar.SetCVar("showInGameNavigation", "1")
     end
 end
 

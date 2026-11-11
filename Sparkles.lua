@@ -1478,6 +1478,11 @@ end
 -- NPC you can talk to as well; such plates show only the name while they last.
 local extra = {} -- plate: an NPC's plate shown that way
 
+-- A kind's sparkles on, and with Only for my professions, its profession known.
+local function Mine(kind)
+    return ns.db[kind] and (not ns.db.myProfessions or ns.HasProfession(kind)) or false
+end
+
 local function Corpse(unit)
     local dead = UnitIsDead(unit)
     if issecretvalue(dead) or not dead then return false end
@@ -1544,7 +1549,7 @@ local function Update(unit)
         -- being it fades out, not taken for an other object.
         if kind == "others" and known[namePlate] then return HideSparkles(namePlate, true) end
         if kind ~= "others" then known[namePlate] = kind end
-        if ns.db[kind] and not hide then ShowSparkles(namePlate, kind, unit) else HideSparkles(namePlate, true) end
+        if Mine(kind) and not hide then ShowSparkles(namePlate, kind, unit) else HideSparkles(namePlate, true) end
     else
         if hidden[unitFrame] then SetHidden(unitFrame, false) end
         HideSparkles(namePlate)
@@ -1601,7 +1606,7 @@ local pendingSetup -- a change is waiting for combat to end
 local corpseShown -- the plates setting is on for the corpse you target
 
 local function CorpseTargeted()
-    return ns.db.skinning and UnitExists("softinteract") and Corpse("softinteract") or false
+    return Mine("skinning") and UnitExists("softinteract") and Corpse("softinteract") or false
 end
 
 -- CVars can come back reformatted ("30.000000" for 30).
@@ -1663,6 +1668,11 @@ ns.sparkles, ns.hidden, ns.leaving = sparkles, hidden, leaving
 ns.HARVESTS, ns.SparklePreviews, ns.SparkleAnimate, ns.ResetHarvest = HARVESTS, previews, Animate, ResetHarvest
 ns.ApplyColor, ns.NewSparkle, ns.NewSparkles = ApplyColor, NewSparkle, NewSparkles
 ns.ShowSparkles, ns.HideSparkles, ns.Setup, ns.UpdateAll = ShowSparkles, HideSparkles, Setup, UpdateAll
+-- Logging out or reloading: the CVars back as they were. They're account settings, so a
+-- character without the addon (or with it turned off) finds them as they were; set again at login.
+function ns.SetupOut()
+    if not InCombatLockdown() then RestoreSetup() end
+end
 ns.KINDS, ns.SPARKLE_KEYS, ns.SPARKLE_STYLES, ns.StyleFits = KINDS, KEYS, STYLES, StyleFits
 ns.CarryOverLooks, ns.SparkleLook, ns.SparkleRGB, ns.SparkleColors, ns.SPARKLE_LOWER = CarryOverLooks, Look, RGB, Colors, LOWER
 -- Is a Setup waiting for the end of combat?

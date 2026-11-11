@@ -1,8 +1,48 @@
--- NodeSight's What's New dialog (the patch notes), and a notice shown once.
+-- NodeSight's What's New dialog (the patch notes), a notice shown once, and the bug report.
+--
+-- Sections: After the fight, What's new (and the notice and the bug report).
 
 local ADDON_NAME, ns = ...
 
 local ipairs = ipairs
+
+---------------------------------------------------------------------------
+-- After the fight
+---------------------------------------------------------------------------
+-- Popups wait for the end of a fight, so none covers the screen in one. One of each name
+-- waits (the newest). None with Popups off.
+local waiting = {}
+-- The saved settings in use, also before they load (the restart notice); nil without any.
+local function Saved()
+    local db = ns.db
+    if not db or db == ns.defaults then
+        db = type(NodeSightCharDB) == "table" and NodeSightCharDB.own ~= false and NodeSightCharDB or NodeSightDB
+    end
+    return type(db) == "table" and db or nil
+end
+local function PopupsOff()
+    local db = Saved()
+    return db ~= nil and db.popups == false
+end
+-- A popup's "Don't show this again": Popups off.
+function ns.NoMorePopups()
+    local db = Saved()
+    if db then db.popups = false end
+end
+local fightEnd = CreateFrame("Frame")
+fightEnd:SetScript("OnEvent", function()
+    fightEnd:UnregisterEvent("PLAYER_REGEN_ENABLED")
+    local due = waiting
+    waiting = {}
+    if PopupsOff() then return end
+    for _, show in pairs(due) do pcall(show) end
+end)
+function ns.AfterFight(name, show)
+    if PopupsOff() then return end
+    if not InCombatLockdown() then return show() end
+    waiting[name] = show
+    fightEnd:RegisterEvent("PLAYER_REGEN_ENABLED")
+end
 
 ---------------------------------------------------------------------------
 -- What's new
@@ -11,6 +51,96 @@ local ipairs = ipairs
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
+        { version = "2.0.4",
+            { "New", {
+                { "Wait to loot after fights (on by default).", "After a fight, Scan on a timer and Scan by distance wait a few seconds (3 by default, up to 10), so a scan doesn't hide the minimap while you loot. On the Scanning page" },
+            } },
+            { "Changes", {
+                { "Scan after fights and landing.", "Removed. Scan on a timer and Scan by distance still scan as you go" },
+                { "Symbols off the minimap.", "A symbol that has been off your minimap for 5 seconds is removed, so you don't come back to a symbol for a node that's already gone" },
+                { "Stop when the mouse moves.", "Small movements of the mouse (under 15 pixels) no longer stop a scan" },
+            } },
+            { "Fixes", {
+                { "Scanning with a controller.", "The symbols no longer turn back into plain dots when you scan with a controller button. While nothing is under the mouse, scans wait instead" },
+                { "Symbols on the minimap.", "They no longer shift by a pixel against the nodes as you move" },
+                { "After disabling NodeSight.", "The game settings it changes (the sparkles' interact settings, In-Game Navigation and the controller's hover) are put back at every reload and logout. Far away sparkles gives your map pin back on reload" },
+            } },
+        },
+        { version = "2.0.3",
+            { "New", {
+                { "Popups (on by default).", "Turn off every NodeSight popup. On the main page" },
+                { "Don't show this again.", "A button on each popup that turns Popups off" },
+                { "Bug report.", "A button next to What's New. Copy it and send it with your bug report: it shows NodeSight's setup, CPU, memory and what its last scans did" },
+                { "Stop when the mouse moves (off by default).", "An automatic scan stops as soon as you move the mouse, so what you move onto shows its tooltip right away. On the Scanning page, under Your mouse" },
+                { "Hide frames that follow the minimap (Beta, on by default).", "During a scan, also hides other addons' frames that move with the minimap without being attached to it (ClassicUIForever's map buttons), so their tooltips don't pop up. On the Beta page" },
+            } },
+            { "Changes", {
+                { "Performance.", "Scans use less than half the CPU, much less with Questie on, and far less memory. Scans finish sooner where NodeSight was slowing your frame rate" },
+                { "Scan by distance (now on by default, every 25 yards).", "It replaces Scan on a timer (now off by default). If you still had the old settings, you're moved over once; settings you changed are kept" },
+                { "Popups wait for the end of a fight.", "No NodeSight popup shows during combat" },
+                { "Not with a mob under the mouse.", "Automatic scans also wait while any tooltip is open under your mouse (a herb, a chest, a mailbox)" },
+                { "Scanning page.", "The mouse settings have their own Your mouse header. Edge scans while moving is on the Beta page now" },
+                { "Zephras Isle.", "Map while scanning shows the island's own minimap picture" },
+            } },
+            { "Fixes", {
+                { "Switch.", "It switches again with Scan the minimap off" },
+                { "Tooltips after a scan.", "A mob's tooltip shows right after a scan, without moving off the mob and back" },
+                { "Map icons during a scan.", "Questie's icons (and GatherMate2's, HandyNotes' and TomTom's) stay on their spot as you walk, instead of sliding along with you" },
+                { "Mouse with a controller connected.", "Scans no longer change a controller setting while you use the mouse, which could hide the cursor or stop clicks" },
+            } },
+        },
+        { version = "2.0.2",
+            { "New", {
+                { "Scan presets (Default).", "Default, Less intrusive or Most scans" },
+                { "Only while the mouse is still (off by default).", "Automatic scans wait until your mouse stops" },
+                { "Also while standing still (on by default).", "Scan on a timer scans while you stand too" },
+                { "Scan after fights and landing (on by default).", "One scan as a fight ends, after landing or dismounting, and after a loading screen" },
+                { "Edge scans while moving (Beta, off by default).", "Scans read only the new part of the minimap, about twice as fast" },
+                { "Not with a mob under the mouse (on by default).", "No scan as you go to loot or click a mob" },
+                { "Sparkles only for my professions (on by default).", "No herb, ore or corpse sparkles without Herbalism, Mining or Skinning" },
+                { "Why scans aren't working.", "When scans can't run, a warning at the top of NodeSight's settings says why. Hover over it for what to do" },
+            } },
+            { "Changes", {
+                { "Switch.", "It switches right before each automatic scan; its own distance and time are grayed out then" },
+                { "Sparkle settings.", "A button on the main page opens the sparkle window" },
+                { "Busy.", "No automatic scans while you cast, gather, loot or aim a spell" },
+                { "Popups.", "One if an error stops scans (type /reload), one if the game needs a restart after an update" },
+            } },
+            { "Fixes", {
+                { "Minimap buttons and markers.", "A closed button bag (MinimapButtonBag Reborn, Leatrix Plus) or a Questie marker could stay invisible after a scan until a /reload" },
+            } },
+        },
+        { version = "2.0.1",
+            { "New", {
+                { "Lueur warning (always on).", "Lueur's Herb icons and Ore icons scan the minimap the same way NodeSight does, and with both on they break each other. If both are on, a popup after each login or reload says how to turn one off (typing /lueur nodes turns off Lueur's)" },
+            } },
+            { "Changes", {
+                { "Fewer blinks (on by default).", "A mouse click during a scan now brings the minimap back at once, so your click registers (right-clicking a mob or a node). It still waits up to 2 seconds while your mouse is over a window. On the Scanning page" },
+                { "Using your minimap mid-scan.", "Moving your mouse onto the minimap or the addon buttons around it stops the scan at once, so you can hover and click them" },
+            } },
+            { "Fixes", {
+                { "Group Finder.", "While you're queued, the minimap no longer flickers and stops updating, and right-clicks near the minimap no longer get lost" },
+            } },
+        },
+        { version = "2.0.0",
+            { "New", {
+                { "Real minimap ground (on by default).", "The map shown while a scan runs now uses the game's own minimap pictures, in the minimap's colors and with its arrow, so it looks like your minimap. Part of Map while scanning, on the Scanning page. Thanks to OpenMap for its list of the minimap's pictures" },
+                { "Tracked icons while scanning (on by default).", "What you track shows on that map where it really is: innkeepers, mailboxes, bankers, auctioneers, vendors, trainers, stable masters, battlemasters and flight masters, plus your finished quests and rares or treasures. Part of Map while scanning, on the Scanning page" },
+                { "Scan the minimap (on by default).", "Turns all scanning on or off. Off, NodeSight never touches your minimap and the sparkles still work. On the NodeSight page" },
+            } },
+            { "Changes", {
+                { "Scan on a timer and Scan by distance (timer on, distance off by default).", "The automatic scans each have their own checkbox and slider now, the slider grayed out while it's off. Scan by distance was Scan as you move; your settings carry over. On the Scanning page" },
+                { "Map while scanning (on by default).", "Turned on once for everyone, also if you had it off, for the new look. On the Scanning page" },
+                { "Fade in and out (off by default).", "Turned off once for everyone: with the map looking like your minimap, a scan is hard to notice without it. On the Scanning page" },
+                { "Minimap borders.", "Your UI's minimap border and buttons (EllesmereUI, Leatrix Plus) stay in place during a scan instead of fading out, and the map's edge is sharp" },
+            } },
+            { "Fixes", {
+                { "Fade and symbols.", "The fade no longer stops working after a few scans, and herb and ore symbols no longer turn into the game's yellow dots as a scan starts" },
+                { "Hidden addon buttons.", "Buttons Leatrix Plus hides until you hover the minimap no longer flash after a scan or show up during it, glow included" },
+                { "First scan.", "The first scan after a login or reload no longer flashes the map" },
+                { "Dots under the mouse.", "No more little white pixels around your cursor during a scan. Thank you to Ashakida for the fix" },
+            } },
+        },
         { version = "1.9.0",
             { "New", {
                 { "Map while scanning (Beta) (on by default).", "While the minimap is hidden for a scan, the world map's picture of where you are shows in its place, moving as you walk. Not with a rotating minimap. On the Scanning page" },
@@ -369,7 +499,7 @@ do
 
     -- Notice: one message in the same look, with an OK button.
     local notice
-    function ShowNotice(title, body)
+    local function Show(title, body)
         if not notice then
             notice = NewFrame("Frame", UIParent)
             notice:SetFrameStrata("DIALOG")
@@ -389,11 +519,82 @@ do
             notice.text:SetWidth(WIDTHS[1] - 40)
             notice.text:SetJustifyH("LEFT")
             notice.text:SetSpacing(3)
-            DialogButton(notice, OKAY, function() notice:Hide() end):SetPoint("BOTTOM", 0, 16)
+            DialogButton(notice, OKAY, function() notice:Hide() end):SetPoint("BOTTOMRIGHT", notice, "BOTTOM", -6, 16)
+            local never = DialogButton(notice, CONFIRM_POPUP_DONT_SHOW_AGAIN, function()
+                ns.NoMorePopups()
+                notice:Hide()
+            end)
+            never:SetWidth(math.max(128, never:GetTextWidth() + 24))
+            never:SetPoint("BOTTOMLEFT", notice, "BOTTOM", 6, 16)
         end
         notice.text:SetText(NORMAL_FONT_COLOR:WrapTextInColorCode(title) .. "\n\n" .. body)
         notice:SetHeight(notice.text:GetStringHeight() + 73)
         notice:Show()
+    end
+    function ShowNotice(title, body)
+        ns.AfterFight("notice", function() Show(title, body) end)
+    end
+
+    -- Bug report: the text (ns.ReportText) all selected in a box, to copy with Ctrl+C (an
+    -- addon can't copy to the clipboard itself). The mouse wheel scrolls it.
+    local report
+    function ns.ShowReport()
+        if not report then
+            report = NewFrame("Frame", UIParent)
+            report:SetFrameStrata("DIALOG")
+            report:SetToplevel(true)
+            report:EnableMouse(true)
+            report:SetPoint("TOP", UIParent, "TOP", 0, -135)
+            report:SetSize(640, 440)
+            local background = report:CreateTexture(nil, "BACKGROUND", nil, -7)
+            background:SetAtlas("UI-DialogBox-Background-Dark", true)
+            background:SetPoint("TOPLEFT", 7, -7)
+            background:SetPoint("BOTTOMRIGHT", -7, 7)
+            local edge = report:CreateTexture(nil, "BACKGROUND", nil, -4)
+            edge:SetAtlas("UI-DiamondDialogBox-Border", true)
+            edge:SetAllPoints()
+            local title = report:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+            title:SetPoint("TOP", 0, -20)
+            title:SetText("NodeSight bug report")
+            local hint = report:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+            hint:SetPoint("TOP", title, "BOTTOM", 0, -6)
+            hint:SetWidth(600)
+            hint:SetText("Press Ctrl+C to copy it all. When reporting a bug, please send this with it.")
+            local clip = NewFrame("Frame", report)
+            clip:SetPoint("TOPLEFT", 20, -62)
+            clip:SetPoint("BOTTOMRIGHT", -20, 48)
+            clip:SetClipsChildren(true)
+            local shade = clip:CreateTexture(nil, "BACKGROUND")
+            shade:SetColorTexture(0, 0, 0, 0.5)
+            shade:SetAllPoints()
+            local box = NewFrame("EditBox", clip)
+            box:SetMultiLine(true)
+            box:SetAutoFocus(false)
+            box:SetFontObject(GameFontHighlightSmall)
+            box:SetWidth(590)
+            box:SetPoint("TOPLEFT", 5, -5)
+            box:SetScript("OnEscapePressed", function() report:Hide() end)
+            -- Read only: typing puts the report back, all selected.
+            box:SetScript("OnTextChanged", function(self, typed)
+                if typed then
+                    self:SetText(report.text)
+                    self:HighlightText()
+                end
+            end)
+            local offset = 0
+            clip:EnableMouseWheel(true)
+            clip:SetScript("OnMouseWheel", function(_, delta)
+                offset = math.max(0, math.min(math.max(0, box:GetHeight() - clip:GetHeight() + 10), offset - delta * 40))
+                box:SetPoint("TOPLEFT", 5, -5 + offset)
+            end)
+            DialogButton(report, CLOSE, function() report:Hide() end):SetPoint("BOTTOM", 0, 16)
+            report.box = box
+        end
+        report.text = ns.ReportText()
+        report.box:SetText(report.text)
+        report:Show()
+        report.box:SetFocus()
+        report.box:HighlightText()
     end
 end
 

@@ -130,7 +130,9 @@ local function RegisterSettings()
 
     local function Header(text, tooltip)
         if CreateSettingsListSectionHeaderInitializer then
-            layout:AddInitializer(CreateSettingsListSectionHeaderInitializer(text, tooltip))
+            local row = CreateSettingsListSectionHeaderInitializer(text, tooltip)
+            layout:AddInitializer(row)
+            return row
         end
     end
 
@@ -144,6 +146,11 @@ local function RegisterSettings()
         if not row or not parent then return end
         if type(row.SetParentInitializer) == "function" then row:SetParentInitializer(parent, shown) end
         if type(row.AddShownPredicate) == "function" then row:AddShownPredicate(shown) end
+    end
+
+    -- A row under a checkbox, grayed out while it's off.
+    local function Gray(row, parent, on)
+        if row and parent and type(row.SetParentInitializer) == "function" then row:SetParentInitializer(parent, on) end
     end
 
     local function Slider(key, name, minValue, maxValue, tooltip, onChange, step, label)
@@ -176,8 +183,57 @@ local function RegisterSettings()
         button:SetText(GAMEMENU_NEW_BUTTON)
         button:SetScript("OnClick", ShowWhatsNew)
         button:Hide()
+        -- Bug report, left of What's New: NodeSight's setup and its last scans, to copy.
+        local bug = CreateFrame("Button", nil, nil, "UIPanelButtonTemplate")
+        bug:SetParent(button)
+        bug:SetSize(96, 22)
+        bug:SetPoint("RIGHT", button, "LEFT", -2, 0)
+        bug:SetText("Bug report")
+        bug:SetScript("OnClick", function() ns.ShowReport() end)
+        bug:SetScript("OnEnter", function()
+            GameTooltip:SetOwner(bug, "ANCHOR_BOTTOM")
+            GameTooltip:SetText("Bug report", NORMAL_FONT_COLOR:GetRGB())
+            GameTooltip:AddLine("NodeSight's setup and what its last scans did. When reporting a bug, please send this with it.", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        bug:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        -- Scanning isn't working now (ns.Trouble): a warning sign and "Not scanning" left of
+        -- the buttons; its tooltip says why and what to do. Checked twice a second while shown.
+        local trouble = CreateFrame("Frame")
+        trouble:SetParent(button)
+        trouble:SetPoint("RIGHT", bug, "LEFT", -10, 0)
+        trouble:EnableMouse(true)
+        trouble:Hide()
+        local sign = trouble:CreateTexture(nil, "ARTWORK")
+        sign:SetAtlas("services-icon-warning")
+        sign:SetSize(16, 14)
+        sign:SetPoint("LEFT")
+        local line = trouble:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+        line:SetPoint("LEFT", sign, "RIGHT", 4, 0)
+        line:SetTextColor(RED_FONT_COLOR:GetRGB())
+        line:SetText("Not scanning")
+        trouble:SetSize(20 + line:GetStringWidth(), 22)
+        local nextLook = 0
+        local function Look()
+            nextLook = GetTime() + 0.5
+            local ok, id = pcall(ns.Trouble)
+            trouble:SetShown(ok and id ~= nil)
+        end
+        button:SetScript("OnUpdate", function()
+            if GetTime() >= nextLook then Look() end
+        end)
+        trouble:SetScript("OnEnter", function()
+            local ok, id, _, title, text = pcall(ns.Trouble)
+            if not ok or not id then return end
+            GameTooltip:SetOwner(trouble, "ANCHOR_BOTTOM")
+            GameTooltip:SetText(title, NORMAL_FONT_COLOR:GetRGB())
+            GameTooltip:AddLine(text, 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        trouble:SetScript("OnLeave", function() GameTooltip:Hide() end)
         EventRegistry:RegisterCallback("Settings.CategoryChanged", function(_, shown)
             button:SetShown(pages[shown] == true)
+            Look()
         end, button)
         -- Until this version's notes are opened, the button's own hover light
         -- (UIPanelButtonHighlightTexture's picture) slowly fades in and out while it shows.
@@ -206,16 +262,21 @@ local function RegisterSettings()
         end
     end
 
-    Header("Minimap symbols: go to Scanning to set a scan key or turn on Scan as you move", ns.SCAN_NOTICE[2])
-    Checkbox("mapIcons", "Herb and ore symbols",
-        "Puts the herb's or ore's map symbol on the minimap where the scan finds one. Needs Find Herbs or Find Minerals on.",
+    Header("Minimap symbols: how often it scans is on the Scanning page", ns.SCAN_NOTICE[2])
+    Checkbox("scanMinimap", "Scan the minimap",
+        "Scans the minimap for herbs and ore, for the symbols and the arrow: with your Scan key, on a timer or by distance (the Scanning page). "
+            .. "Your minimap is hidden for a moment while it scans. Turn it off and NodeSight never touches your minimap; the sparkles still work.",
         UpdateScanner)
-    local arrowTip = "An arrow near the top of the screen points to the nearest herb or ore on your minimap, with its name and distance. Drag it to move it."
-    local arrow = Checkbox("arrow", "Arrow to the nearest herb or ore", arrowTip, UpdateScanner)
-    local findersTip = "Switches between Find Herbs and Find Minerals. You need both trained and one active to start."
+    Checkbox("mapIcons", "Herb and ore symbols",
+        "Puts the herb's or ore's map symbol on the minimap where the scan finds one. Needs Scan the minimap, and Find Herbs or Find Minerals on.",
+        UpdateScanner)
+    local arrowTip = "An arrow near the top of the screen points to the nearest herb or ore on your minimap, with its name and distance. Drag it to move it. Needs Scan the minimap."
+    local arrow = Checkbox("arrow", "Arrow to the nearest herb or ore", arrowTip, function() UpdateScanner() Redraw() end)
+    local findersTip = "Switches between Find Herbs and Find Minerals. You need both trained and one active to start. "
+        .. "With Scan on a timer or Scan by distance on, it switches right before each of their scans."
     -- Toggling the switch also ends a stop after failed switches; other settings keep it.
     local finders = Checkbox("switchFinders", "Switch between herbs and ore", findersTip,
-        function() SwitchReset() UpdateScanner() end)
+        function() SwitchReset() UpdateScanner() Redraw() end)
     local _, soundRow = Checkbox("sound", "Sound for new finds",
         "Plays a sound when something new shows up on your minimap. Not for herbs or ore above your skill.",
         function() UpdateScanner() Redraw() end)
@@ -251,6 +312,18 @@ local function RegisterSettings()
         if InteractOff() then tip = tip .. "\n\n" .. RED_FONT_COLOR:WrapTextInColorCode(ns.INTERACT_OFF) end
         return tip
     end, false))
+    if not (GamepadUI() or WindowFailed()) then
+        layout:AddInitializer(CreateSettingsButtonInitializer("Sparkle settings", "Open", ns.ShowSparkleWindow,
+            "All the sparkle settings, with a preview.", false))
+    end
+    Checkbox("myProfessions", "Sparkles only for my professions",
+        "Herbs sparkle only if you have Herbalism, ore only with Mining, and skinnable corpses only with Skinning. Everything else sparkles as before.",
+        function() ns.UpdateAll() ns.Setup() end)
+    Checkbox("popups", "Popups",
+        "NodeSight's popups: when an error stops scans, when Lueur scans too, when Enable Interact Key is off, the notice about scanning, "
+            .. "and when the game needs a restart after an update. They wait until a fight is over. Off: none at all; "
+            .. "the warning at the top of this page still says when scans aren't working.",
+        function() end)
 
     -- Saved on the character whichever settings are in use; they switch at the next reload.
     local own = Settings.RegisterAddOnSetting(category, "NodeSight_own", "own", NodeSightCharDB, "boolean",
@@ -261,30 +334,33 @@ local function RegisterSettings()
 
     Page("Arrow")
     Header("Arrow: needs scanning on", ns.SCAN_NOTICE[2])
-    Settings.CreateCheckbox(category, arrow, arrowTip) -- the same setting as on NodeSight's own page
-    Checkbox("arrowLocked", "Lock the arrow in place",
+    local arrowRow = Settings.CreateCheckbox(category, arrow, arrowTip) -- the same setting as on NodeSight's own page
+    -- The rest of the page shows once the arrow is on.
+    local function ArrowOn() return ns.db.arrow end
+    local function UnderArrow(row) Indent(row, arrowRow, ArrowOn) end
+    UnderArrow(select(2, Checkbox("arrowLocked", "Lock the arrow in place",
         "The arrow can't be dragged, and your clicks go through it to the world.",
-        ApplyArrowLock)
-    Checkbox("arrowSkip", "Skip the node you're at",
+        ApplyArrowLock)))
+    UnderArrow(select(2, Checkbox("arrowSkip", "Skip the node you're at",
         "The arrow passes over a node within 5 yards of you and points to the next one.",
-        UpdateScanner)
-    Checkbox("arrowCombat", "Hide in combat", "No arrow while you're in combat.", UpdateScanner)
-    Slider("arrowSize", "Arrow size", 20, 100,
+        UpdateScanner)))
+    UnderArrow(select(2, Checkbox("arrowCombat", "Hide in combat", "No arrow while you're in combat.", UpdateScanner)))
+    UnderArrow(select(2, Slider("arrowSize", "Arrow size", 20, 100,
         "How big the arrow and its text are. The default is " .. defaults.arrowSize .. ".",
-        ApplyArrowSize)
-    Header("Points to")
-    Checkbox("arrowFirst", "Herbs and ore first",
+        ApplyArrowSize)))
+    UnderArrow(Header("Points to"))
+    UnderArrow(select(2, Checkbox("arrowFirst", "Herbs and ore first",
         "The arrow points to a chest, rare, leyline or convergence only when no herb or ore is in sight.",
-        UpdateScanner)
-    Checkbox("arrowHerbs", "Herbs", "The arrow points to herbs.", UpdateScanner)
-    Checkbox("arrowOre", "Ore", "The arrow points to ore.", UpdateScanner)
-    Checkbox("arrowChests", "Chests", "The arrow points to treasure chests (Find Treasure).", UpdateScanner)
-    Checkbox("arrowRares", "Rares",
+        UpdateScanner)))
+    UnderArrow(select(2, Checkbox("arrowHerbs", "Herbs", "The arrow points to herbs.", UpdateScanner)))
+    UnderArrow(select(2, Checkbox("arrowOre", "Ore", "The arrow points to ore.", UpdateScanner)))
+    UnderArrow(select(2, Checkbox("arrowChests", "Chests", "The arrow points to treasure chests (Find Treasure).", UpdateScanner)))
+    UnderArrow(select(2, Checkbox("arrowRares", "Rares",
         "The arrow points to rare beasts and humanoids. Needs Rares on the minimap (Minimap page).",
-        UpdateScanner)
-    Checkbox("arrowLeylines", "Leylines and convergences",
+        UpdateScanner)))
+    UnderArrow(select(2, Checkbox("arrowLeylines", "Leylines and convergences",
         "The arrow points to leylines and elemental convergences. Needs Leylines and convergences (Minimap page).",
-        UpdateScanner)
+        UpdateScanner)))
 
     Page("Minimap")
     Header("Symbols for")
@@ -323,20 +399,108 @@ local function RegisterSettings()
         "The key that scans the minimap. Click, then press a key (with Shift, Ctrl or Alt if you like); Esc cancels. "
             .. "A key used for something else is taken from it. It's the Scan the minimap key binding (Keybindings > AddOns > NodeSight).",
         false))
-    Checkbox("autoScan", "Scan as you move",
-        "Scans the minimap each time you've moved the distance below, not while flying, and out of combat unless Scan in combat is on, while your mouse is over the world (not a window, and not while you hold a mouse button to turn). The minimap is hidden for a moment while it scans. The Scan the minimap key binding scans any time.",
+    Header("Automatic scans")
+    -- Presets: each sets these settings at once; the dropdown shows the one they match, or Custom.
+    local PRESET_KEYS = { "autoScanTimer", "autoScanSeconds", "scanStanding", "autoScan", "autoScanYards", "combatScan", "mouseStill" }
+    local PRESETS = { {},
+        { autoScanTimer = true, autoScanSeconds = 5, scanStanding = true, autoScan = false, autoScanYards = 30,
+            combatScan = true, mouseStill = true },
+        { autoScanTimer = true, autoScanSeconds = 5, scanStanding = true, autoScan = true, autoScanYards = 20,
+            combatScan = true, mouseStill = false } }
+    for _, k in ipairs(PRESET_KEYS) do PRESETS[1][k] = defaults[k] end
+    local CUSTOM = #PRESETS + 1
+    local function Matching()
+        for i, preset in ipairs(PRESETS) do
+            local same = true
+            for _, k in ipairs(PRESET_KEYS) do
+                if ns.db[k] ~= preset[k] then same = false end
+            end
+            if same then return i end
+        end
+        return CUSTOM
+    end
+    local parts, presetSetting = {}, nil
+    -- A setting a preset sets: changed by hand, the dropdown shows what it matches now.
+    local function Part(onChange)
+        return function(...)
+            onChange(...)
+            local now = Matching()
+            if now ~= ns.db.scanPreset then
+                ns.db.scanPreset = now
+                if presetSetting and SettingsPanel and SettingsPanel:IsShown() then presetSetting:NotifyUpdate() end
+            end
+        end
+    end
+    ns.db.scanPreset = Matching()
+    presetSetting = Register("scanPreset", "Preset", function(_, value)
+        local preset = PRESETS[value]
+        if preset then
+            for _, k in ipairs(PRESET_KEYS) do ns.db[k] = preset[k] end
+            for _, k in ipairs(PRESET_KEYS) do parts[k]:NotifyUpdate() end
+            Redraw() -- (the rows grayed by Scan on a timer and Scan by distance)
+        elseif Matching() ~= value then -- (Custom picked while the settings match a preset)
+            ns.db.scanPreset = Matching()
+            presetSetting:NotifyUpdate()
+        end
+    end)
+    Settings.CreateDropdown(category, presetSetting, function()
+        local container = Settings.CreateControlTextContainer()
+        for value, label in ipairs({ "Default", "Less intrusive", "Most scans", "Custom" }) do container:Add(value, label) end
+        return container:GetData()
+    end, "Sets the automatic scan settings below at once. Default: as NodeSight comes. "
+        .. "Less intrusive: scans only while your mouse is still, also while you stand still and in combat, every 5 seconds. "
+        .. "Most scans: every 5 seconds, also while you stand still, every 20 yards walked and in combat. "
+        .. "Change any of them by hand and it shows Custom.")
+    local function Changed() UpdateScanner() Redraw() end
+    local timerSetting, timer = Checkbox("autoScanTimer", "Scan on a timer",
+        "Scans every few seconds (set below) while you're moving, so herbs and ore that appear or are taken show up. "
+            .. "Not while flying, only while your mouse is over the world (not a window), and out of combat unless Scan in combat is on. "
+            .. "The minimap is hidden for a moment while it scans.",
+        Part(Changed))
+    parts.autoScanTimer = timerSetting
+    local secondsSetting, secondsRow = Slider("autoScanSeconds", "Seconds between scans", 5, 120,
+        "How long Scan on a timer waits between scans. The default is " .. defaults.autoScanSeconds .. ".",
+        Part(UpdateScanner), 5)
+    parts.autoScanSeconds = secondsSetting
+    Indent(secondsRow, timer, function() return ns.db.autoScanTimer end)
+    local standingSetting, standingRow = Checkbox("scanStanding", "Also while standing still",
+        "Scan on a timer scans while you stand still too, not only while you move, so herbs and ore near you show up without walking.",
+        Part(UpdateScanner))
+    parts.scanStanding = standingSetting
+    Indent(standingRow, timer, function() return ns.db.autoScanTimer end)
+    local distanceSetting, distance = Checkbox("autoScan", "Scan by distance",
+        "Scans each time you've walked the distance set below. The same rules as Scan on a timer. Both can be on.",
+        Part(Changed))
+    parts.autoScan = distanceSetting
+    local yardsSetting, yardsRow = Slider("autoScanYards", "Yards walked between scans", 10, 150,
+        "How far Scan by distance waits for you to walk between scans. The default is " .. defaults.autoScanYards .. ".",
+        Part(UpdateScanner), 5)
+    parts.autoScanYards = yardsSetting
+    Indent(yardsRow, distance, function() return ns.db.autoScan end)
+    Settings.CreateCheckbox(category, finders, findersTip) -- the same setting as on NodeSight's own page
+    parts.combatScan = Checkbox("combatScan", "Scan in combat",
+        "Scan on a timer and Scan by distance keep scanning in combat too. The minimap is hidden for a moment each time, mid-fight. Your Scan key scans in combat either way.",
+        Part(UpdateScanner))
+    local _, loot = Checkbox("lootWait", "Wait to loot after fights",
+        "After a fight, Scan on a timer and Scan by distance wait the seconds set below, so a scan doesn't hide the minimap while you loot. Your Scan key scans at once either way.",
         UpdateScanner)
-    Slider("autoScanYards", "Scan every (yards)", 10, 150,
-        "How far you move between scans. The default is " .. defaults.autoScanYards .. ".",
-        UpdateScanner, 5)
-    Slider("autoScanSeconds", "Scan every (seconds)", 0, 120,
-        "Also scans once this many seconds have passed since the last scan, as soon as you move (not while you stand still), so herbs and ore that appear or are taken show up. Same rules as Scan as you move (not while flying, your mouse over the world, out of combat unless Scan in combat is on). Off at 0. The default is " .. defaults.autoScanSeconds .. ".",
-        UpdateScanner, 5, Off)
-    Checkbox("combatScan", "Scan in combat",
-        "Scan as you move and Scan every (seconds) keep scanning in combat too. The minimap is hidden for a moment each time, mid-fight. The Scan the minimap key binding scans in combat either way.",
-        UpdateScanner)
+    local _, lootRow = Slider("lootSeconds", "Seconds to wait after fights", 1, 10,
+        "How long Wait to loot after fights waits. The default is " .. defaults.lootSeconds .. ".", UpdateScanner)
+    Indent(lootRow, loot, function() return ns.db.lootWait end)
     Checkbox("skipRest", "Not in cities and inns",
-        "Scan as you move and Scan every (seconds) don't scan while you're resting: in capital cities and inns (the Zzz on your portrait). The Scan the minimap key binding scans there either way.",
+        "Scan on a timer and Scan by distance don't scan while you're resting: in capital cities and inns (the Zzz on your portrait). Your Scan key scans there either way.",
+        UpdateScanner)
+    Header("Your mouse")
+    Checkbox("mobWait", "Not with a mob under the mouse",
+        "Scan on a timer and Scan by distance wait while your mouse is on a mob, a player or a corpse, so the minimap doesn't vanish as you go to loot or click it, and while a tooltip is open under it (a herb, a chest, a mailbox), so the tooltip stays. Your Scan key scans there either way.",
+        UpdateScanner)
+    parts.mouseStill = Checkbox("mouseStill", "Only while the mouse is still",
+        "Scan on a timer and Scan by distance wait until your mouse has stayed put for half a second, so a scan never starts while you move it. "
+            .. "A scan already running finishes. Your Scan key scans either way.",
+        Part(UpdateScanner))
+    Checkbox("mouseStop", "Stop when the mouse moves",
+        "Scan on a timer and Scan by distance stop as soon as you move your mouse, so whatever you move onto (a mob, a herb) shows its tooltip right away. "
+            .. "Your symbols stay as they were until the next scan. Your Scan key scans either way.",
         UpdateScanner)
     Header("Minimap")
     Dropdown("minimapShape", "Minimap shape", ns.MapShapeChoices,
@@ -349,26 +513,41 @@ local function RegisterSettings()
         "The minimap fades into its stand-in (the map picture, or a dark fill) before a scan and back after, instead of blinking. Each scan starts a moment later.",
         UpdateScanner)
     Checkbox("windowWait", "Fewer blinks",
-        "When your mouse goes over a window (your bags) during a scan, or you hold a mouse button to turn, the minimap stays hidden for a moment (up to 2 seconds over a window, 1 while you hold a button) instead of coming back at once. Meanwhile a click on a gap in a window does nothing.",
+        "When your mouse goes over a window (your bags) during a scan, the minimap stays hidden for up to 2 seconds instead of coming back at once. A mouse click always brings it back at once.",
         UpdateScanner)
 
     Page("Switch")
-    Settings.CreateCheckbox(category, finders, findersTip) -- the same setting as on NodeSight's own page
-    Header("When")
+    local findersRow = Settings.CreateCheckbox(category, finders, findersTip) -- the same setting as on NodeSight's own page
+    -- With automatic scans on, the switch comes before each of them: its own timing isn't used.
+    local function OwnTiming()
+        return not (ns.db.scanMinimap and (ns.db.autoScan or ns.db.autoScanTimer and (tonumber(ns.db.autoScanSeconds) or 0) > 0))
+    end
+    -- The rest of the page shows once Switch is on.
+    local function SwitchOn() return ns.db.switchFinders end
+    local function UnderSwitch(row) Indent(row, findersRow, SwitchOn) end
+    UnderSwitch(Header("When"))
     -- The measure's change restarts the way and redraws the page, so only its slider shows.
     local measure = Dropdown("switchMeasure", "Measure distance in", ns.SWITCH_MEASURES,
-        "How the distance between switches is measured: percent of what your minimap shows (it changes with the zoom), yards, or seconds on the move.",
+        "How the distance between switches is measured: percent of what your minimap shows (it changes with the zoom), yards, or seconds on the move. "
+            .. "Not used while Scan on a timer or Scan by distance is on: Switch then switches right before each scan.",
         function()
             ns.SwitchMeasureChanged()
             UpdateScanner()
             if SettingsInbound and SettingsInbound.RepairDisplay then pcall(SettingsInbound.RepairDisplay) end
         end)
+    Gray(measure, findersRow, OwnTiming)
+    if measure and type(measure.AddShownPredicate) == "function" then measure:AddShownPredicate(SwitchOn) end
     -- A distance slider goes under the measure and shows only at its value, where the client can.
     local function Under(slider, value)
         if not slider then return end
         local function Chosen() return ns.db.switchMeasure == value end
-        if measure and type(slider.SetParentInitializer) == "function" then slider:SetParentInitializer(measure, Chosen) end
-        if type(slider.AddShownPredicate) == "function" then slider:AddShownPredicate(Chosen) end
+        if measure and type(slider.SetParentInitializer) == "function" then
+            slider:SetParentInitializer(measure, function() return Chosen() and OwnTiming() end)
+        end
+        if type(slider.AddShownPredicate) == "function" then
+            slider:AddShownPredicate(Chosen)
+            slider:AddShownPredicate(SwitchOn)
+        end
     end
     local percent, percentSlider = Slider("switchPercent", "Distance between switches", 20, 100,
         "How far you go between switches, in percent of what your minimap shows: farther when zoomed out or outdoors. The default is " .. defaults.switchPercent .. " %.",
@@ -390,38 +569,38 @@ local function RegisterSettings()
     zoom:SetScript("OnEvent", function()
         if SettingsPanel and SettingsPanel:IsShown() then percent:NotifyUpdate() end
     end)
-    Checkbox("switchMounted", "Only while mounted",
+    UnderSwitch(select(2, Checkbox("switchMounted", "Only while mounted",
         "Switches only while you ride a mount. Travel Form and Ghost Wolf don't count.",
-        UpdateScanner)
-    Header("Pauses")
-    Checkbox("switchPauseBusy", "Pause while casting, looting or with a spell or item on the cursor",
+        UpdateScanner)))
+    UnderSwitch(Header("Pauses"))
+    UnderSwitch(select(2, Checkbox("switchPauseBusy", "Pause while casting, looting or with a spell or item on the cursor",
         "Switching pauses while you cast, gather or loot, and while a spell waits for a target or something is on your cursor.",
-        UpdateScanner)
-    Slider("switchEnemyYards", "Pause with an enemy targeted within about (yards)", 0, 60,
+        UpdateScanner)))
+    UnderSwitch(select(2, Slider("switchEnemyYards", "Pause with an enemy targeted within about (yards)", 0, 60,
         "Switching pauses while you target a living enemy this close, and for a second after you mouse over one. Distances are rough: the game doesn't give exact ones.",
-        UpdateScanner, 1, Off)
-    Checkbox("switchPauseStealth", "Pause while stealthed",
+        UpdateScanner, 1, Off)))
+    UnderSwitch(select(2, Checkbox("switchPauseStealth", "Pause while stealthed",
         "Switching pauses while you're stealthed.",
-        UpdateScanner)
-    Slider("switchNearYards", "Pause near a herb or ore (yards)", 0, 40,
+        UpdateScanner)))
+    UnderSwitch(select(2, Slider("switchNearYards", "Pause near a herb or ore (yards)", 0, 40,
         "Switching pauses this close to a herb or ore with a symbol, so you can walk up and gather it.",
-        UpdateScanner, 1, Off)
-    Slider("switchAfterCast", "Pause after your own spells (seconds)", 0, 10,
+        UpdateScanner, 1, Off)))
+    UnderSwitch(select(2, Slider("switchAfterCast", "Pause after your own spells (seconds)", 0, 10,
         "Switching pauses this long after your own spells end, and after you dismount, so the switch's global cooldown doesn't get in your way.",
-        UpdateScanner, 1, Off)
-    Header("Where")
-    Checkbox("switchWorld", "Switch in the open world",
+        UpdateScanner, 1, Off)))
+    UnderSwitch(Header("Where"))
+    UnderSwitch(select(2, Checkbox("switchWorld", "Switch in the open world",
         "Switches while you're in the open world.",
-        UpdateScanner)
-    Checkbox("switchDungeons", "Switch in dungeons",
+        UpdateScanner)))
+    UnderSwitch(select(2, Checkbox("switchDungeons", "Switch in dungeons",
         "Switches while you're in a dungeon.",
-        UpdateScanner)
-    Checkbox("switchRaids", "Switch in raids",
+        UpdateScanner)))
+    UnderSwitch(select(2, Checkbox("switchRaids", "Switch in raids",
         "Switches while you're in a raid.",
-        UpdateScanner)
-    Checkbox("switchBattlegrounds", "Switch in battlegrounds",
+        UpdateScanner)))
+    UnderSwitch(select(2, Checkbox("switchBattlegrounds", "Switch in battlegrounds",
         "Switches while you're in a battleground.",
-        UpdateScanner)
+        UpdateScanner)))
     if CreateSettingsListSectionHeaderInitializer then
         layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Thanks to tester617 for the Switch page"))
     end
@@ -461,6 +640,14 @@ local function RegisterSettings()
     end
 
     Page("Beta")
+    Checkbox("trailFrames", "Hide frames that follow the minimap (Beta)",
+        "During a scan, also hides frames other addons keep where your minimap is without being attached to it (some addons' map pins "
+            .. "and icons), so they don't show up under your mouse. They're back after the scan.",
+        function() end) -- (read as each scan starts)
+    Checkbox("edgeScan", "Edge scans while moving (Beta)",
+        "While you move, scans read only the part of the minimap that's new since the last scan, so they take less time. "
+            .. "Every third scan, and any scan while you stand still, reads all of it.",
+        UpdateScanner)
     local farNote = "Far away sparkles don't work as well since WoW Forever's latest update: whether a far herb is above or below you can't be read any more."
     Header(RED_FONT_COLOR:WrapTextInColorCode("Far away sparkles don't work as well now"), farNote)
     local _, far = Checkbox("worldMark", "Far away sparkles (Beta)",

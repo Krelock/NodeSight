@@ -530,11 +530,21 @@ local TOO_HARD = { 1, 0.2, 0.2 } -- red tint for nodes above your skill
 local skills = {} -- cached skill levels with bonuses (false = unknown)
 local bases, caps = {}, {} -- and without bonuses, and the trained cap; read with skills
 local professions = {} -- localized profession names
+local has, hasAt = {}, {} -- whether you have each kind's profession, and when a "no" was read
+local RECHECK = 5 -- seconds a "no" is kept (the skill list may still be loading at login)
 
 -- Herbalism or Mining skill including bonuses, or nil.
 local function GatherSkill(kind)
     local info = C_SkillInfo and C_SkillInfo.GetSkillLineInfoByID and C_SkillInfo.GetSkillLineInfoByID(SKILL_LINE[kind])
-    if not info or issecretvalue(info) then return nil end
+    if issecretvalue(info) then
+        has[kind] = true
+        return nil
+    end
+    if not info then
+        has[kind], hasAt[kind] = false, GetTime()
+        return nil
+    end
+    has[kind] = true
     local rank, bonus, cap = info.rank, info.modifier, info.maxRank
     if issecretvalue(rank) or issecretvalue(bonus) or not rank then return nil end
     local name = info.name
@@ -579,7 +589,25 @@ local function SkillLevel(name, kind)
     return over < 25 and 2 or over < 50 and 3 or over < 100 and 4 or 5, need
 end
 
+-- Whether you have the profession that gathers a kind (Herbalism, Mining, Skinning): false
+-- only when the game says you don't; true for other kinds, or when it can't be read.
+-- Read with the skill (one call for both), kept until the skills change.
+local SKINNING_LINE = 393
+local function HasProfession(kind)
+    local get = C_SkillInfo and C_SkillInfo.GetSkillLineInfoByID
+    if not (get and (SKILL_LINE[kind] or kind == "skinning")) then return true end
+    if has[kind] ~= nil and (has[kind] or GetTime() - hasAt[kind] < RECHECK) then return has[kind] end
+    if SKILL_LINE[kind] then
+        skills[kind] = GatherSkill(kind) or false
+    else
+        local info = get(SKINNING_LINE)
+        if issecretvalue(info) or info ~= nil then has[kind] = true else has[kind], hasAt[kind] = false, GetTime() end
+    end
+    return has[kind] ~= false
+end
+
 -- Used by NodeSight.lua.
+ns.HasProfession, ns.hasProfession = HasProfession, has
 ns.Plain, ns.NodeKind, ns.NodeIcon = Plain, NodeKind, NodeIcon
 ns.NodeKey = Key
 ns.TREASURE, ns.RARES, ns.FRIENDLY, ns.InZone = TREASURE, RARES, FRIENDLY, InZone

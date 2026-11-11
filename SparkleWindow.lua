@@ -817,9 +817,18 @@ local function ShowNotice()
             ns.Setup()
             if window and window:IsShown() then Refresh() end
         end)
-        notice.enable:SetPoint("BOTTOMRIGHT", notice, "BOTTOM", -6, 16)
         notice.close = DialogButton(notice, CLOSE, function() notice:Hide() end)
-        notice.close:SetPoint("BOTTOMLEFT", notice, "BOTTOM", 6, 16)
+        notice.never = DialogButton(notice, CONFIRM_POPUP_DONT_SHOW_AGAIN, function()
+            ns.NoMorePopups()
+            notice:Hide()
+        end)
+        notice.never:SetWidth(math.max(128, notice.never:GetTextWidth() + 24))
+        -- The three in a row, the dialog wide enough for them.
+        local row = 128 + 8 + 128 + 8 + notice.never:GetWidth()
+        notice:SetWidth(math.max(420, row + 40))
+        notice.enable:SetPoint("BOTTOMLEFT", notice, "BOTTOM", -row / 2, 16)
+        notice.close:SetPoint("LEFT", notice.enable, "RIGHT", 8, 0)
+        notice.never:SetPoint("LEFT", notice.close, "RIGHT", 8, 0)
     end
     notice:Show()
 end
@@ -829,7 +838,9 @@ interactWatch:RegisterEvent("CVAR_UPDATE")
 interactWatch:SetScript("OnEvent", function(_, _, name)
     if issecretvalue(name) or type(name) ~= "string" or name:lower() ~= "softtargetinteract" or not ns.db then return end
     if window and window:IsShown() then Refresh() end
-    if ns.InteractOff() then ShowNotice() end
+    if ns.InteractOff() then
+        ns.AfterFight("interact", function() if ns.InteractOff() then ShowNotice() end end)
+    end
 end)
 
 ns.SPARKLE_TABS, ns.SPARKLE_NEEDS = TABS, NEEDS -- the Options rows' words with the gamepad UI on
