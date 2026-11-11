@@ -51,6 +51,13 @@ end
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
+        { version = "2.0.5",
+            { "Fixes", {
+                { "Scans with EllesmereUI.", "Scans no longer find nothing, or put symbols beside the nodes, when your mouse is near the edge of the screen" },
+                { "An error with EllesmereUI.", "Hovering the minimap no longer shows a NodeSight error over and over" },
+                { "Text on the minimap during a scan.", "A UI's clock and zone name (EllesmereUI's) stay in their place instead of disappearing or leaving an empty box. With Map while scanning on" },
+            } },
+        },
         { version = "2.0.4",
             { "New", {
                 { "Wait to loot after fights (on by default).", "After a fight, Scan on a timer and Scan by distance wait a few seconds (3 by default, up to 10), so a scan doesn't hide the minimap while you loot. On the Scanning page" },

@@ -1399,6 +1399,7 @@ end
         end
     end
     local function QuietTree(s, parent, depth)
+        if not parent.GetChildren then return end -- (text or a texture: no children)
         for _, child in ipairs({ parent:GetChildren() }) do
             if not issecretvalue(child) then
                 QuietOne(s, child)
@@ -2001,8 +2002,8 @@ end
 
     -- What the minimap's own frames draw (a UI's border, buttons that stay shown) leaves with
     -- the minimap as a scan moves it: copied onto the stand-in at full strength, so it stays
-    -- put while the real ones fade out under the copies. Textures only: no text, none masked
-    -- (a round icon), none under the map.
+    -- put while the real ones fade out under the copies. Their text too (a UI's clock and zone
+    -- name). No masked texture (a round icon), none under the map.
     -- Loaded before it's first drawn: the first scan after a login would show it late.
     local function Ready(texture) texture:SetBlockingLoadsRequested(true) end
     local DECOR_LAYERS = { "BORDER", "ARTWORK", "OVERLAY" }
@@ -2044,6 +2045,25 @@ end
         copy:SetPoint("CENTER", stand.decor, "CENTER", x, y)
         return true
     end
+    local function CopyText(copy, real, alpha, eff)
+        local x, y, w, h = Measure(real, eff)
+        local font, size, flags = real:GetFont()
+        local text, own = real:GetText(), real:GetEffectiveScale()
+        if not x or not Readable(font, size, text, own) then return false end
+        copy:SetFont(font, size * own / eff, Readable(flags) and flags or "")
+        copy:SetText(text)
+        local r, g, b = real:GetTextColor()
+        if not Readable(r, g, b) then r, g, b = 1, 1, 1 end
+        copy:SetTextColor(r, g, b)
+        copy:SetAlpha(alpha)
+        local justify = real:GetJustifyH()
+        copy:SetJustifyH(Readable(justify) and justify or "CENTER")
+        copy:SetWordWrap(false)
+        copy:SetSize(w, h)
+        copy:ClearAllPoints()
+        copy:SetPoint("CENTER", stand.decor, "CENTER", x, y)
+        return true
+    end
     -- Hidden by a finished fade that keeps its last alpha (LibDBIcon's buttons shown on
     -- hover): GetAlpha still says 1.
     local function Faded(frame)
@@ -2074,7 +2094,7 @@ end
         return false
     end
     function StandDecor(eff)
-        local found, base = {}, Minimap:GetFrameLevel()
+        local found, words, base = {}, {}, Minimap:GetFrameLevel()
         stand.moving = {}
         local wx, wy = UnitPosition("player")
         stand.from = Readable(wx, wy) and { x = wx, y = wy, facing = PlayerFacing() } or nil
@@ -2084,8 +2104,13 @@ end
             local level, seen = frame:GetFrameLevel(), frame:GetEffectiveAlpha()
             if not Readable(level, seen) or level < base or seen <= 0 then return end
             for _, region in ipairs({ frame:GetRegions() }) do
-                if #found < 200 and not issecretvalue(region) and region ~= MinimapCompassTexture
-                    and region:GetObjectType() == "Texture" and region:IsVisible() then
+                local kind = not issecretvalue(region) and region:GetObjectType()
+                if #words < 20 and kind == "FontString" and region:IsVisible() then
+                    local alpha, text = region:GetAlpha(), region:GetText()
+                    if Readable(alpha, text) and alpha > 0 and text ~= "" then
+                        words[#words + 1] = { region = region, alpha = seen * alpha }
+                    end
+                elseif #found < 200 and kind == "Texture" and region ~= MinimapCompassTexture and region:IsVisible() then
                     local alpha, masks = region:GetAlpha(), region:GetNumMaskTextures()
                     local layer, sub = region:GetDrawLayer()
                     -- (Not a button's hover glow: the HIGHLIGHT layer is drawn only under the mouse.)
@@ -2124,6 +2149,20 @@ end
             end
         end
         for i = used + 1, #stand.copies do stand.copies[i]:Hide() end
+        used = 0
+        for _, f in ipairs(words) do
+            local copy = stand.words[used + 1]
+            if not copy then
+                copy = stand.decor:CreateFontString(nil, "OVERLAY", nil, 7)
+                stand.words[used + 1] = copy
+            end
+            local ok, laid = pcall(CopyText, copy, f.region, f.alpha, eff)
+            if ok and laid then
+                copy:Show()
+                used = used + 1
+            end
+        end
+        for i = used + 1, #stand.words do stand.words[i]:Hide() end
     end
 
     local function StandArrow()
@@ -2570,7 +2609,7 @@ end
                 stand.decor:SetParent(stand)
                 stand.decor:SetAllPoints()
                 stand.decor:SetIgnoreParentAlpha(true)
-                stand.copies = {}
+                stand.copies, stand.words = {}, {}
                 stand.pins = {}
                 stand.round = false -- the mask goes on when the minimap is round
                 stand.frame = stand:CreateTexture(nil, "OVERLAY")
@@ -2731,9 +2770,23 @@ end
         return dx or 0, dy or 0
     end
 
+    -- A minimap kept on screen (EllesmereUI's) would stop short of a mouse near the screen's
+    -- edge: free while it's moved, as it was after.
+    local function Unclamp(s)
+        if s.clamped ~= nil or (InCombatLockdown() and Minimap:IsProtected()) then return end
+        local ok, clamped = pcall(Minimap.IsClampedToScreen, Minimap)
+        s.clamped = ok and not issecretvalue(clamped) and clamped == true
+        if s.clamped then Minimap:SetClampedToScreen(false) end
+    end
+    local function Reclamp(s)
+        if s.clamped and not (InCombatLockdown() and Minimap:IsProtected()) then Minimap:SetClampedToScreen(true) end
+        s.clamped = nil
+    end
+
     -- Puts spot i (where it was at the scan's start) under the mouse, where it will be next
     -- frame when the game looks (as far as it moved over the last frame).
     local function KeyPlaceNow(s, i)
+        Unclamp(s)
         local spot = s.spots[i]
         local dx, dy = Drift(s)
         local scale = Minimap:GetEffectiveScale()
@@ -3064,6 +3117,7 @@ end
         key.lastJobs, key.lastSpots = s.jobs or 0, s.gridSpots -- dots measured closely, grid spots
         quietUntil = GetTime() + 0.25
         pcall(Minimap.AdjustPointsOffset, Minimap, -s.ox, -s.oy)
+        Reclamp(s)
         Disguise(s, false)
         Guard(s)
         PinSymbols(s, false)
@@ -3118,6 +3172,7 @@ end
         if on then
             pcall(Minimap.AdjustPointsOffset, Minimap, -s.ox, -s.oy)
             s.ox, s.oy = 0, 0
+            Reclamp(s)
             Disguise(s, false)
             PinSymbols(s, false)
         else
