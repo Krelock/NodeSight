@@ -29,4 +29,5 @@ Sparkles.lua
 FarSparkles.lua
 SparkleWindow.lua
 WhatsNew.lua
+Setup.lua
 Settings.lua

@@ -4225,6 +4225,7 @@ local function OnAddonLoaded()
     -- A first install has no update to tell of: its notes count as seen (no glow on What's New).
     if firstInstall then NodeSightDB.notesSeen = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") end
     ns.noticeDue = not NodeSightDB.scanNotice -- the notice about the scan, once, after the first loading screen
+    ns.firstInstall = firstInstall -- a first install gets the setup window instead of that notice (Setup.lua)
     -- Far away sparkles don't work as well since build 70862: turned off once where they were on.
     if not settings.farTurnedOff then
         settings.worldMark, settings.farTurnedOff = false, true
@@ -4359,7 +4360,11 @@ events:SetScript("OnEvent", function(_, event, arg1, arg2)
         elseif ns.noticeDue then
             ns.noticeDue = false
             NodeSightDB.scanNotice = true
-            ns.ShowNotice(ns.SCAN_NOTICE[1], ns.SCAN_NOTICE[2])
+            if ns.firstInstall and ns.ShowSetupOnce then
+                ns.ShowSetupOnce()
+            else
+                ns.ShowNotice(ns.SCAN_NOTICE[1], ns.SCAN_NOTICE[2])
+            end
         end
         NewPlace()
         if db.dotScale ~= NORMAL_DOTS then ApplyDotScale() end
