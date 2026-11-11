@@ -51,6 +51,14 @@ end
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
+        { version = "2.0.6",
+            { "New", {
+                { "Setup window.", "Shows once after this update: pick how much scans may interrupt you (Less intrusive, Balanced, Most finds or Sparkles only) and what NodeSight shows, in two quick steps. Skip keeps your settings. The Setup button on NodeSight's page in Options opens it again. Thanks to foksgaming22-droid for this on GitHub" },            } },
+            { "Changes", {
+                { "Less intrusive preset.", "Scans every 40 yards walked, only while your mouse is still, stops when you move it, and waits 5 seconds after fights for you to loot. Not in combat" },
+                { "Herb and ore tooltips.", "Hovering one shows \"Requires Mining (65)\" in place of the game's \"Mining\" line, like the minimap's tooltip" },
+            } },
+        },
         { version = "2.0.5.1",
             { "Fixes", {
                 { "Bug report button.", "Its report is shorter to paste, and says more about what was under the mouse" },

@@ -1,57 +1,60 @@
--- NodeSight's setup: a short window on the first launch that asks how much the scans may
--- interrupt you and what NodeSight should show, then sets those settings. It opens again from
--- the Setup button on the settings page.
+-- NodeSight's setup: a short window, once, that asks how much the scans may interrupt you
+-- and what NodeSight should show, then sets those settings. It opens again from the Setup
+-- button on the settings page.
 --
 -- Sections: Choices, Window, Showing it.
 
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
-local ipairs, pairs = ipairs, pairs
+local ipairs = ipairs
 
 local function Gold(text) return NORMAL_FONT_COLOR:WrapTextInColorCode(text) end
 
 ---------------------------------------------------------------------------
 -- Choices
 ---------------------------------------------------------------------------
--- The settings a scan choice sets. Keys not in a choice's `set` go back to their defaults.
-local SCAN_KEYS = { "autoScanTimer", "autoScanSeconds", "scanStanding", "autoScan", "autoScanYards",
-    "combatScan", "mouseStill", "mouseStop", "lootWait", "lootSeconds" }
+-- The settings a scan choice sets: the Scanning page's presets (NodeSight.lua). Keys not in a
+-- choice's `set` go back to their defaults.
+local SCAN_KEYS, PRESETS = ns.SCAN_KEYS, ns.SCAN_PRESETS
 
--- How much scans may interrupt you. "Most finds" is the Scanning page's Most scans preset.
+-- How much scans may interrupt you. "Sparkles only" turns Scan the minimap off and leaves the
+-- scan settings as they are.
 local CHOICES = {
-    { name = "Quiet (recommended)",
+    { name = "Less intrusive (recommended)",
         text = "Scans while you walk, only when your mouse is still, and a scan stops the moment you move it. "
             .. "You'll hardly notice them; symbols update a little less often.",
-        set = { autoScanTimer = false, autoScan = true, autoScanYards = 40, combatScan = false,
-            mouseStill = true, mouseStop = true, lootWait = true, lootSeconds = 5 } },
+        set = PRESETS[2] },
     { name = "Balanced",
         text = "NodeSight's standard: a scan every " .. ns.defaults.autoScanYards .. " yards you walk, whatever your mouse is doing.",
-        set = {} },
+        set = PRESETS[1] },
     { name = "Most finds",
         text = "A scan every 5 seconds, also while you stand still and in combat. Symbols are always up to date, "
             .. "and you'll notice the scans the most.",
-        set = { autoScanTimer = true, autoScanSeconds = 5, scanStanding = true, autoScan = true, autoScanYards = 20,
-            combatScan = true, mouseStill = false } },
+        set = PRESETS[3] },
+    { name = "Sparkles only",
+        text = "No minimap scanning: NodeSight never touches your minimap. Herbs and ore near you still sparkle, "
+            .. "but there are no symbols, arrow or sound.",
+        noScan = true },
 }
 local RECOMMENDED = 1
 
--- What NodeSight shows: each box and the settings it turns on or off.
+-- What NodeSight shows: each box and the settings it turns on or off. scan: needs the scans.
 local SHOWS = {
-    { name = "Herb and ore symbols on the minimap", keys = { "mapIcons" },
+    { name = "Herb and ore symbols on the minimap", keys = { "mapIcons" }, scan = true,
         text = "The herb's or ore's own picture on each minimap dot." },
-    { name = "Arrow to the nearest herb or ore", keys = { "arrow" },
+    { name = "Arrow to the nearest herb or ore", keys = { "arrow" }, scan = true,
         text = "Near the top of the screen, with its name and distance." },
-    { name = "Sparkles on herbs and ore near you", keys = { "herbs", "ore" },
+    { name = "Sparkles on herbs and ore near you", keys = { "herbs", "ore" }, sparkles = true,
         text = "Gold sparkles on the ones in front of you." },
-    { name = "Sound for new finds", keys = { "sound" },
+    { name = "Sound for new finds", keys = { "sound" }, scan = true,
         text = "A sound when something new shows up on your minimap." },
 }
 
--- Which choice the scan settings match now, or nil.
+-- Which choice the settings match now, or nil.
 local function CurrentChoice()
     for i, choice in ipairs(CHOICES) do
-        local same = true
-        for _, key in ipairs(SCAN_KEYS) do
+        local same = ns.db.scanMinimap == not choice.noScan
+        for _, key in ipairs(choice.noScan and {} or SCAN_KEYS) do
             local want = choice.set[key]
             if want == nil then want = ns.defaults[key] end
             if ns.db[key] ~= want then same = false break end
@@ -60,23 +63,34 @@ local function CurrentChoice()
     end
 end
 
+-- No choice: the scan settings stay as they are. No shows: what shows stays too.
 local function Apply(choiceIndex, shows)
     local db, defaults = ns.db, ns.defaults
     local choice = CHOICES[choiceIndex]
+    local changed = {}
+    local function Set(key, value)
+        if db[key] ~= value then
+            db[key] = value
+            changed[#changed + 1] = key
+        end
+    end
     if choice then
-        for _, key in ipairs(SCAN_KEYS) do
+        Set("scanMinimap", not choice.noScan)
+        for _, key in ipairs(choice.noScan and {} or SCAN_KEYS) do
             local value = choice.set[key]
             if value == nil then value = defaults[key] end
-            db[key] = value
+            Set(key, value)
         end
     end
     local sparklesChanged = false
     if shows then
         for i, show in ipairs(SHOWS) do
-            for _, key in ipairs(show.keys) do
-                if (db[key] == true) ~= shows[i] then
-                    db[key] = shows[i]
-                    if key == "herbs" or key == "ore" then sparklesChanged = true end
+            if not (show.scan and choice and choice.noScan) then -- (grayed out: left as it was)
+                for _, key in ipairs(show.keys) do
+                    if (db[key] == true) ~= shows[i] then
+                        Set(key, shows[i])
+                        if show.sparkles then sparklesChanged = true end
+                    end
                 end
             end
         end
@@ -88,6 +102,7 @@ local function Apply(choiceIndex, shows)
         ns.Setup()
         if ns.RefreshSparkleWindow then pcall(ns.RefreshSparkleWindow) end
     end
+    if ns.SettingsChanged then ns.SettingsChanged(changed) end -- (the settings page shows them)
     db.setupDone = true
     ns.Log(("setup: scans %s"):format(choice and choice.name or "unchanged"))
 end
@@ -122,7 +137,7 @@ local function DialogButton(parent, text, onClick)
     return button
 end
 
--- A line of text at y (negative, from the top); returns y below it.
+-- A line of text at y (negative, from the top); returns y below it, and the line.
 local function Text(parent, font, text, x, y, width)
     local line = parent:CreateFontString(nil, "ARTWORK", font)
     line:SetPoint("TOPLEFT", x, y)
@@ -130,7 +145,7 @@ local function Text(parent, font, text, x, y, width)
     line:SetJustifyH("LEFT")
     line:SetSpacing(2)
     line:SetText(text)
-    return y - line:GetStringHeight()
+    return y - line:GetStringHeight(), line
 end
 
 -- A row you can click anywhere on: a radio button or a check box, its name and what it does.
@@ -144,14 +159,15 @@ local function Row(parent, template, name, text, y, onClick)
     local box = NewFrame("CheckButton", row, template)
     box:SetPoint("TOPLEFT", 4, -3)
     box:EnableMouse(false) -- the row takes the click
-    local inner = Text(row, "GameFontNormal", name, 32, -5, WIDTH - 80)
-    inner = Text(row, "GameFontHighlightSmall", text, 32, inner - 3, WIDTH - 80)
+    local inner, title = Text(row, "GameFontNormal", name, 32, -5, WIDTH - 80)
+    local about
+    inner, about = Text(row, "GameFontHighlightSmall", text, 32, inner - 3, WIDTH - 80)
     row:SetHeight(-inner + 6)
     row:SetScript("OnClick", function()
         PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
         onClick()
     end)
-    row.box = box
+    row.box, row.title, row.about = box, title, about
     return row, y - row:GetHeight() - 4
 end
 
@@ -169,7 +185,7 @@ local function Build()
     local edge = frame:CreateTexture(nil, "BACKGROUND", nil, -4)
     edge:SetAtlas("UI-DiamondDialogBox-Border", true)
     edge:SetAllPoints()
-    window = { frame = frame, choice = RECOMMENDED, shows = {}, pages = {} }
+    window = { frame = frame, shows = {}, pages = {} }
 
     -- Page 1: how much scans may interrupt.
     local page = NewFrame("Frame", frame)
@@ -184,19 +200,25 @@ local function Build()
         row, y = Row(page, "UIRadioButtonTemplate", choice.name, choice.text, y, function()
             window.choice = i
             for j, other in ipairs(window.radios) do other.box:SetChecked(j == i) end
+            if choice.noScan then -- (nothing else would show)
+                for k, show in ipairs(SHOWS) do
+                    if show.sparkles then window.shows[k] = true end
+                end
+            end
         end)
         window.radios[i] = row
     end
     page.height = -y + 50
     local skip = DialogButton(page, "Skip", function()
-        Apply(RECOMMENDED, nil)
+        if window.first then Apply(RECOMMENDED, nil) end
         frame:Hide()
     end)
     skip:SetPoint("BOTTOMRIGHT", page, "BOTTOM", -6, 16)
     skip:SetScript("OnEnter", function()
         GameTooltip:SetOwner(skip, "ANCHOR_BOTTOM")
         GameTooltip:SetText("Skip", NORMAL_FONT_COLOR:GetRGB())
-        GameTooltip:AddLine("Uses " .. CHOICES[RECOMMENDED].name .. " and keeps everything else as it is.", 1, 1, 1, true)
+        GameTooltip:AddLine(window.first and ("Uses " .. CHOICES[RECOMMENDED].name .. " and keeps everything else as it is.")
+            or "Keeps your settings as they are.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     skip:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -208,9 +230,15 @@ local function Build()
     page:SetAllPoints()
     y = Text(page, "GameFontNormal", "What should NodeSight show? (2/2)", 20, -20, WIDTH - 40) - 10
     window.boxes = {}
+    -- Sparkles only: the boxes that need the scans grayed out and unticked.
+    local function Grayed(i)
+        local choice = CHOICES[window.choice]
+        return SHOWS[i].scan and choice and choice.noScan
+    end
     for i, show in ipairs(SHOWS) do
         local row
         row, y = Row(page, "UICheckButtonTemplate", show.name, show.text, y, function()
+            if Grayed(i) then return end
             window.shows[i] = not window.shows[i]
             window.boxes[i].box:SetChecked(window.shows[i])
         end)
@@ -229,32 +257,42 @@ local function Build()
     function window.Show(index)
         for i, other in ipairs(window.pages) do other:SetShown(i == index) end
         frame:SetHeight(window.pages[index].height)
+        if index == 2 then
+            for i, row in ipairs(window.boxes) do
+                local off = Grayed(i)
+                row:SetEnabled(not off)
+                row.box:SetChecked(not off and window.shows[i])
+                row.box:SetEnabled(not off)
+                row.title:SetFontObject(off and GameFontDisable or GameFontNormal)
+                row.about:SetFontObject(off and GameFontDisableSmall or GameFontHighlightSmall)
+            end
+        end
     end
 end
 
 ---------------------------------------------------------------------------
 -- Showing it
 ---------------------------------------------------------------------------
--- Opens the window, its choices as the settings are now (the recommended scans when they
--- match none).
-local function Open()
+-- Opens the window: a first install on the recommended scans, otherwise on the choice the
+-- settings match now (none if they match none: kept as they are).
+local function Open(first)
     if not window then Build() end
-    window.choice = CurrentChoice() or RECOMMENDED
+    window.first = first
+    window.choice = first and RECOMMENDED or CurrentChoice()
     for i, row in ipairs(window.radios) do row.box:SetChecked(i == window.choice) end
     for i, show in ipairs(SHOWS) do
         local on = true
         for _, key in ipairs(show.keys) do on = on and ns.db[key] == true end
         window.shows[i] = on
-        window.boxes[i].box:SetChecked(on)
     end
     window.Show(1)
     window.frame:Show()
 end
 
--- On the first launch (after the first loading screen), once a fight is over.
-function ns.ShowSetupOnce()
-    ns.AfterFight("setup", Open)
+-- Once, after the first loading screen (first: a new install), once a fight is over.
+function ns.ShowSetupOnce(first)
+    ns.AfterFight("setup", function() Open(first) end)
 end
 
 -- From the Setup button: at once.
-ns.ShowSetup = Open
+function ns.ShowSetup() Open(false) end

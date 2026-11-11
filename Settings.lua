@@ -116,10 +116,12 @@ local function RegisterSettings()
     end
 
     -- A setting saved in NodeSightDB[key], with its change callback.
+    local registered = {}
     local function Register(key, name, onChange)
         local setting = Settings.RegisterAddOnSetting(category, "NodeSight_" .. key, key, ns.db,
             type(defaults[key]), name, defaults[key])
         setting:SetValueChangedCallback(onChange)
+        registered[key] = setting
         return setting
     end
 
@@ -415,13 +417,13 @@ local function RegisterSettings()
         false))
     Header("Automatic scans")
     -- Presets: each sets these settings at once; the dropdown shows the one they match, or Custom.
-    local PRESET_KEYS = { "autoScanTimer", "autoScanSeconds", "scanStanding", "autoScan", "autoScanYards", "combatScan", "mouseStill" }
-    local PRESETS = { {},
-        { autoScanTimer = true, autoScanSeconds = 5, scanStanding = true, autoScan = false, autoScanYards = 30,
-            combatScan = true, mouseStill = true },
-        { autoScanTimer = true, autoScanSeconds = 5, scanStanding = true, autoScan = true, autoScanYards = 20,
-            combatScan = true, mouseStill = false } }
-    for _, k in ipairs(PRESET_KEYS) do PRESETS[1][k] = defaults[k] end
+    local PRESET_KEYS, PRESETS = ns.SCAN_KEYS, {}
+    for i, set in ipairs(ns.SCAN_PRESETS) do
+        PRESETS[i] = {}
+        for _, k in ipairs(PRESET_KEYS) do
+            if set[k] == nil then PRESETS[i][k] = defaults[k] else PRESETS[i][k] = set[k] end
+        end
+    end
     local CUSTOM = #PRESETS + 1
     local function Matching()
         for i, preset in ipairs(PRESETS) do
@@ -446,6 +448,20 @@ local function RegisterSettings()
         end
     end
     ns.db.scanPreset = Matching()
+    -- Settings changed outside the page (the setup window): the preset worked out again, and
+    -- the changed rows redrawn if the page is open.
+    function ns.SettingsChanged(keys)
+        local preset = Matching()
+        if preset ~= ns.db.scanPreset then
+            ns.db.scanPreset = preset
+            keys[#keys + 1] = "scanPreset"
+        end
+        if not (SettingsPanel and SettingsPanel:IsShown()) then return end
+        for _, key in ipairs(keys) do
+            if registered[key] then registered[key]:NotifyUpdate() end
+        end
+        Redraw()
+    end
     presetSetting = Register("scanPreset", "Preset", function(_, value)
         local preset = PRESETS[value]
         if preset then
@@ -462,7 +478,7 @@ local function RegisterSettings()
         for value, label in ipairs({ "Default", "Less intrusive", "Most scans", "Custom" }) do container:Add(value, label) end
         return container:GetData()
     end, "Sets the automatic scan settings below at once. Default: as NodeSight comes. "
-        .. "Less intrusive: scans only while your mouse is still, also while you stand still and in combat, every 5 seconds. "
+        .. "Less intrusive: every 40 yards walked, only while your mouse is still, stopping when you move it, 5 seconds after fights to loot; not in combat. "
         .. "Most scans: every 5 seconds, also while you stand still, every 20 yards walked and in combat. "
         .. "Change any of them by hand and it shows Custom.")
     local function Changed() UpdateScanner() Redraw() end
@@ -495,11 +511,13 @@ local function RegisterSettings()
     parts.combatScan = Checkbox("combatScan", "Scan in combat",
         "Scan on a timer and Scan by distance keep scanning in combat too. The minimap is hidden for a moment each time, mid-fight. Your Scan key scans in combat either way.",
         Part(UpdateScanner))
-    local _, loot = Checkbox("lootWait", "Wait to loot after fights",
+    local lootSetting, loot = Checkbox("lootWait", "Wait to loot after fights",
         "After a fight, Scan on a timer and Scan by distance wait the seconds set below, so a scan doesn't hide the minimap while you loot. Your Scan key scans at once either way.",
-        UpdateScanner)
-    local _, lootRow = Slider("lootSeconds", "Seconds to wait after fights", 1, 10,
-        "How long Wait to loot after fights waits. The default is " .. defaults.lootSeconds .. ".", UpdateScanner)
+        Part(UpdateScanner))
+    parts.lootWait = lootSetting
+    local lootSecondsSetting, lootRow = Slider("lootSeconds", "Seconds to wait after fights", 1, 10,
+        "How long Wait to loot after fights waits. The default is " .. defaults.lootSeconds .. ".", Part(UpdateScanner))
+    parts.lootSeconds = lootSecondsSetting
     Indent(lootRow, loot, function() return ns.db.lootWait end)
     Checkbox("skipRest", "Not in cities and inns",
         "Scan on a timer and Scan by distance don't scan while you're resting: in capital cities and inns (the Zzz on your portrait). Your Scan key scans there either way.",
@@ -512,10 +530,10 @@ local function RegisterSettings()
         "Scan on a timer and Scan by distance wait until your mouse has stayed put for half a second, so a scan never starts while you move it. "
             .. "A scan already running finishes. Your Scan key scans either way.",
         Part(UpdateScanner))
-    Checkbox("mouseStop", "Stop when the mouse moves",
+    parts.mouseStop = Checkbox("mouseStop", "Stop when the mouse moves",
         "Scan on a timer and Scan by distance stop as soon as you move your mouse, so whatever you move onto (a mob, a herb) shows its tooltip right away. "
             .. "Your symbols stay as they were until the next scan. Your Scan key scans either way.",
-        UpdateScanner)
+        Part(UpdateScanner))
     Header("Minimap")
     Dropdown("minimapShape", "Minimap shape", ns.MapShapeChoices,
         "Automatic asks your UI addon and shows its answer in brackets. Pick Square if herbs and ore in the corners of a square minimap don't show up.",

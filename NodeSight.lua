@@ -19,6 +19,7 @@
 --   FarSparkles.lua  sparkles on far away herbs and ore (Beta)
 --   SparkleWindow.lua the sparkle window: on/off and the look for each kind, with a 3D preview
 --   WhatsNew.lua     the patch notes dialog
+--   Setup.lua        the setup window: how much scans may interrupt, and what shows
 --   Settings.lua     the settings pages
 --
 -- Sections: Minimap scan, Node kinds, Learning nodes, Switching finders, Tooltip,
@@ -563,12 +564,12 @@ local SKILL_WAIT = 1
 local skillsRead = 0 -- last skill refresh
 local said = {} -- lines added this frame
 
--- The line and its color.
+-- The line, its color and the profession's name.
 local function Requirement(name)
     local kind = KindOf(name)
     local level, need = SkillLevel(name, kind) -- nothing for chests, rares and the like
     if not level or not professions[kind] then return nil end
-    return ITEM_MIN_SKILL:format(professions[kind], need), SKILL.Color(level)
+    return ITEM_MIN_SKILL:format(professions[kind], need), SKILL.Color(level), professions[kind]
 end
 
 local function FreshSkills()
@@ -604,13 +605,23 @@ local function OnObjectTooltip(tooltip, data)
     local name = lines[1] and lines[1].leftText
     if not name or issecretvalue(name) then return end
     FreshSkills()
-    local requires, color = Requirement(Clean(name))
+    local requires, color, profession = Requirement(Clean(name))
     if not requires then return end
     for i = 2, #lines do
         local line = lines[i]
         if issecretvalue(line) then return end
         local text = line.leftText
         if issecretvalue(text) or text == requires then return end -- the game has it already
+    end
+    -- The game's line with just the profession's name says it with the skill instead.
+    for i = 2, tooltip:NumLines() do
+        local left = tooltip:GetLeftLine(i)
+        local text = left and left:GetText()
+        if not issecretvalue(text) and text == profession then
+            left:SetText(requires)
+            left:SetTextColor(color:GetRGB())
+            return
+        end
     end
     tooltip:AddLine(requires, color:GetRGB())
 end
@@ -3986,6 +3997,13 @@ end
 
 -- What the other files use of this one.
 ns.defaults, ns.SHAPES, ns.world = defaults, SHAPES, world
+-- The scan presets (the Scanning page's dropdown and the setup window): Default, Less
+-- intrusive, Most scans. A key a preset leaves out is its default.
+ns.SCAN_KEYS = { "autoScanTimer", "autoScanSeconds", "scanStanding", "autoScan", "autoScanYards",
+    "combatScan", "mouseStill", "mouseStop", "lootWait", "lootSeconds" }
+ns.SCAN_PRESETS = { {},
+    { autoScanTimer = false, autoScan = true, autoScanYards = 40, combatScan = false, mouseStill = true, mouseStop = true, lootSeconds = 5 },
+    { autoScanTimer = true, autoScanSeconds = 5, scanStanding = true, autoScan = true, autoScanYards = 20, combatScan = true, mouseStill = false } }
 ns.FINDERS = FINDERS
 ns.SKILL_LOOKS = SKILL.looks
 ns.NEAR_LOOKS = NEAR_LOOKS
@@ -4013,7 +4031,6 @@ function ns.KeyLastJobs() return key.lastJobs, key.lastSkipped, key.lastSpots en
 
 local MINIMAP_TOOLTIP = Enum.TooltipDataType.MinimapMouseover -- the minimap dots' tooltip type
 local OBJECT_TOOLTIP = Enum.TooltipDataType.Object -- a herb's or ore's own tooltip
-
 -- Settings: this character's own (NodeSightCharDB, the default, started from the
 -- shared ones) or the ones shared by every character that has its own turned off
 -- (NodeSightDB). Learned nodes and quest objects, rare names and the CVars to put
@@ -4224,8 +4241,8 @@ local function OnAddonLoaded()
     ns.Log(("loaded %s, %s"):format(tostring(C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version")), date("%Y-%m-%d %H:%M")))
     -- A first install has no update to tell of: its notes count as seen (no glow on What's New).
     if firstInstall then NodeSightDB.notesSeen = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") end
-    ns.noticeDue = not NodeSightDB.scanNotice -- the notice about the scan, once, after the first loading screen
-    ns.firstInstall = firstInstall -- a first install gets the setup window instead of that notice (Setup.lua)
+    ns.setupDue = not NodeSightDB.setupSeen -- the setup window, once for everyone, after the first loading screen (Setup.lua)
+    ns.firstInstall = firstInstall
     -- Far away sparkles don't work as well since build 70862: turned off once where they were on.
     if not settings.farTurnedOff then
         settings.worldMark, settings.farTurnedOff = false, true
@@ -4340,7 +4357,7 @@ events:SetScript("OnEvent", function(_, event, arg1, arg2)
             events:UnregisterEvent("ADDON_LOADED")
             -- After an update, a /reload only loads the files the old .toc listed:
             -- stay off until the game is restarted.
-            if not (ns.Plain and ns.RareID and ns.MinimapQuarters and ns.Mute and ns.Setup and world.Update and ns.ShowSparkleWindow and ns.ShowWhatsNew and ns.RegisterSettings) then
+            if not (ns.Plain and ns.RareID and ns.MinimapQuarters and ns.Mute and ns.Setup and world.Update and ns.ShowSparkleWindow and ns.ShowWhatsNew and ns.ShowSetup and ns.RegisterSettings) then
                 events:UnregisterAllEvents()
                 if ns.ShowNotice then
                     pcall(ns.ShowNotice, "NodeSight needs a game restart", "NodeSight was updated while the game was running, "
@@ -4357,14 +4374,10 @@ events:SetScript("OnEvent", function(_, event, arg1, arg2)
         if world.NavIn then pcall(world.NavIn) end
         if (arg1 or arg2) and LueurScans() then -- (a login or reload; the scan notice waits)
             ns.ShowNotice(ns.LUEUR_NOTICE[1], ns.LUEUR_NOTICE[2])
-        elseif ns.noticeDue then
-            ns.noticeDue = false
-            NodeSightDB.scanNotice = true
-            if ns.firstInstall and ns.ShowSetupOnce then
-                ns.ShowSetupOnce()
-            else
-                ns.ShowNotice(ns.SCAN_NOTICE[1], ns.SCAN_NOTICE[2])
-            end
+        elseif ns.setupDue then
+            ns.setupDue = false
+            NodeSightDB.setupSeen = true
+            ns.ShowSetupOnce(ns.firstInstall)
         end
         NewPlace()
         if db.dotScale ~= NORMAL_DOTS then ApplyDotScale() end
