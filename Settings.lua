@@ -507,6 +507,9 @@ local function RegisterSettings()
         Part(UpdateScanner), 5)
     parts.autoScanYards = yardsSetting
     Indent(yardsRow, distance, function() return ns.db.autoScan end)
+    Checkbox("gatherScan", "Scan when you gather",
+        "Scans as you start picking a herb or mining a vein, while you stand still for it. Like your Scan key, it doesn't wait for the mouse.",
+        UpdateScanner)
     Settings.CreateCheckbox(category, finders, findersTip) -- the same setting as on NodeSight's own page
     parts.combatScan = Checkbox("combatScan", "Scan in combat",
         "Scan on a timer and Scan by distance keep scanning in combat too. The minimap is hidden for a moment each time, mid-fight. Your Scan key scans in combat either way.",

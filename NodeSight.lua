@@ -65,6 +65,7 @@ local defaults = {
     autoScanSeconds = 10, -- seconds between timed scans (0 counts as off too)
     autoScan = true, -- Scan by distance: a scan each time you've walked autoScanYards
     autoScanYards = 25, -- yards walked between scans
+    gatherScan = false, -- a scan as you start picking a herb or mining a vein
     combatScan = false, -- the timer and Scan by distance in combat too
     skipRest = true, -- no timer or Scan by distance while resting (capital cities and inns)
     mobWait = true, -- no timer or Scan by distance with a mob, a corpse or a tooltip under the mouse
@@ -256,6 +257,9 @@ end
 
 local scan -- a finished key scan's places, for FinishScan
 local markers = {} -- the places the last scan found, nearest first
+-- During a scan: new symbols measured exactly (their place is final) and old ones found
+-- gone, shown before the scan ends.
+local early = { found = {}, gone = {} }
 local tracker, arrow, arrowTexture, arrowText
 local mapFrame, mapIcons = nil, {}
 local heard = {} -- recent finds, for the Sound setting
@@ -443,7 +447,8 @@ end
 -- LOOT_READY: learn the node the loot came from.
 local function Learn()
     local guid = GetLootSourceInfo(1)
-    if issecretvalue(guid) or type(guid) ~= "string" or guid == lastSource then return end
+    if issecretvalue(guid) or type(guid) ~= "string" then return end
+    local again = guid == lastSource -- looted before: a vein mined twice, or the same loot read again
     lastSource = guid
     if guid:sub(1, 11) ~= "GameObject-" then return end
     local name = SourceName(guid)
@@ -452,7 +457,7 @@ local function Learn()
     local chest = name and NodeKind(name) == "treasure"
     if chest then kind = nil end -- a chest's bars or herbs
     turns.picked, turns.pickedName = chest and "treasure" or kind, name -- (see Picked)
-    if not (name and kind) then return end -- no name, or not a herb or ore
+    if again or not (name and kind) then return end -- learned once; no name, or not a herb or ore
     local key = Plain(name)
     local known = db.learned[key] or { seen = {}, most = 0 }
     known.kind = kind
@@ -472,6 +477,18 @@ end
 -- kind's symbols meanwhile (marker.held).
 local SWITCH_WAIT = 1 -- seconds from a switch to the next scan
 local PICK_REACH = 10 -- yards: looting removes a held symbol this close
+local PICK_SECONDS = 5 -- a looted node's dot can linger on the minimap this long
+
+-- Recent loots ({ kind, name, map, x, y, at }), the old ones dropped: a scan ignores
+-- a dot of that kind where you stood.
+local picks = {}
+local function FreshPicks()
+    local now = GetTime()
+    for i = #picks, 1, -1 do
+        if now - picks[i].at > PICK_SECONDS then table.remove(picks, i) end
+    end
+    return picks
+end
 
 -- Active finder kind and the other's tracking index; nil unless exactly one is on.
 local function Finders()
@@ -872,6 +889,33 @@ local function ShowLook(icon, marker)
     end
 end
 
+-- One symbol of a pool: shown for marker, or hidden.
+local function DrawSymbol(pool, i, marker)
+    local icon = pool[i]
+    if marker and not marker.far then
+        icon = icon or NewIcon()
+        pool[i] = icon
+        ShowPicture(icon, marker)
+        ShowShape(icon, marker)
+        ShowLook(icon, marker)
+        -- Setting the same point again moves it; no ClearAllPoints needed.
+        icon.texture:SetPoint("CENTER", mapFrame, "BOTTOMLEFT", marker.x, marker.y)
+        if not icon.shown then
+            icon.shown = true
+            icon.texture:Show()
+            if icon.ring then icon.ring:Show() end
+        end
+    elseif icon and icon.shown then
+        icon.shown = false
+        icon.texture:Hide()
+        if icon.ring then icon.ring:Hide() end
+        if icon.gem then
+            icon.gem:Hide()
+            icon.gemLevel = nil
+        end
+    end
+end
+
 -- Updates the symbols and the arrow's text.
 local function ShowMarkers()
     local target = db.arrow and Target()
@@ -882,32 +926,16 @@ local function ShowMarkers()
             arrowText:SetText(text)
         end
     end
-    for i = 1, MAX_ICONS do
-        local marker = db.mapIcons and markers[i]
-        local icon = mapIcons[i]
-        if marker and not marker.far then
-            icon = icon or NewIcon()
-            mapIcons[i] = icon
-            ShowPicture(icon, marker)
-            ShowShape(icon, marker)
-            ShowLook(icon, marker)
-            -- Setting the same point again moves it; no ClearAllPoints needed.
-            icon.texture:SetPoint("CENTER", mapFrame, "BOTTOMLEFT", marker.x, marker.y)
-            if not icon.shown then
-                icon.shown = true
-                icon.texture:Show()
-                if icon.ring then icon.ring:Show() end
-            end
-        elseif icon and icon.shown then
-            icon.shown = false
-            icon.texture:Hide()
-            if icon.ring then icon.ring:Hide() end
-            if icon.gem then
-                icon.gem:Hide()
-                icon.gemLevel = nil
-            end
+    -- Mid-scan: ones found gone left out, new finds after the rest (the scan's end sorts them in).
+    local list = markers
+    if early.found[1] or next(early.gone) then
+        list = {}
+        for _, marker in ipairs(markers) do
+            if not early.gone[marker] then list[#list + 1] = marker end
         end
+        for _, marker in ipairs(early.found) do list[#list + 1] = marker end
     end
+    for i = 1, MAX_ICONS do DrawSymbol(mapIcons, i, db.mapIcons and list[i] or nil) end
 end
 
 local function UpdateArrow()
@@ -1089,7 +1117,6 @@ local function FinishScan()
     local rotating = C_CVar.GetCVar("rotateMinimap") == "1"
     local facing = PlayerFacing()
     local found, pinOf, kept = {}, {}, {}
-    skills.herbs, skills.ore, groupRead = nil, nil, false -- reread when needed
     racialShown = false
     -- A rotating minimap has your facing at the top; otherwise north.
     if not (rotating and not facing) then
@@ -1135,7 +1162,19 @@ local function FinishScan()
             end
         end
     end
-    if map then Smooth(found, markers, mapWidth, mapHeight, kept) end
+    if map then
+        for _, pick in ipairs(FreshPicks()) do
+            for i = #found, 1, -1 do
+                local marker = found[i]
+                if marker.kind == pick.kind and marker.mx and pick.map == map
+                    and (not pick.name or Plain(marker.name) == pick.name)
+                    and ((marker.mx - pick.x) * mapWidth) ^ 2 + ((marker.my - pick.y) * mapHeight) ^ 2 <= PICK_REACH ^ 2 then
+                    table.remove(found, i)
+                end
+            end
+        end
+        Smooth(found, markers, mapWidth, mapHeight, kept)
+    end
     -- Switch setting: keep the other kind's symbols until its turn (held).
     local shown = db.switchFinders and turns.kind
     if shown and map then
@@ -1203,7 +1242,7 @@ end
 
 -- The key scan's state and functions, in one table (the main chunk is at Lua's 200 locals).
 -- key.scan: the scan running; key.wanted: pressed while turning the camera.
-local key = {}
+local key = { count = { done = 0, spots = 0, seconds = 0, stopped = {} } }
 
 -- Quests' blue areas show even on a see-through minimap: while it scans, the game's
 -- Quest POIs tracking (always on, not in its menu) is off.
@@ -1423,6 +1462,10 @@ end
         if frame.IsMouseMotionEnabled and frame:IsMouseMotionEnabled() then
             s.noMotion[#s.noMotion + 1] = frame
             frame:SetMouseMotionEnabled(false)
+        end
+        if frame.IsMouseWheelEnabled and frame:IsMouseWheelEnabled() then
+            s.noWheel[#s.noWheel + 1] = frame
+            frame:EnableMouseWheel(false)
         end
     end
     local function QuietTree(s, parent, depth)
@@ -1701,10 +1744,11 @@ end
         -- Buttons on the minimap (an addon's calendar or clock, map pins) move with it under the
         -- mouse: no clicks on them either (a quick click would land on one), back after.
         -- No hover either: a frame over the whole map (BasicMinimap's click catcher) would be
-        -- under the mouse instead of the minimap, and the game names no dot then.
+        -- under the mouse instead of the minimap, and the game names no dot then. No wheel: one
+        -- that zooms the minimap (EllesmereUI's) would take a wheel turned for the camera.
         -- The game's protected ones can't be changed in a fight: left alone.
         if on and not s.noClicks then
-            s.noClicks, s.noMotion = {}, {}
+            s.noClicks, s.noMotion, s.noWheel = {}, {}, {}
             local function Walk(frame, depth)
                 for _, child in ipairs({ frame:GetChildren() }) do
                     if s.waiting and s.waiting[child] then
@@ -1720,6 +1764,11 @@ end
                             s.noMotion[#s.noMotion + 1] = child
                             child:SetMouseMotionEnabled(false)
                         end
+                        if not Apart(child) and child.IsMouseWheelEnabled and child:IsMouseWheelEnabled()
+                            and not (InCombatLockdown() and child:IsProtected()) then
+                            s.noWheel[#s.noWheel + 1] = child
+                            child:EnableMouseWheel(false)
+                        end
                         if depth < 6 then Walk(child, depth + 1) end
                     end
                 end
@@ -1731,7 +1780,8 @@ end
         elseif not on and s.noClicks then
             for _, child in ipairs(s.noClicks) do pcall(child.SetMouseClickEnabled, child, true) end
             for _, child in ipairs(s.noMotion) do pcall(child.SetMouseMotionEnabled, child, true) end
-            s.noClicks, s.noMotion = nil, nil
+            for _, child in ipairs(s.noWheel) do pcall(child.EnableMouseWheel, child, true) end
+            s.noClicks, s.noMotion, s.noWheel = nil, nil, nil
         end
         local eye = QueueStatusButton
         if eye then
@@ -2004,7 +2054,7 @@ end
             end
             return false
         end
-        return Any(s.noClicks) or Any(s.noMotion) or Any(s.followers, "frame")
+        return Any(s.noClicks) or Any(s.noMotion) or Any(s.noWheel) or Any(s.followers, "frame")
     end
     -- Something else (Blizzard's gamepad menus) changed the hover switch mid-scan: theirs to keep.
     function key.PadHoverChanged()
@@ -2042,9 +2092,8 @@ end
         end
         return true
     end
-    local function CopyTexture(copy, real, alpha, eff)
-        local x, y, w, h = Measure(real, eff)
-        if not x then return false end
+    -- The picture, color, alpha and blend (a texture's or a line's).
+    local function CopyLook(copy, real, alpha)
         local atlas = real:GetAtlas()
         if atlas and not issecretvalue(atlas) then
             copy:SetAtlas(atlas)
@@ -2061,15 +2110,42 @@ end
         copy:SetAlpha(alpha)
         local blend = real:GetBlendMode()
         copy:SetBlendMode(Readable(blend) and blend or "BLEND")
-        local turn = real:GetRotation()
-        copy:SetRotation(Readable(turn) and turn or 0)
         local gray = real.GetDesaturation and real:GetDesaturation()
         copy:SetDesaturation(Readable(gray) and gray or 0)
+        return true
+    end
+    local function CopyTexture(copy, real, alpha, eff)
+        local x, y, w, h = Measure(real, eff)
+        if not x or not CopyLook(copy, real, alpha) then return false end
+        local turn = real:GetRotation()
+        copy:SetRotation(Readable(turn) and turn or 0)
         copy:SetHorizTile(real:GetHorizTile() and true or false)
         copy:SetVertTile(real:GetVertTile() and true or false)
         copy:SetSize(w, h)
         copy:ClearAllPoints()
         copy:SetPoint("CENTER", stand.decor, "CENTER", x, y)
+        return true
+    end
+    -- A line's end (what GetStartPoint or GetEndPoint gives) from the minimap's middle, in stand units.
+    local function LineEnd(line, eff, point, rel, ox, oy)
+        if not Readable(point, rel, ox, oy) then return nil end
+        local x, y = rel:GetCenter()
+        local w, h, scale = rel:GetWidth(), rel:GetHeight(), rel:GetEffectiveScale()
+        local mx, my = Minimap:GetCenter()
+        if not Readable(x, y, w, h, scale, mx, my) then return nil end
+        x = x + (point:find("LEFT") and -w / 2 or point:find("RIGHT") and w / 2 or 0)
+        y = y + (point:find("BOTTOM") and -h / 2 or point:find("TOP") and h / 2 or 0)
+        local own, ms = line:GetEffectiveScale(), Minimap:GetEffectiveScale()
+        return (x * scale + ox * own - mx * ms) / eff, (y * scale + oy * own - my * ms) / eff
+    end
+    local function CopyLine(copy, real, alpha, eff)
+        local x1, y1 = LineEnd(real, eff, real:GetStartPoint())
+        local x2, y2 = LineEnd(real, eff, real:GetEndPoint())
+        local thick, own = real:GetThickness(), real:GetEffectiveScale()
+        if not (x1 and x2) or not Readable(thick, own) or not CopyLook(copy, real, alpha) then return false end
+        copy:SetStartPoint("CENTER", stand.decor, x1, y1)
+        copy:SetEndPoint("CENTER", stand.decor, x2, y2)
+        copy:SetThickness(thick * own / eff)
         return true
     end
     local function CopyText(copy, real, alpha, eff)
@@ -2137,12 +2213,14 @@ end
                     if Readable(alpha, text) and alpha > 0 and text ~= "" then
                         words[#words + 1] = { region = region, alpha = seen * alpha }
                     end
-                elseif #found < 200 and kind == "Texture" and region ~= MinimapCompassTexture and region:IsVisible() then
-                    local alpha, masks = region:GetAlpha(), region:GetNumMaskTextures()
+                elseif #found < 200 and (kind == "Texture" or kind == "Line") and region ~= MinimapCompassTexture and region:IsVisible() then
+                    local line = kind == "Line" -- (a route's path; lines have no masks)
+                    local alpha, masks = region:GetAlpha(), line and 0 or region:GetNumMaskTextures()
                     local layer, sub = region:GetDrawLayer()
                     -- (Not a button's hover glow: the HIGHLIGHT layer is drawn only under the mouse.)
                     if Readable(alpha, masks, layer, sub) and alpha > 0 and masks == 0 and layer ~= "HIGHLIGHT" then
-                        found[#found + 1] = { region = region, alpha = seen * alpha, order = level * 100 + (LAYER_ORDER[layer] or 3) * 20 + sub, icon = icon }
+                        found[#found + 1] = { region = region, alpha = seen * alpha, order = level * 100 + (LAYER_ORDER[layer] or 3) * 20 + sub,
+                            icon = not line and icon or nil, line = line }
                     end
                 end
             end
@@ -2155,20 +2233,22 @@ end
             pcall(Walk, child, 1)
         end
         table.sort(found, function(a, b) return a.order < b.order end)
-        local used = 0
+        local used, drawn = 0, 0 -- textures and lines copied
         for _, f in ipairs(found) do
-            local copy = stand.copies[used + 1]
+            local pool = f.line and stand.lines or stand.copies
+            local n = (f.line and drawn or used) + 1
+            local copy = pool[n]
             if not copy then
-                copy = stand.decor:CreateTexture()
+                copy = f.line and stand.decor:CreateLine() or stand.decor:CreateTexture()
                 Ready(copy)
-                stand.copies[used + 1] = copy
+                pool[n] = copy
             end
-            local slot = math.min(used, #DECOR_LAYERS * 16 - 1)
+            local slot = math.min(used + drawn, #DECOR_LAYERS * 16 - 1)
             copy:SetDrawLayer(DECOR_LAYERS[math.floor(slot / 16) + 1], slot % 16 - 8)
-            local ok, laid = pcall(CopyTexture, copy, f.region, f.alpha, eff)
+            local ok, laid = pcall(f.line and CopyLine or CopyTexture, copy, f.region, f.alpha, eff)
             if ok and laid then
                 copy:Show()
-                used = used + 1
+                if f.line then drawn = drawn + 1 else used = used + 1 end
                 if f.icon then
                     local _, _, _, x, y = copy:GetPoint(1)
                     stand.moving[#stand.moving + 1] = { copy = copy, x = x, y = y }
@@ -2176,6 +2256,7 @@ end
             end
         end
         for i = used + 1, #stand.copies do stand.copies[i]:Hide() end
+        for i = drawn + 1, #stand.lines do stand.lines[i]:Hide() end
         used = 0
         for _, f in ipairs(words) do
             local copy = stand.words[used + 1]
@@ -2252,12 +2333,14 @@ end
             stand.artKey = nil
             return
         end
-        local artKey = ground and table.concat({ "ground", wx, wy, radius, width, height, tostring(round) }, " ")
-            or table.concat({ map, px, py, radius, width, height, tostring(round), layer.tileWidth, #files, #explored }, " ")
+        local snap = stand.snap
+        local artKey = ground and table.concat({ "ground", wx, wy, radius, width, height, tostring(round), snap.x, snap.y }, " ")
+            or table.concat({ map, px, py, radius, width, height, tostring(round), layer.tileWidth, #files, #explored, snap.x, snap.y }, " ")
         if artKey == stand.artKey then return end
         stand.artKey = artKey
         local mask = round and stand.mask or nil
         local perYard = width / 2 / radius -- stand units per yard
+        local xYard, yYard = perYard * snap.w, perYard * snap.h -- (in the minimap's box on whole pixels)
         local hw, hh = width / 2, height / 2
         local used = 0
         -- One picture from left, top to right, bottom (stand units from its middle), filling
@@ -2291,24 +2374,24 @@ end
         if ground then
             -- Tile x reaches from world Y (west) (32 - x) * TILE down, tile y from world X
             -- (north) (32 - y) * TILE down; north is up.
-            local reach, size = math.max(hw, hh) / perYard, TILE * perYard
+            local reach = math.max(hw, hh) / perYard
             for x = math.floor(32 - (wy + reach) / TILE), math.floor(32 - (wy - reach) / TILE) do
                 for y = math.floor(32 - (wx + reach) / TILE), math.floor(32 - (wx - reach) / TILE) do
                     local file = ground[x * 64 + y]
                     if file then
-                        local left, top = (wy - (32 - x) * TILE) * perYard, ((32 - y) * TILE - wx) * perYard
-                        Put(file, left, top, left + size, top - size, 1, 1, 1, MINIMAP_TINT)
+                        local left, top = (wy - (32 - x) * TILE) * xYard + snap.x, ((32 - y) * TILE - wx) * yYard + snap.y
+                        Put(file, left, top, left + TILE * xYard, top - TILE * yYard, 1, 1, 1, MINIMAP_TINT)
                     end
                 end
             end
             for i = used + 1, #stand.tiles do stand.tiles[i]:Hide() end
             return
         end
-        local sx, sy = perYard * mapWidth / layer.layerWidth, perYard * mapHeight / layer.layerHeight
+        local sx, sy = xYard * mapWidth / layer.layerWidth, yYard * mapHeight / layer.layerHeight
         local tw, th = layer.tileWidth, layer.tileHeight
         -- One piece of art at x, y (from the map's top left) w by h in the art's units.
         local function Lay(file, x, y, w, h, umax, vmax, sublevel)
-            local left, top = (x - px * layer.layerWidth) * sx, (py * layer.layerHeight - y) * sy
+            local left, top = (x - px * layer.layerWidth) * sx + snap.x, (py * layer.layerHeight - y) * sy + snap.y
             Put(file, left, top, left + w * sx, top - h * sy, umax, vmax, sublevel, ART_TINT)
         end
         local cols = math.ceil(layer.layerWidth / tw)
@@ -2423,38 +2506,44 @@ end
         end
         return list
     end
-    -- The quest-area widget can't be masked round, so it's drawn in thin strips, each in a
-    -- frame that cuts it to its own size: one for a square minimap, all for a round one.
-    -- nil if the game has no such widget.
-    local STRIPS = 32
-    -- Quest outlines on the stand-in: off, as the game doesn't draw them there yet.
+    -- Quest outlines on the stand-in, drawn with the game's quest-area widget. It takes no
+    -- color and only the game's own pictures, so the minimap's look comes from three of them
+    -- stacked (matched on screen against the minimap's own outline): a faint bonus-objective
+    -- (yellow) and dig-site (red-brown) line under the minimap's selected-quest line.
+    -- Off until their look is settled in game.
     ns.questOutlines = false
+    local OUTLINE_LAYERS = {
+        { "Interface\\Minimap\\UI-BonusObjectiveBlob-Outside", 25 },
+        { "Interface\\Minimap\\UI-ArchBlobMinimap-Outside", 30 },
+        { "Interface\\Minimap\\UI-QuestBlobMinimap-OutsideSelected", 125 },
+    }
+    local OUTLINE_FILL, OUTLINE_WIDTH = "Interface\\Minimap\\UI-QuestBlobMinimap-Inside", 0.4
+    -- The widget can't be masked round, so on a round minimap each layer is drawn in thin
+    -- strips, each cut by its own frame to the circle; a square one uses the first strip,
+    -- the whole square. nil if the game has no such widget.
+    local STRIPS = 16
     local function AreaFrame()
         if stand.areas then return stand.areas end
         if stand.noAreas then return nil end
         local holder = CreateFrame("Frame")
         holder:SetParent(stand)
         holder:SetAllPoints()
-        holder.strips = {}
-        for i = 1, STRIPS do
-            local ok, blob = pcall(CreateFrame, "QuestPOIFrame")
-            if not ok or not blob or not blob.DrawBlob then
-                stand.noAreas = true
-                holder:Hide()
-                return nil
+        holder.clips = {}
+        for layer = 1, #OUTLINE_LAYERS do
+            for strip = 1, STRIPS do
+                local ok, blob = pcall(CreateFrame, "QuestPOIFrame")
+                if not ok or not blob or not blob.DrawBlob then
+                    stand.noAreas = true
+                    holder:Hide()
+                    return nil
+                end
+                local clip = CreateFrame("Frame")
+                clip:SetParent(holder)
+                clip:SetClipsChildren(true)
+                blob:SetParent(clip)
+                clip.blob, clip.layer, clip.strip = blob, layer, strip
+                holder.clips[#holder.clips + 1] = clip
             end
-            local clip = CreateFrame("Frame")
-            clip:SetParent(holder)
-            clip:SetClipsChildren(true)
-            blob:SetParent(clip)
-            -- The minimap's own quest-area pictures; only the outline, as the minimap shows it.
-            blob:SetFillTexture("Interface\\Minimap\\UI-QuestBlobMinimap-Inside")
-            blob:SetBorderTexture("Interface\\Minimap\\UI-QuestBlobMinimap-Outside")
-            blob:SetFillAlpha(0)
-            blob:SetBorderAlpha(255)
-            blob:SetBorderScalar(1)
-            clip.blob = blob
-            holder.strips[i] = clip
         end
         stand.areas = holder
         return holder
@@ -2520,17 +2609,26 @@ end
             local perYard = width / 2 / radius
             local w, h = mapWidth * perYard, mapHeight * perYard
             local count = round and STRIPS or 1
-            local areaKey = table.concat({ map, w, h, width, height, count, unpack(stand.areaList) }, " ")
             local level = stand:GetFrameLevel() + 1 -- over the ground and icons, under the copies
-            for i, clip in ipairs(holder.strips) do
-                local blob = clip.blob
-                if i > count then
-                    clip:Hide()
-                else
-                    if areaKey ~= holder.drawn then
+            local areaKey = table.concat({ map, w, h, width, height, count, level, unpack(stand.areaList) }, " ")
+            -- Shown before drawing, and drawn again at each scan's first two frames: drawn
+            -- while hidden, or only as the scan map first shows, the game showed nothing.
+            holder:Show()
+            if holder.scan ~= scan then
+                holder.scan, holder.frames, holder.drawn = scan, 0, nil
+            end
+            holder.frames = holder.frames + 1
+            if holder.frames == 2 then holder.drawn = nil end
+            if areaKey ~= holder.drawn then
+                for _, clip in ipairs(holder.clips) do
+                    local blob = clip.blob
+                    blob:DrawNone()
+                    if clip.strip > count then
+                        clip:Hide()
+                    else
                         -- A strip of a round minimap is as wide as the circle at its narrower
                         -- end, so none of it is outside.
-                        local top = height / 2 - (i - 1) * height / count
+                        local top = height / 2 - (clip.strip - 1) * height / count
                         local bottom = top - height / count
                         local half = width / 2
                         if round then
@@ -2540,22 +2638,32 @@ end
                         clip:ClearAllPoints()
                         clip:SetPoint("TOPLEFT", stand, "CENTER", -half, top)
                         clip:SetSize(2 * half, height / count)
-                        blob:SetSize(w, h)
-                        blob:DrawNone()
-                        blob:SetMapID(map)
-                        for _, quest in ipairs(stand.areaList) do pcall(blob.DrawBlob, blob, quest, true) end
-                    end
-                    if clip:GetFrameLevel() ~= level then
                         clip:SetFrameLevel(level)
                         blob:SetFrameLevel(level)
+                        -- Only the outline, as the minimap shows it.
+                        local layer = OUTLINE_LAYERS[clip.layer]
+                        blob:SetFillTexture(OUTLINE_FILL)
+                        blob:SetBorderTexture(layer[1])
+                        blob:SetFillAlpha(0)
+                        blob:SetBorderAlpha(layer[2])
+                        blob:SetBorderScalar(OUTLINE_WIDTH)
+                        blob:EnableSmoothing(true)
+                        blob:SetSize(w, h)
+                        blob:SetMapID(map)
+                        for _, quest in ipairs(stand.areaList) do pcall(blob.DrawBlob, blob, quest, true) end
+                        clip:Show()
                     end
-                    blob:ClearAllPoints()
-                    blob:SetPoint("TOPLEFT", stand, "CENTER", -px * w, py * h)
-                    clip:Show()
+                end
+                holder.drawn = areaKey
+            end
+            -- Each widget placed directly, every frame: placed only as the scan map first
+            -- shows, the game drew nothing.
+            for _, clip in ipairs(holder.clips) do
+                if clip.strip <= count then
+                    clip.blob:ClearAllPoints()
+                    clip.blob:SetPoint("TOPLEFT", stand, "CENTER", -px * w, py * h)
                 end
             end
-            holder.drawn = areaKey
-            holder:Show()
         elseif stand.areas then
             stand.areas:Hide()
         end
@@ -2629,14 +2737,14 @@ end
                 stand.ground = stand:CreateTexture(nil, "BACKGROUND")
                 stand.ground:SetColorTexture(0, 0, 0, 0.35) -- light: the world shows through
                 stand.mask = stand:CreateMaskTexture()
-                stand.mask:SetAtlas(CIRCLE)
+                stand.mask:SetAtlas("common-mask-circle") -- 256 wide: a sharp edge on a large minimap
                 stand.mask:SetAllPoints(stand.ground)
                 stand.tiles = {}
                 stand.decor = CreateFrame("Frame") -- copies of the minimap's own frames' pictures
                 stand.decor:SetParent(stand)
                 stand.decor:SetAllPoints()
                 stand.decor:SetIgnoreParentAlpha(true)
-                stand.copies, stand.words = {}, {}
+                stand.copies, stand.words, stand.lines = {}, {}, {}
                 stand.pins = {}
                 stand.round = false -- the mask goes on when the minimap is round
                 stand.frame = stand:CreateTexture(nil, "OVERLAY")
@@ -2648,6 +2756,12 @@ end
                 stand.dielBack = stand:CreateTexture(nil, "OVERLAY", nil, 2) -- the day/night dial, over the frame
                 stand.dielRim = stand:CreateTexture(nil, "OVERLAY", nil, 3)
             end
+            -- The game draws the minimap's ground in its box with each edge on the nearest
+            -- screen pixel: the stand-in's ground goes in the same box (its middle and size).
+            local pixels = select(2, GetPhysicalScreenSize()) / 768 * eff
+            local function Edge(v) return math.floor(v * pixels + 0.5) / pixels end
+            local l, r, b, t = Edge(left), Edge(left + width), Edge(bottom), Edge(bottom + height)
+            stand.snap = { x = (l + r - width) / 2 - left, y = (b + t - height) / 2 - bottom, w = (r - l) / width, h = (t - b) / height }
             for _, f in ipairs({ stand, mapFrame }) do
                 f:SetParent(UIParent)
                 f:SetScale(eff / UIParent:GetEffectiveScale())
@@ -2795,6 +2909,28 @@ end
         if map ~= s.p0.map then return 0, 0 end
         local dx, dy = Units((x - s.p0.x) * s.p0.width, (s.p0.y - y) * s.p0.height, s.width / 2)
         return dx or 0, dy or 0
+    end
+
+    -- A new node measured exactly mid-scan: its symbol now, where the scan's end puts it (an
+    -- exact place isn't averaged). Not one just picked.
+    local function EarlySymbol(dot, dx, dy)
+        local kind = KindOf(dot.name)
+        local radius = C_Minimap.GetViewRadius()
+        if not kind or issecretvalue(radius) or not radius or radius <= 0
+            or (C_CVar.GetCVar("rotateMinimap") == "1" and not PlayerFacing()) then return end
+        local width = Minimap:GetWidth()
+        local perYard = width / 2 / radius
+        local x, y = dot.x - dx, dot.y - dy
+        local distance = math.sqrt((x - width / 2) ^ 2 + (y - width / 2) ^ 2)
+        local map, px, py, mapWidth, mapHeight = MapPosition()
+        if map then
+            for _, pick in ipairs(FreshPicks()) do
+                if pick.kind == kind and pick.map == map and (not pick.name or Plain(dot.name) == pick.name)
+                    and distance / perYard <= PICK_REACH + math.sqrt(((pick.x - px) * mapWidth) ^ 2 + ((pick.y - py) * mapHeight) ^ 2) then return end
+            end
+        end
+        early.found[#early.found + 1] = { name = dot.name, kind = kind, file = IconOf(dot.name, kind), hard = TooHard(dot.name, kind),
+            x = x, y = y, distance = distance, dim = dot.dim or false, atX = dot.x, atY = dot.y }
     end
 
     -- A minimap kept on screen (EllesmereUI's) would stop short of a mouse near the screen's
@@ -3020,7 +3156,10 @@ end
                 if done.name == dotFound.name and (done.x - dotFound.x) ^ 2 + (done.y - dotFound.y) ^ 2 <= (dot * 0.75) ^ 2 then twice = true end
             end
             if same then s.moved[same] = true end
-            if not twice then s.done[#s.done + 1] = dotFound end
+            if not twice then
+                s.done[#s.done + 1] = dotFound
+                if not same and dotFound.fine == 2 then EarlySymbol(dotFound, dx, dy) end
+            end
             for i = #seeds, 1, -1 do
                 if (seeds[i].x - dotFound.x) ^ 2 + (seeds[i].y - dotFound.y) ^ 2 <= (dot / 2 + 2) ^ 2 then table.remove(seeds, i) end
             end
@@ -3110,7 +3249,13 @@ end
                     end
                 end
             elseif probe.found or probe.tries >= 5 then
-                if probe.found then s.known[probe.old] = true else s.gone[probe.old] = true end
+                if probe.found then
+                    s.known[probe.old] = true
+                else
+                    s.gone[probe.old] = true
+                    early.gone[probe.old] = true -- checked on its spot, nothing there: goes now
+                    ShowMarkers()
+                end
                 table.remove(s.probes, 1)
             else
                 probe.tries = probe.tries + 1
@@ -3141,6 +3286,15 @@ end
         local took = s.startedAt and (" in %.1f s"):format(GetTime() - s.startedAt) or ""
         local said = ns.Log(finds and ("scan done%s: %d found"):format(took, #finds) or ("scan stopped%s: %s"):format(took, key.stopWhy or "other"))
         if finds then s.doneLine = said end
+        -- Every scan since loading, for the bug report (a stop's reason without a frame's name).
+        local count = key.count
+        count.spots, count.seconds = count.spots + (s.gridSpots or 0), count.seconds + (s.startedAt and GetTime() - s.startedAt or 0)
+        if finds then
+            count.done = count.done + 1
+        else
+            local why = (key.stopWhy or "other"):match("^[^:]*")
+            count.stopped[why] = (count.stopped[why] or 0) + 1
+        end
         key.stopWhy = nil
         key.lastJobs, key.lastSpots = s.jobs or 0, s.gridSpots -- dots measured closely, grid spots
         quietUntil = GetTime() + 0.25
@@ -3149,7 +3303,12 @@ end
         Disguise(s, false)
         Guard(s)
         PinSymbols(s, false)
-        if not finds then return end
+        local shownEarly = early.found[1] or next(early.gone)
+        early.found, early.gone = {}, {}
+        if not finds then
+            if shownEarly then ShowMarkers() end -- stopped: the symbols as before
+            return
+        end
         local dx, dy = Drift(s)
         local places = {}
         for _, find in ipairs(finds) do
@@ -3288,6 +3447,19 @@ end
             Disguise(s, true)
             s.orig = nil
             if s.at then return KeyPlace(s, s.at) end -- after a pause: that spot looked at again
+        end
+        -- Symbols found early: drawn, and kept on their nodes as you move.
+        if early.found[1] then
+            local dx, dy = Drift(s)
+            if dx ~= s.earlyDx or dy ~= s.earlyDy or #early.found ~= s.earlyCount then
+                s.earlyDx, s.earlyDy, s.earlyCount = dx, dy, #early.found
+                local half = Minimap:GetWidth() / 2
+                for _, marker in ipairs(early.found) do
+                    marker.x, marker.y = marker.atX - dx, marker.atY - dy
+                    marker.distance = math.sqrt((marker.x - half) ^ 2 + (marker.y - half) ^ 2)
+                end
+                ShowMarkers()
+            end
         end
         -- A rotating minimap turned mid-scan has turned its picture: the scan stops (the
         -- minimap back, the symbols as they were) and runs again a moment after.
@@ -3467,7 +3639,7 @@ end
         return { -units * math.sin(bearing), -units * math.cos(bearing) }
     end
 
-    local function StartKeyScan(auto)
+    local function StartKeyScan(auto, why)
         if key.scan or not tracker or not Enabled() or not Minimap:IsVisible() or not Minimap:GetLeft() then return end
         -- Not in dungeons, raids, battlegrounds or arenas (there the game gives no map
         -- position to follow the symbols by).
@@ -3562,13 +3734,17 @@ end
         local pin = {}
         PinSymbols(pin, true)
         local cursorX, cursorY = GetCursorPosition()
+        skills.herbs, skills.ore, groupRead = nil, nil, false -- read again once a scan, when needed
         key.scan = { auto = auto or nil, cursorX = cursorX, cursorY = cursorY, pinned = pin.pinned, fadeIn = pin.fadeIn, facing = C_CVar.GetCVar("rotateMinimap") == "1" and PlayerFacing() or nil, spots = spots, gridSpots = gridSpots, width = width, step = step, skipped = skipped, unread = unread, precision = PRECISION,
             ox = 0, oy = 0, hits = {},
             p0 = map and { map = map, x = px, y = py, width = mapWidth, height = mapHeight } or nil,
             left = Minimap:GetLeft(), bottom = Minimap:GetBottom(), height = Minimap:GetHeight(), alpha = Minimap:GetAlpha(), coords = Coords() }
         if key.scan.coords then key.scan.coordsAlpha = key.scan.coords:GetAlpha() end
         key.scan.startedAt = GetTime()
-        key.scan.startLine = ns.Log(("scan %s: %d spots%s, map %s"):format(auto and "auto" or "key", #spots, behind and ", edge" or "", tostring(map)))
+        -- (a tooltip or a mob under the mouse as it starts: what the bug report wants to know)
+        local tip, unit = GameTooltip:IsVisible(), UnitExists("mouseover")
+        local under = ((not issecretvalue(tip) and tip) and ", a tooltip open" or "") .. ((not issecretvalue(unit) and unit) and ", a unit under the mouse" or "")
+        key.scan.startLine = ns.Log(("scan %s: %d spots%s, map %s"):format(why or auto and "auto" or "key", #spots, behind and ", edge" or "", tostring(map)) .. under)
         if not key.scan.fadeIn then Disguise(key.scan, true) end
         -- Most addons' round minimap buttons (LibDBIcon) open their own tooltip, not
         -- GameTooltip, as the moving minimap passes them under the mouse: closed too.
@@ -3762,6 +3938,20 @@ end
     function ns.KeyScanning() return key.scan ~= nil end -- (Switch: no switch during a scan)
     function ns.AutoWhy() return key.why end
     function ns.WorstScanFrame() return key.worstEver or 0 end
+    -- The bug report's count of every scan since loading (its log keeps only the last few).
+    function ns.ScanCount()
+        local count = key.count
+        local all = count.done
+        local stops = {}
+        for why, n in pairs(count.stopped) do
+            all = all + n
+            stops[#stops + 1] = ("%s %d"):format(why, n)
+        end
+        if all == 0 then return "Scans since loading: none" end
+        table.sort(stops)
+        return ("Scans since loading: %d done, %d stopped%s; on average %d spots and %.1f s"):format(count.done, all - count.done,
+            stops[1] and (" (" .. table.concat(stops, ", ") .. ")") or "", count.spots / all + 0.5, count.seconds / all)
+    end
     function ns.MemoryUsed() return key.made or 0, key.madeSince or GetTime() end
 end)()
 
@@ -3785,6 +3975,13 @@ end
 local SLOW_FRAME = 100 -- ms: a scan with a slower frame keeps its full work line
 local function Timed(s, began, memory)
     if s and memory then s.garbage = (s.garbage or 0) + math.max(0, collectgarbage("count") - memory) end
+    -- How far the mouse got from where it was at the start, and a mouse button down.
+    if s and s.cursorX then
+        local cx, cy = GetCursorPosition()
+        local far = (cx - s.cursorX) ^ 2 + (cy - s.cursorY) ^ 2
+        if far > (s.movedMost or 0) then s.movedMost = far end
+        if IsMouseButtonDown and (IsMouseButtonDown("LeftButton") or IsMouseButtonDown("RightButton")) then s.pressed = true end
+    end
     if not (s and began) then return end
     local took = debugprofilestop() - began
     s.work, s.frames = (s.work or 0) + took, (s.frames or 0) + 1
@@ -3795,8 +3992,10 @@ local function Timed(s, began, memory)
         -- work joined on one line. The full work line only for the others.
         local list = ns.LogList()
         local n = #list
+        local moved = math.floor(math.sqrt(s.movedMost or 0) + 0.5)
+        local mouse = (moved > 0 and ("; the mouse moved %d px"):format(moved) or "") .. (s.pressed and "; a mouse button down" or "")
         if s.startLine and s.doneLine and n >= 2 and list[n - 1] == s.startLine and (s.worst or 0) <= SLOW_FRAME then
-            list[n - 1] = ("%s; %s; work %.1f ms, most in a frame %.1f ms"):format(s.startLine, s.doneLine:match(" scan (done.*)$") or "done", s.work, s.worst or 0)
+            list[n - 1] = ("%s; %s; work %.1f ms, most in a frame %.1f ms, %d frames"):format(s.startLine, s.doneLine:match(" scan (done.*)$") or "done", s.work, s.worst or 0, s.frames) .. mouse
             list[n] = nil
             return
         end
@@ -3804,7 +4003,7 @@ local function Timed(s, began, memory)
         for part, ms in pairs(s.parts or {}) do parts[#parts + 1] = ("%s %.1f"):format(part, ms) end
         table.sort(parts)
         ns.Log(("  its work: %.1f ms over %d frames, the most in one frame %.1f ms (frame %d); looked again %d times, %d dots measured closely; %d frames hidden (%d shrunk); %d KB of memory used; in ms: %s"):format(
-            s.work, s.frames, s.worst or 0, s.worstAt or 0, s.waits or 0, s.jobs or 0, s.hidMost or 0, s.shrunkMost or 0, s.garbage or 0, table.concat(parts, ", ")))
+            s.work, s.frames, s.worst or 0, s.worstAt or 0, s.waits or 0, s.jobs or 0, s.hidMost or 0, s.shrunkMost or 0, s.garbage or 0, table.concat(parts, ", ")) .. mouse)
     end
 end
 
@@ -3867,6 +4066,8 @@ local function Picked()
     local kind, name, gone = turns.picked, turns.pickedName and Plain(turns.pickedName), false
     turns.picked, turns.pickedName = nil, nil
     if not kind then return end
+    local map, x, y = MapPosition()
+    if map then table.insert(FreshPicks(), { kind = kind, name = name, map = map, x = x, y = y, at = GetTime() }) end
     local nearest, best
     for i, marker in ipairs(markers) do
         if marker.kind == kind and marker.yards and marker.yards <= PICK_REACH and (not name or Plain(marker.name) == name)
@@ -4147,6 +4348,7 @@ function ns.ReportText()
         return "Not scanning: " .. (id and (id .. ": " .. line) or "no")
     end)
     Line(function() return "Automatic scans now: " .. (ns.AutoWhy() or "not checked yet") end)
+    Line(function() return ns.ScanCount() end)
     Line(function()
         local chain, frame = {}, Minimap
         for _ = 1, 6 do
@@ -4388,6 +4590,9 @@ events:SetScript("OnEvent", function(_, event, arg1, arg2)
         if next(ns.sparkles) or next(ns.leaving) then ns.HideSparkles(C_NamePlate.GetNamePlateForUnit(arg1)) end
     elseif event == "UNIT_SPELLCAST_SENT" then
         NoteCast(arg2)
+        -- Scan when you gather: a cast at a herb or vein scans while you stand still for it.
+        local kind = db.gatherScan and castTarget and KindOf(castTarget)
+        if kind == "herbs" or kind == "ore" then key.Start(false, "gather") end
     elseif event == "LOOT_READY" then
         Learn()
     elseif event == "LOOT_CLOSED" then

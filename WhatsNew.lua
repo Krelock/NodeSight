@@ -51,6 +51,21 @@ end
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
+        { version = "2.0.7",
+            { "New", {
+                { "Scan when you gather.", "Off by default. Starts a scan as you begin picking a herb or mining a vein. On the Scanning page" },
+            } },
+            { "Changes", {
+                { "Symbols sooner.", "When a scan finds more than one new node, each one shows as soon as it is measured instead of when the scan ends. A symbol whose node is gone disappears as soon as its spot is checked" },
+                { "Map while scanning.", "The map shown during a scan lines up with your minimap to the pixel, round or square, and its edge no longer darkens" },
+                { "Bug report.", "Says more about each scan (the mouse, the frames it took) and counts every scan since you logged in. Thanks to Urfoks on GitHub" },
+            } },
+            { "Fixes", {
+                { "Minimap zooming in.", "With EllesmereUI's Scroll to Zoom, turning the mouse wheel for your camera during a scan could zoom the minimap all the way in" },
+                { "Route lines.", "Lines other addons draw on the minimap, like Polestar's route, stay during a scan. Thanks to Kirchlive on GitHub" },
+                { "Mined nodes.", "A node's symbol could stay after you mined it" },
+            } },
+        },
         { version = "2.0.6",
             { "New", {
                 { "Setup window.", "Shows once after this update: pick how much scans may interrupt you (Less intrusive, Balanced, Most finds or Sparkles only) and what NodeSight shows, in two quick steps. Skip keeps your settings. The Setup button on NodeSight's page in Options opens it again. Thanks to foksgaming22-droid for this on GitHub" },            } },
