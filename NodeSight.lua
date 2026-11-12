@@ -4037,7 +4037,7 @@ local OBJECT_TOOLTIP = Enum.TooltipDataType.Object -- a herb's or ore's own tool
 -- back are always shared.
 local function LoadSettings()
     NodeSightDB = NodeSightDB or {}
-    local SHARED = { learned = true, questObjects = true, saved = true, applied = true, rareNames = true, report = true }
+    local SHARED = { learned = true, questObjects = true, saved = true, applied = true, rareNames = true, report = true, sessions = true }
     if type(NodeSightCharDB) ~= "table" then
         NodeSightCharDB = { own = true }
         for key, value in pairs(NodeSightDB) do

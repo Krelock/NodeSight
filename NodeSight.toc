@@ -30,4 +30,5 @@ FarSparkles.lua
 SparkleWindow.lua
 WhatsNew.lua
 Setup.lua
+Recorder.lua
 Settings.lua
