@@ -51,6 +51,16 @@ end
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
+        { version = "3.0.1",
+            { "New", {
+                { "Settings for this character only and Minimap button.", "In the sparkle window's General tab, at the top right" },
+                { "Hide the minimap button.", "With Ctrl Shift Left Click on it. Minimap button turns it back on" },
+            } },
+            { "Changes", {
+                { "Settings for this character only.", "Now offers a reload when you change it, so the switch happens right away" },
+                { "Sparkles page.", "Opening it in Options no longer opens the sparkle window; its Sparkle window button does" },
+            } },
+        },
         { version = "3.0.0",
             { "New", {
                 { "Minimap button.", "On by default. Left Click opens the sparkle settings, Shift Left Click NodeSight's settings, Right Click turns all sparkles on or off, Shift Right Click turns switching on or off. Turn it off with Minimap button on NodeSight's settings page" },

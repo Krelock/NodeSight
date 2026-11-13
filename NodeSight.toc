@@ -2,7 +2,7 @@
 ## Title: NodeSight
 ## Notes: Gold sparkles on the herbs, ore and other things near you, and the skill a herb or ore needs in its tooltip.
 ## Author: Krelock
-## Version: 3.0.0
+## Version: 3.0.1
 ## SavedVariables: NodeSightDB
 ## SavedVariablesPerCharacter: NodeSightCharDB
 ## IconTexture: Interface\AddOns\NodeSight\logo

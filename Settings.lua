@@ -171,15 +171,15 @@ local function RegisterSettings()
             .. "They wait until a fight is over. Off: none at all.",
         function() end)
     Checkbox("minimapButton", "Minimap button",
-        "NodeSight's button on the minimap: left click opens the sparkle settings, Shift left click these settings, right click turns all sparkles on or off, Shift right click switching between herbs and ore.",
+        "NodeSight's button on the minimap: left click opens the sparkle settings, Shift left click these settings, right click turns all sparkles on or off, Shift right click switching between herbs and ore. Ctrl Shift left click hides it.",
         function() ns.MinimapButtonChanged() end)
 
     -- Saved on the character whichever settings are in use; they switch at the next reload.
     local own = Settings.RegisterAddOnSetting(category, "NodeSight_own", "own", NodeSightCharDB, "boolean",
         "Settings for this character only", true)
-    own:SetValueChangedCallback(function() end)
+    own:SetValueChangedCallback(function() ns.AskReload() end)
     Settings.CreateCheckbox(category, own,
-        "This character keeps its own NodeSight settings. Untick it to use the settings your other characters share. Changes at your next reload or login.")
+        "This character keeps its own NodeSight settings. Untick it to use the settings your other characters share. It offers a reload to switch.")
 
 
     Page("Switch")
@@ -262,7 +262,7 @@ local function RegisterSettings()
         layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Thanks to tester617 for the Switch page"))
     end
 
-    -- The sparkles' settings are all in their own window, which opens with this page.
+    -- The sparkles' settings are all in their own window (this page's button opens it).
     -- A controller can't reach that window, and its color picker and menus would run
     -- Blizzard's gamepad code tainted, so with the gamepad UI on the page has
     -- Blizzard's own rows for the basics instead (until a reload, if it's switched).
@@ -294,9 +294,6 @@ local function RegisterSettings()
         -- Search tags off (false): addon code adding them taints the options' search.
         layout:AddInitializer(CreateSettingsButtonInitializer("Sparkle window", "Open", ns.ShowSparkleWindow,
             "All the sparkle settings, with a preview.", false))
-        EventRegistry:RegisterCallback("Settings.CategoryChanged", function(_, shown)
-            if shown == sparklesPage then ns.ShowSparkleWindow() end
-        end, sparklesPage)
     end
 
     Settings.RegisterAddOnCategory(main)

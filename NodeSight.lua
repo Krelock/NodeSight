@@ -302,6 +302,13 @@ local function LoadSettings()
     })
 end
 
+-- Settings for this character only (its Options checkbox, and the sparkle window's General
+-- tab): saved on the character whichever settings are in use; they switch at the next reload.
+function ns.OwnSettings() return type(NodeSightCharDB) ~= "table" or NodeSightCharDB.own ~= false end
+function ns.SetOwnSettings(on)
+    if type(NodeSightCharDB) == "table" then NodeSightCharDB.own = on end
+end
+
 local OBJECT_TOOLTIP = Enum.TooltipDataType.Object -- a herb's or ore's own tooltip
 local ITEM_TOOLTIP = Enum.TooltipDataType.Item
 local function OnAddonLoaded()

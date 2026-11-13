@@ -70,7 +70,8 @@ local SETS = {
 
 -- Settings for all sparkles (the General tab), saved under these keys.
 local GENERAL = { gameIcons = true, brightness = true, reachLook = true, combatHide = true, instanceHide = true,
-    harvest = true, grayTooHard = true, myProfessions = true, rareGlow = true, sparkleSound = true, gatherDim = true }
+    harvest = true, grayTooHard = true, myProfessions = true, rareGlow = true, sparkleSound = true, gatherDim = true,
+    minimapButton = true }
 
 -- The tabs: each kind (its name, the "Sparkles on" box and the icon), then General.
 local TABS = {
@@ -146,10 +147,16 @@ end
 -- Sets a part of the look (or "on") for the tab's kinds, then the sparkles and the window.
 -- "everything": sparkles on or off for every kind.
 local function Set(what, value)
+    if what == "own" then
+        if ns.SetOwnSettings then ns.SetOwnSettings(value) end
+        ns.AskReload()
+        return Refresh()
+    end
     if GENERAL[what] then
         ns.db[what] = value
         Changed()
         if what == "gameIcons" then ns.Setup() end
+        if what == "minimapButton" and ns.MinimapButtonChanged then ns.MinimapButtonChanged() end
         return Refresh()
     end
     local kinds = what == "everything" and ns.KINDS or Kinds()
@@ -257,19 +264,21 @@ end
 -- (room for the labels). Its tooltip shows over the
 -- label too, as on Blizzard's rows.
 local COLUMN = 150
+local RIGHT_COLUMN = 210 -- the General tab's second column
 local function Row(panel, y, text, control, tip)
     local label = Label(panel, text)
     label:SetPoint("LEFT", panel, "TOPLEFT", 0, y)
     control:SetPoint("LEFT", panel, "TOPLEFT", COLUMN, y)
+    local hover
     if tip then
         Tooltip(control, text, tip)
-        local hover = New("Frame", panel)
+        hover = New("Frame", panel)
         hover:SetPoint("LEFT", panel, "TOPLEFT", 0, y)
         hover:SetSize(COLUMN - 4, 26)
         hover:EnableMouse(true)
         Tooltip(hover, text, tip)
     end
-    return label
+    return label, hover
 end
 
 local function Checkbox(panel, y, text, what, tip)
@@ -278,7 +287,7 @@ local function Checkbox(panel, y, text, what, tip)
         PlaySound(self:GetChecked() and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
         Set(what, self:GetChecked())
     end)
-    box.label = Row(panel, y, text, box, tip)
+    box.label, box.hover = Row(panel, y, text, box, tip)
     return box
 end
 
@@ -508,6 +517,23 @@ local function Build()
     end
     window.everything = BoxFirst(Checkbox(general, 0, "Sparkles on everything", "everything",
         "Turns them all on or off at once. Each tab has its own box too." .. NEEDS))
+    -- A second column at the top right, beside the first two rows.
+    local function BoxRight(box)
+        local y = select(5, box:GetPoint(1))
+        box:ClearAllPoints()
+        box:SetPoint("LEFT", general, "TOPLEFT", RIGHT_COLUMN, y)
+        box.label:ClearAllPoints()
+        box.label:SetPoint("LEFT", box, "RIGHT", 4, 0)
+        box.hover:ClearAllPoints()
+        box.hover:SetPoint("LEFT", box.label, "LEFT")
+        box.hover:SetSize(box.label:GetStringWidth() + 4, 26)
+        box:SetFrameLevel(box:GetFrameLevel() + 1)
+        return box
+    end
+    window.minimapButton = BoxRight(Checkbox(general, 0, "Minimap button", "minimapButton",
+        "The button on the minimap. Ctrl Shift Left Click on it hides it too."))
+    window.own = BoxRight(Checkbox(general, -36, "Settings for this character only", "own",
+        "This character keeps its own settings. Untick it to use the settings your other characters share. It offers a reload to switch."))
     window.gameIcons = BoxFirst(Checkbox(general, -36, "Keep the game's icons", "gameIcons",
         "Keeps the game's own icon over things you can interact with."))
     window.brightness = Slider(general, -76, "Brightness", "brightness", 10, 100,
@@ -653,6 +679,8 @@ function Refresh()
     window.turnOn:SetShown(window.interactOff:IsShown())
     window.gameIcons:SetChecked(ns.db.gameIcons)
     window.myProfessions:SetChecked(ns.db.myProfessions)
+    window.minimapButton:SetChecked(ns.db.minimapButton)
+    window.own:SetChecked(not ns.OwnSettings or ns.OwnSettings())
     window.brightness:SetValue(ns.db.brightness)
     window.reachLook:SetChecked(ns.db.reachLook)
     window.combatHide:SetChecked(ns.db.combatHide)
@@ -835,6 +863,40 @@ local function ShowNotice()
         notice.never:SetPoint("LEFT", notice.close, "RIGHT", 8, 0)
     end
     notice:Show()
+end
+
+-- Settings for this character only changed: the other settings are only used after a
+-- reload, so a dialog like the game's offers one.
+local reloadAsk
+function ns.AskReload()
+    if not reloadAsk then
+        reloadAsk = New("Frame", UIParent)
+        reloadAsk:SetFrameStrata("DIALOG")
+        reloadAsk:SetToplevel(true)
+        reloadAsk:EnableMouse(true)
+        reloadAsk:SetPoint("TOP", UIParent, "TOP", 0, -135)
+        reloadAsk:SetWidth(420)
+        local background = reloadAsk:CreateTexture(nil, "BACKGROUND", nil, -7)
+        background:SetAtlas("UI-DialogBox-Background-Dark", true)
+        background:SetPoint("TOPLEFT", 7, -7)
+        background:SetPoint("BOTTOMRIGHT", -7, 7)
+        local edge = reloadAsk:CreateTexture(nil, "BACKGROUND", nil, -4)
+        edge:SetAtlas("UI-DiamondDialogBox-Border", true)
+        edge:SetAllPoints()
+        local text = reloadAsk:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        text:SetPoint("TOP", 0, -20)
+        text:SetWidth(380)
+        text:SetSpacing(3)
+        text:SetText(NORMAL_FONT_COLOR:WrapTextInColorCode(C_AddOns.GetAddOnMetadata(ADDON_NAME, "Title") or ADDON_NAME)
+            .. "\n\nSettings for this character only changed. Reload now to switch settings?")
+        reloadAsk:SetHeight(text:GetStringHeight() + 73)
+        reloadAsk.text = text
+        reloadAsk.reload = DialogButton(reloadAsk, RELOADUI, function() ReloadUI() end)
+        reloadAsk.cancel = DialogButton(reloadAsk, CANCEL, function() reloadAsk:Hide() end)
+        reloadAsk.reload:SetPoint("BOTTOMRIGHT", reloadAsk, "BOTTOM", -4, 16)
+        reloadAsk.cancel:SetPoint("BOTTOMLEFT", reloadAsk, "BOTTOM", 4, 16)
+    end
+    reloadAsk:Show()
 end
 
 local interactWatch = CreateFrame("Frame")

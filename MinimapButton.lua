@@ -1,7 +1,7 @@
 -- NodeSight's minimap button (LibDBIcon, from Libs): left click opens the sparkle
 -- settings, Shift left click NodeSight's Options page, right click turns every kind of
--- sparkle on or off, Shift right click switching between herbs and ore. Its place is
--- saved with the settings.
+-- sparkle on or off, Shift right click switching between herbs and ore, Ctrl Shift left
+-- click hides the button. Its place is saved with the settings.
 
 local ADDON_NAME, ns = ...
 
@@ -39,6 +39,7 @@ local function Tooltip(tooltip)
     Hint(tooltip, "Shift Left Click", "NodeSight Settings")
     Hint(tooltip, "Right Click", AllOn() and "Turn Sparkles Off" or "Turn Sparkles On")
     Hint(tooltip, "Shift Right Click", ns.db.switchFinders and "Turn Switching Off" or "Turn Switching On")
+    Hint(tooltip, "Ctrl Shift Left Click", "Hide This Button")
 end
 
 -- The tooltip shown over the button is redrawn after a click changes it.
@@ -72,11 +73,20 @@ local function ToggleSwitch()
     Say(ns.db.switchFinders and "Switching between herbs and ore turned on." or "Switching between herbs and ore turned off.")
 end
 
+-- As the Minimap button setting turned off (it turns the button back on).
+local function HideButton(frame)
+    if frame and shownTooltip and shownTooltip:IsOwned(frame) then shownTooltip:Hide() end
+    ns.db.minimapButton = false
+    ns.MinimapButtonChanged()
+    ns.RefreshSparkleWindow()
+end
+
 local function Clicked(frame, button)
     if button == "RightButton" then
         if IsShiftKeyDown() then ToggleSwitch() else ToggleAll() end
         return Retooltip(frame)
     end
+    if IsControlKeyDown() and IsShiftKeyDown() then return HideButton(frame) end
     if IsShiftKeyDown() then return OpenPage(ns.settingsCategory) end
     -- The sparkle window, or its page where the window isn't used (gamepad UI).
     if ns.OptionsOnly() then
