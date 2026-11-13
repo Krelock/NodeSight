@@ -15,3 +15,7 @@ When you track herbs or ore, the minimap just shows a dot for each one. You have
 
 ## Download
 * <https://www.curseforge.com/wow/addons/node-sight>
+
+## NodeSight Sparkles
+NodeSight's sparkles on their own, for Retail or if you only want the sparkles. Already using NodeSight? You don't need this. Its files are in the [NodeSightSparkles](https://github.com/Krelock/NodeSight/tree/main/NodeSightSparkles) folder.
+* <https://www.curseforge.com/wow/addons/node-sight-sparkles>
