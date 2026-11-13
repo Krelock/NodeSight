@@ -78,31 +78,43 @@ end
 -- A popup's "Don't show this again": Popups off.
 function ns.NoMorePopups() ns.db.popups = false end
 
+-- Settings for this character only (the sparkle window's General tab): saved on the
+-- character whichever settings are in use; they switch at the next reload.
+function ns.OwnSettings() return type(NodeSightSparklesCharDB) ~= "table" or NodeSightSparklesCharDB.own ~= false end
+function ns.SetOwnSettings(on)
+    if type(NodeSightSparklesCharDB) == "table" then NodeSightSparklesCharDB.own = on end
+end
+
 ---------------------------------------------------------------------------
 -- Loading
 ---------------------------------------------------------------------------
 
 -- Fills in the defaults and fixes saved values the settings can't produce.
--- Settings are per character (NodeSightSparklesCharDB), started from the ones every
--- character shared before (NodeSightSparklesDB). The CVars to put back stay shared, as
--- the CVars are.
+-- Settings: this character's own (NodeSightSparklesCharDB, the default, started from the
+-- shared ones) or the ones shared by every character that has its own turned off
+-- (NodeSightSparklesDB). The CVars to put back are always shared, as the CVars are.
 local SHARED = { questObjects = true, saved = true, applied = true }
+local settings -- the settings in use from login on
 
 local function LoadSaved()
     NodeSightSparklesDB = NodeSightSparklesDB or {}
     local shared = NodeSightSparklesDB
     if type(NodeSightSparklesCharDB) ~= "table" then
-        NodeSightSparklesCharDB = {}
+        NodeSightSparklesCharDB = { own = true }
         for key, value in pairs(shared) do
             if not SHARED[key] then NodeSightSparklesCharDB[key] = type(value) == "table" and CopyTable(value) or value end
         end
     end
-    local db = setmetatable(NodeSightSparklesCharDB, {
-        __index = function(_, key) if SHARED[key] then return shared[key] end end,
-        __newindex = function(t, key, value)
-            if SHARED[key] then shared[key] = value else rawset(t, key, value) end
-        end,
-    })
+    local db = shared
+    if NodeSightSparklesCharDB.own ~= false then
+        db = setmetatable(NodeSightSparklesCharDB, {
+            __index = function(_, key) if SHARED[key] then return shared[key] end end,
+            __newindex = function(t, key, value)
+                if SHARED[key] then shared[key] = value else rawset(t, key, value) end
+            end,
+        })
+    end
+    settings = db
     for key, value in pairs(defaults) do
         if db[key] == nil then db[key] = value end
     end
@@ -158,7 +170,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
             ns.RegisterSettings(true)
             return
         end
-        ns.db = NodeSightSparklesCharDB
+        ns.db = settings
         ns.RegisterSettings()
         ns.MinimapButton()
     elseif event == "PLAYER_ENTERING_WORLD" then

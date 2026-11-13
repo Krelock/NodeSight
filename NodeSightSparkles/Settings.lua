@@ -69,7 +69,7 @@ local function RegisterSettings(nodeSightOn)
         Settings.CreateDropdown(category, Register(key, name, onChange), GetOptions, tooltip)
     end
 
-    -- All the settings are in the sparkle window, which opens with this page. A
+    -- All the settings are in the sparkle window (this page's button opens it). A
     -- controller can't reach that window, and its color picker and menus would run
     -- Blizzard's gamepad code tainted, so with the gamepad UI on the page has
     -- Blizzard's own rows for the basics instead (until a reload, if it's switched).
@@ -98,16 +98,13 @@ local function RegisterSettings(nodeSightOn)
         -- Search tags off (false): addon code adding them taints the options' search.
         layout:AddInitializer(CreateSettingsButtonInitializer("Sparkle window", "Open", ns.ShowSparkleWindow,
             "All the sparkle settings, with a preview.", false))
-        EventRegistry:RegisterCallback("Settings.CategoryChanged", function(_, shown)
-            if shown == category then ns.ShowSparkleWindow() end
-        end, category)
         Checkbox("popups", "Popups",
             "A popup when Enable Interact Key is turned off while sparkles are on. It waits until a fight is over. "
                 .. "Off: none; the sparkle window still says so.",
             function() end)
     end
     Checkbox("minimapButton", "Minimap button",
-        "NodeSight Sparkles' button on the minimap: left click opens the sparkle settings, right click turns all sparkles on or off.",
+        "NodeSight Sparkles' button on the minimap: left click opens the sparkle settings, right click turns all sparkles on or off. Ctrl Shift left click hides it.",
         function() ns.MinimapButtonChanged() end)
 
     Settings.RegisterAddOnCategory(category)
