@@ -25,6 +25,7 @@ Names.lua
 NodeSight.lua
 Switch.lua
 Sparkles.lua
+Collect.lua
 SparkleWindow.lua
 WhatsNew.lua
 MinimapButton.lua
