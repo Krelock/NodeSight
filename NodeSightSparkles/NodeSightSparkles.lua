@@ -7,9 +7,10 @@
 --   NodeSightSparkles.lua defaults, loading and events
 --   Sparkles.lua          the sparkles on the object in front of you
 --   SparkleWindow.lua     the sparkle window: on/off and the look for each kind, with a 3D preview
+--   MinimapButton.lua     the minimap button
 --   Settings.lua          the Options page
 --
--- Sections: Defaults, Loading.
+-- Sections: Defaults, Popups, Loading.
 
 local ADDON_NAME, ns = ...
 
@@ -49,9 +50,33 @@ local defaults = {
     popups = true, -- the Enable Interact Key popup
     rareGlow = false, -- a gold glow around rare herbs and ore
     harvest = 5, -- how a gathered node finishes (Sparkles.lua's HARVESTS: Fade away)
+    minimapButton = true, -- the minimap button (its place: minimapIcon, LibDBIcon's)
 }
 ns.db = defaults -- NodeSightSparklesCharDB from login on
 ns.defaults = defaults
+
+---------------------------------------------------------------------------
+-- Popups
+---------------------------------------------------------------------------
+-- A popup waits for the end of a fight, so none covers the screen in one. One of each
+-- name waits (the newest). None with Popups off.
+local waiting = {}
+local fightEnd = CreateFrame("Frame")
+fightEnd:SetScript("OnEvent", function()
+    fightEnd:UnregisterEvent("PLAYER_REGEN_ENABLED")
+    local due = waiting
+    waiting = {}
+    if ns.db.popups == false then return end
+    for _, show in pairs(due) do pcall(show) end
+end)
+function ns.AfterFight(name, show)
+    if ns.db.popups == false then return end
+    if not InCombatLockdown() then return show() end
+    waiting[name] = show
+    fightEnd:RegisterEvent("PLAYER_REGEN_ENABLED")
+end
+-- A popup's "Don't show this again": Popups off.
+function ns.NoMorePopups() ns.db.popups = false end
 
 ---------------------------------------------------------------------------
 -- Loading
@@ -82,6 +107,7 @@ local function LoadSaved()
         if db[key] == nil then db[key] = value end
     end
     if type(db.styleLooks) ~= "table" then db.styleLooks = {} end -- each style's look, per kind (the sparkle window)
+    if type(db.minimapIcon) ~= "table" then db.minimapIcon = {} end -- the minimap button's place
     for _, kind in ipairs(ns.KINDS) do
         local keys = ns.SPARKLE_KEYS[kind]
         db[keys.color] = tostring(db[keys.color]):match("^%x%x%x%x%x%x%x%x$") or defaults[keys.color]
@@ -116,7 +142,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
             events:UnregisterEvent("ADDON_LOADED")
             -- After an update, a /reload only loads the files the old .toc listed:
             -- stay off until the game is restarted.
-            if not (ns.TooHard and ns.Setup and ns.ShowSparkleWindow and ns.RegisterSettings) then
+            if not (ns.TooHard and ns.Setup and ns.ShowSparkleWindow and ns.MinimapButton and ns.RegisterSettings) then
                 events:UnregisterAllEvents()
                 return
             end
@@ -134,6 +160,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
         end
         ns.db = NodeSightSparklesCharDB
         ns.RegisterSettings()
+        ns.MinimapButton()
     elseif event == "PLAYER_ENTERING_WORLD" then
         ns.Setup() -- after every loading screen
     elseif event == "NAME_PLATE_UNIT_REMOVED" then

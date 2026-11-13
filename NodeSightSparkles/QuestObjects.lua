@@ -1,4 +1,4 @@
--- NodeSight Sparkles: objects quests send you to, from the original game's quest data.
+-- Objects quests send you to, from the original game's quest data.
 -- Generated from cmangos classic-db (https://github.com/cmangos/classic-db,
 -- GPL-3.0): containers whose loot has an item a quest asks for, and objects a
 -- quest asks you to use. WoW Forever kept these objects' and quests' IDs.

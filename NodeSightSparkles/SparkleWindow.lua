@@ -1,4 +1,4 @@
--- NodeSight Sparkles' window: a tab for each kind of node and one for the
+-- The sparkle window: a tab for each kind of node and one for the
 -- settings of all of them, the styles as tiles with a small preview each, the
 -- look's settings, and the node in 3D with its sparkles on it, as in the world.
 --
@@ -116,7 +116,7 @@ local function Changed()
     ns.UpdateAll()
 end
 
--- Each kind keeps every style's look as it was last left (NodeSightSparklesCharDB.styleLooks[kind][style]),
+-- Each kind keeps every style's look as it was last left (the settings' styleLooks[kind][style]),
 -- so a style picked again comes back with its changes.
 local LOOK = { "size", "height", "count", "color", "color2" }
 local IN_LOOK = { size = true, height = true, count = true, color = true, color2 = true }
@@ -652,13 +652,13 @@ function Refresh()
     window.interactOff:SetShown(ns.InteractOff())
     window.turnOn:SetShown(window.interactOff:IsShown())
     window.gameIcons:SetChecked(ns.db.gameIcons)
+    window.myProfessions:SetChecked(ns.db.myProfessions)
     window.brightness:SetValue(ns.db.brightness)
     window.reachLook:SetChecked(ns.db.reachLook)
     window.combatHide:SetChecked(ns.db.combatHide)
     window.instanceHide:SetChecked(ns.db.instanceHide)
     window.sparkleSound:SetChecked(ns.db.sparkleSound)
     window.gatherDim:SetChecked(ns.db.gatherDim)
-    window.myProfessions:SetChecked(ns.db.myProfessions)
     window.grayTooHard:SetChecked(ns.db.grayTooHard)
     window.rareGlow:SetChecked(ns.db.rareGlow)
     window.harvest:SetupMenu(function(_, root)
@@ -752,7 +752,7 @@ local function Open()
 end
 
 -- If opening it errors, the error is still reported, the window stays shut, and
--- from the next reload this version's Options page has Blizzard's rows instead.
+-- from the next reload this version's sparkle settings in the options have Blizzard's rows instead.
 local failed
 function ns.ShowSparkleWindow()
     if failed then return end
@@ -762,6 +762,13 @@ function ns.ShowSparkleWindow()
         if window then window:Hide() end
     end
 end
+
+-- After a change made elsewhere (the minimap button).
+function ns.RefreshSparkleWindow()
+    if window and window:IsShown() then Refresh() end
+end
+function ns.SparkleWindowShown() return window ~= nil and window:IsShown() end
+function ns.HideSparkleWindow() if window then window:Hide() end end
 
 ---------------------------------------------------------------------------
 -- Interact Key turned off
@@ -785,9 +792,6 @@ local function DialogButton(parent, text, onClick)
     button:SetScript("OnClick", onClick)
     return button
 end
-
--- A popup's "Don't show this again": Popups off.
-function ns.NoMorePopups() ns.db.popups = false end
 
 local function ShowNotice()
     if not notice then
@@ -833,25 +837,13 @@ local function ShowNotice()
     notice:Show()
 end
 
--- The popup waits for the end of a fight, so it never covers the screen in one; none with Popups off.
-local function Offer()
-    if ns.db.popups ~= false and ns.InteractOff() then ShowNotice() end
-end
-local fightEnd = CreateFrame("Frame")
-fightEnd:SetScript("OnEvent", function()
-    fightEnd:UnregisterEvent("PLAYER_REGEN_ENABLED")
-    Offer()
-end)
-
 local interactWatch = CreateFrame("Frame")
 interactWatch:RegisterEvent("CVAR_UPDATE")
 interactWatch:SetScript("OnEvent", function(_, _, name)
     if issecretvalue(name) or type(name) ~= "string" or name:lower() ~= "softtargetinteract" or not ns.db then return end
     if window and window:IsShown() then Refresh() end
-    if InCombatLockdown() then
-        if ns.InteractOff() then fightEnd:RegisterEvent("PLAYER_REGEN_ENABLED") end
-    else
-        Offer()
+    if ns.InteractOff() then
+        ns.AfterFight("interact", function() if ns.InteractOff() then ShowNotice() end end)
     end
 end)
 

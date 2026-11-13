@@ -2,12 +2,16 @@
 ## Title: NodeSight Sparkles
 ## Notes: Sparkles on the herb, ore, chest or quest object in front of you, in the style and color you pick.
 ## Author: Krelock
-## Version: 1.2.1
+## Version: 1.2.2
 ## SavedVariables: NodeSightSparklesDB
 ## SavedVariablesPerCharacter: NodeSightSparklesCharDB
-## IconTexture: Interface\Icons\INV_Misc_Herb_01
+## IconTexture: Interface\AddOns\NodeSightSparkles\logo
 ## Category: Professions
 
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
 Locales\deDE.lua
 Locales\esES.lua
 Locales\esMX.lua
@@ -21,4 +25,5 @@ QuestObjects.lua
 NodeSightSparkles.lua
 Sparkles.lua
 SparkleWindow.lua
+MinimapButton.lua
 Settings.lua

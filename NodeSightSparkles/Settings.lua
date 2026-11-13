@@ -28,11 +28,14 @@ local function InteractOff()
     return any and value ~= nil and value < 2
 end
 ns.InteractOff = InteractOff
+-- The Options page instead of the sparkle window (the minimap button's left click too).
+function ns.OptionsOnly() return GamepadUI() or WindowFailed() end
 ns.INTERACT_OFF = ("Sparkles need %s (%s > %s)."):format(ENABLE_INTERACT_TEXT, SETTINGS_TITLE, CONTROLS_LABEL)
 
 -- nodeSightOn: NodeSight is loaded and this addon stays off, so the page only says so.
 local function RegisterSettings(nodeSightOn)
     local category, layout = Settings.RegisterVerticalLayoutCategory("NodeSight Sparkles")
+    ns.settingsCategory = category
     if nodeSightOn then
         layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Off while NodeSight is on (it has the same sparkles)"))
         Settings.RegisterAddOnCategory(category)
@@ -103,6 +106,9 @@ local function RegisterSettings(nodeSightOn)
                 .. "Off: none; the sparkle window still says so.",
             function() end)
     end
+    Checkbox("minimapButton", "Minimap button",
+        "NodeSight Sparkles' button on the minimap: left click opens the sparkle settings, right click turns all sparkles on or off.",
+        function() ns.MinimapButtonChanged() end)
 
     Settings.RegisterAddOnCategory(category)
 end

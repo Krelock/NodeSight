@@ -1,4 +1,4 @@
--- NodeSight Sparkles: sparkles on the herb or ore in front of you. They sit on the
+-- Sparkles on the herb or ore in front of you. They sit on the
 -- nameplate of the game's soft interact target, so while sparkles are on the
 -- interact CVars are turned on and Blizzard's object plates are hidden (unless
 -- the game's icons are kept).
@@ -102,6 +102,30 @@ local LOWER = { silverleaf = 15 }
 -- Where the sparkles' middle is, under the plate's bottom.
 local function Height(frame)
     return FrameLook(frame, "height") - (frame.lower or 0)
+end
+
+-- Before the defaults are filled in: chests and quest objects (other objects before)
+-- start as other objects were, and the other kinds from the herbs' saved look (but
+-- not the height of the bobber, which floats on the water, or of corpses, whose
+-- plate stays where the living creature's was).
+local function CarryOverLooks(db)
+    for _, kind in ipairs({ "chests", "quests" }) do
+        -- Only once: a kind's second color is often unset, and must stay so.
+        if db[kind] == nil then
+            db[kind] = db.others
+            for what, key in pairs(KEYS[kind]) do
+                if db[key] == nil then db[key] = db[KEYS.others[what]] end
+            end
+        end
+    end
+    for _, what in ipairs({ "color", "size", "height", "count" }) do
+        local saved = db[KEYS.herbs[what]]
+        if saved ~= nil then
+            for kind, keys in pairs(KEYS) do
+                if kind ~= "herbs" and db[keys[what]] == nil and not ((kind == "bobber" or kind == "skinning") and what == "height") then db[keys[what]] = saved end
+            end
+        end
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -1644,7 +1668,12 @@ ns.sparkles, ns.hidden, ns.leaving = sparkles, hidden, leaving
 ns.HARVESTS, ns.SparklePreviews, ns.SparkleAnimate, ns.ResetHarvest = HARVESTS, previews, Animate, ResetHarvest
 ns.ApplyColor, ns.NewSparkle, ns.NewSparkles = ApplyColor, NewSparkle, NewSparkles
 ns.ShowSparkles, ns.HideSparkles, ns.Setup, ns.UpdateAll = ShowSparkles, HideSparkles, Setup, UpdateAll
+-- Logging out or reloading: the CVars back as they were. They're account settings, so a
+-- character without the addon (or with it turned off) finds them as they were; set again at login.
+function ns.SetupOut()
+    if not InCombatLockdown() then RestoreSetup() end
+end
 ns.KINDS, ns.SPARKLE_KEYS, ns.SPARKLE_STYLES, ns.StyleFits = KINDS, KEYS, STYLES, StyleFits
-ns.SparkleLook, ns.SparkleRGB, ns.SparkleColors, ns.SPARKLE_LOWER = Look, RGB, Colors, LOWER
+ns.CarryOverLooks, ns.SparkleLook, ns.SparkleRGB, ns.SparkleColors, ns.SPARKLE_LOWER = CarryOverLooks, Look, RGB, Colors, LOWER
 -- Is a Setup waiting for the end of combat?
 function ns.SetupPending() return pendingSetup end

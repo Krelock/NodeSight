@@ -1,9 +1,7 @@
--- NodeSight Sparkles' name lists: which objects are chests, the English name
--- of a herb or ore on any client (for the rare glow), and the skill each herb
--- and ore needs (for the gray when your skill is too low). Other clients' names
--- are in Locales.
+-- Name lists: the kind of node from its name (English, and for other clients the
+-- names in Locales), which objects are chests, and the skill each herb and ore needs.
 --
--- In order: NodeKind, TooHard.
+-- In order: NodeKind, TooHard, NodeSkill, SkillLevel, HasProfession.
 
 local _, ns = ...
 
@@ -11,14 +9,6 @@ local ipairs = ipairs
 
 -- Herbs are matched by the end of the name, ore by "vein" or "deposit" (or ORE_OTHER).
 -- Names with digits, ":" or "/" are quest progress ("Peacebloom 3/8"), not nodes.
-local HERBS = {
-    "silverleaf", "mageroyal", "peacebloom", "earthroot", "briarthorn", "swiftthistle", "bruiseweed",
-    "steelbloom", "kingsblood", "liferoot", "khadgar's whisker", "grave moss", "fadeleaf", "wintersbite",
-    "stranglekelp", "goldthorn", "firebloom", "purple lotus", "arthas' tears", "sungrass", "blindweed",
-    "ghost mushroom", "gromsblood", "dreamfoil", "golden sansam", "mountain silversage", "plaguebloom",
-    "icecap", "black lotus", "hive thistle", "demonsage", "death lotus", "marefoil", "stranglevine",
-    "frilled lichen", "rosecap", "doom weed", "gloom weed", "moonroot", "nightmare moss", "dreamroot", "star lotus",
-}
 local ORE_OTHER = { "chunk of amber", "obsidian chunk", "moonstone formation" } -- no vein or deposit
 -- Chests, by the end of the name (crates and sacks are quest things too).
 local TREASURE = { "chest", "footlocker", "strongbox", "lockbox", "coffer" }
@@ -47,6 +37,16 @@ end
 local function EndsWith(text, ending)
     return text:sub(-#ending) == ending
 end
+
+-- Herbs by the end of their name (from Wowhead).
+local HERBS = {
+    "silverleaf", "mageroyal", "peacebloom", "earthroot", "briarthorn", "swiftthistle", "bruiseweed", "steelbloom",
+    "kingsblood", "liferoot", "khadgar's whisker", "grave moss", "fadeleaf", "wintersbite", "stranglekelp",
+    "goldthorn", "firebloom", "purple lotus", "arthas' tears", "sungrass", "blindweed", "ghost mushroom",
+    "gromsblood", "dreamfoil", "golden sansam", "mountain silversage", "plaguebloom", "icecap", "black lotus",
+    "hive thistle", "demonsage", "death lotus", "marefoil", "stranglevine", "frilled lichen", "rosecap",
+    "doom weed", "gloom weed", "moonroot", "nightmare moss", "dreamroot", "star lotus",
+}
 
 -- "herbs", "ore", "treasure" or nil.
 local function NodeKind(name)
@@ -101,7 +101,9 @@ local NEEDED = {
         ["small obsidian chunk"] = 305, ["large obsidian chunk"] = 305,
     },
 }
-local skills = {} -- cached skill levels (false = unknown)
+local skills = {} -- cached skill levels with bonuses (false = unknown)
+local bases, caps = {}, {} -- and without bonuses, and the trained cap; read with skills
+local professions = {} -- localized profession names
 local has, hasAt = {}, {} -- whether you have each kind's profession, and when a "no" was read
 local RECHECK = 5 -- seconds a "no" is kept (the skill list may still be loading at login)
 
@@ -117,8 +119,12 @@ local function GatherSkill(kind)
         return nil
     end
     has[kind] = true
-    local rank, bonus = info.rank, info.modifier
+    local rank, bonus, cap = info.rank, info.modifier, info.maxRank
     if issecretvalue(rank) or issecretvalue(bonus) or not rank then return nil end
+    local name = info.name
+    if not issecretvalue(name) then professions[kind] = name end
+    bases[kind] = rank
+    caps[kind] = not issecretvalue(cap) and cap or nil
     return rank + (bonus or 0)
 end
 
@@ -131,7 +137,32 @@ local function TooHard(name, kind)
     return skill ~= false and need > skill
 end
 
--- Used by Sparkles.lua and the main file.
+-- What a herb or ore needs (1 for one known by name but not listed, nil for other
+-- kinds), and your skill (false if unknown).
+local function NodeSkill(name, kind)
+    local list = NEEDED[kind]
+    local need = list and (list[Key(name)] or (NodeKind(name) == kind and 1))
+    if not need then return nil end
+    if skills[kind] == nil then skills[kind] = GatherSkill(kind) or false end
+    return need, skills[kind]
+end
+
+-- Your chance of a skill-up from a herb or ore, as the profession window colors it:
+-- 1 too hard, then 2 to 5 at 25, 50 and 100 points over what it needs, and 5 at
+-- your trained cap. Bonuses count for gathering, not for skill-ups. Also returns
+-- what it needs. nil if either isn't known.
+local function SkillLevel(name, kind)
+    local need, skill = NodeSkill(name, kind)
+    if not skill then return nil end
+    -- Learned at 0, you can still gather what needs 1.
+    if math.max(skill, 1) < need then return 1, need end
+    local base, cap = bases[kind], caps[kind]
+    if cap and cap > 0 and base >= cap then return 5, need end
+    -- Level-1 nodes count from 0: yellow at 25, green at 50, gray at 100.
+    local over = base - (need > 1 and need or 0)
+    return over < 25 and 2 or over < 50 and 3 or over < 100 and 4 or 5, need
+end
+
 -- Whether you have the profession that gathers a kind (Herbalism, Mining, Skinning): false
 -- only when the game says you don't; true for other kinds, or when it can't be read (Retail).
 -- Read with the skill (one call for both), kept until the skills change.
@@ -149,6 +180,7 @@ local function HasProfession(kind)
     return has[kind] ~= false
 end
 
+-- Used by the other files.
 ns.HasProfession, ns.hasProfession = HasProfession, has
 ns.Plain, ns.NodeKind, ns.NodeKey = Plain, NodeKind, Key
-ns.skills, ns.TooHard = skills, TooHard
+ns.skills, ns.professions, ns.TooHard, ns.SkillLevel, ns.NodeSkill = skills, professions, TooHard, SkillLevel, NodeSkill

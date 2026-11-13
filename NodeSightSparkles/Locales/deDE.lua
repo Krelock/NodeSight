@@ -1,10 +1,10 @@
--- deDE names for NodeSight Sparkles, mapped to the English names in Names.lua, one table per kind
+-- deDE names, mapped to the English names in Names.lua, one table per kind
 -- like the tables there. From Wowhead's WoW Forever object lists.
 -- Keys are written like Plain() makes them.
 --
 -- Another language: copy this file as Locales\<locale>.lua (frFR, esES, ...), set
 -- that locale in the GetLocale() line, put the client's names on the left (lowercase,
--- straight apostrophes), and list the file in NodeSightSparkles.toc before Names.lua.
+-- straight apostrophes), and list the file in the .toc before Names.lua.
 -- Names left out still sparkle, without the rare glow or the gray for a skill too low,
 -- and a chest left out sparkles as another object.
 
