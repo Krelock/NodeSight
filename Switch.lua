@@ -122,17 +122,7 @@ local function Busy()
     local loot = GetNumLootItems()
     return not issecretvalue(loot) and type(loot) == "number" and loot > 0
 end
-ns.Busy = Busy -- (automatic scans wait for it too)
-
--- A herb or ore symbol closer than yards. Only ones with a map position, as only
--- those keep their distance while you move, and none outside the minimap.
-local function NearNode(yards)
-    for _, marker in ipairs(ns.Markers()) do
-        if (marker.kind == "herbs" or marker.kind == "ore") and marker.map and not marker.far
-            and marker.yards < yards then return true end
-    end
-    return false
-end
+ns.Busy = Busy
 
 -- The setting for each area type of IsInInstance(). Other types (arenas, scenarios) never switch.
 local AREAS = { none = "switchWorld", party = "switchDungeons", raid = "switchRaids", pvp = "switchBattlegrounds" }
@@ -394,7 +384,6 @@ function ns.SwitchReady(kind)
     -- Just after your own spell or dismounting.
     local after = db.switchAfterCast
     if after > 0 and switch.castAt and GetTime() - switch.castAt < after then return false end
-    if db.switchNearYards > 0 and NearNode(db.switchNearYards) then return false end -- near a herb or ore
     -- While kind's cooldown runs: the finders have none of their own, so it's the global cooldown (a secret counts as running).
     local info = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(SPELLS[kind])
     if issecretvalue(info) then return false end
@@ -502,11 +491,11 @@ local function Handle(event, arg3, arg4)
     elseif event == "UPDATE_MOUSEOVER_UNIT" then
         switch.hoverAt = GetTime() -- a unit only counts just after the mouse moved onto it
     elseif event == "MINIMAP_UPDATE_TRACKING" then
-        -- Another herbs or ore finder, and not NodeSight's switch: one by hand. The next needs a
-        -- scan of that kind and a new way. Other tracking changes (creatures, treasure) don't count.
+        -- Another herbs or ore finder, and not NodeSight's switch: one by hand, so a new way.
+        -- Other tracking changes (creatures, treasure) don't count.
         local kind = ns.Finders()
         if not switch.pending and kind ~= switch.kind then
-            ns.turns.scanned, switch.way = false, 0
+            switch.way = 0
             ns.SwitchReset()
         end
         switch.kind = kind

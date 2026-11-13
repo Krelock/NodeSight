@@ -1,11 +1,12 @@
--- esES names for NodeSight, mapped to the English names in Names.lua, one table per kind
+-- esES names, mapped to the English names in Names.lua, one table per kind
 -- like the tables there. From Wowhead's WoW Forever object lists.
 -- Keys are written like Plain() makes them.
 --
 -- Another language: copy this file as Locales\<locale>.lua (frFR, esES, ...), set
 -- that locale in the GetLocale() line, put the client's names on the left (lowercase,
--- straight apostrophes), and list the file in NodeSight.toc before Names.lua.
--- Names left out are still learned by gathering.
+-- straight apostrophes), and list the file in the .toc before Names.lua.
+-- Names left out still sparkle, without the rare glow or the gray for a skill too low,
+-- and a chest left out sparkles as another object.
 
 if GetLocale() ~= "esES" then return end
 local _, ns = ...
@@ -89,11 +90,7 @@ LOCALE.ORE = {
     ["filón de estaño"] = "tin vein",
     ["depósito de veraplata"] = "truesilver deposit",
 }
--- Ley lines and elemental convergences of the new racials.
-LOCALE.OTHER = {
-    ["convergencia elemental"] = "elemental convergence",
-    ["línea ley"] = "leyline",
-}
+
 LOCALE.TREASURE = {
     ["cofre de alexston"] = "alexston's chest",
     ["cofre de la alianza"] = "alliance chest",

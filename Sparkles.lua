@@ -1,4 +1,4 @@
--- NodeSight's sparkles on the herb or ore in front of you. They sit on the
+-- Sparkles on the herb or ore in front of you. They sit on the
 -- nameplate of the game's soft interact target, so while sparkles are on the
 -- interact CVars are turned on and Blizzard's object plates are hidden (unless
 -- the game's icons are kept).
@@ -70,7 +70,7 @@ local known = {} -- plate: what its object's icon said it was
 ---------------------------------------------------------------------------
 -- Each kind's look
 ---------------------------------------------------------------------------
--- Herbs keep the keys the shared look had, so saved settings carry over.
+-- Herbs' keys have no prefix.
 
 local KINDS = { "herbs", "ore", "chests", "quests", "others", "bobber", "skinning" }
 local KEYS = {
@@ -1452,7 +1452,7 @@ questWatch:SetScript("OnEvent", function(_, event)
 end)
 
 -- What sparkles on an object's plate: its kind, the bobber and chests (by their
--- names, as the minimap's are) found among plain and other objects. Your
+-- names) found among plain and other objects. Your
 -- interact target with such an icon also goes by name: herbs and ore (Gloom
 -- Weed has no herb icon) and quest objects.
 local function SparkleKind(unit, icon)

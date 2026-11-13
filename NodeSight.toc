@@ -1,13 +1,17 @@
 ## Interface: 16001
 ## Title: NodeSight
-## Notes: See what every herb and ore on your minimap is, with an arrow to the nearest one and gold sparkles on it when you're close.
+## Notes: Gold sparkles on the herbs, ore and other things near you, and the skill a herb or ore needs in its tooltip.
 ## Author: Krelock
-## Version: 2.0.7
+## Version: 3.0.0
 ## SavedVariables: NodeSightDB
 ## SavedVariablesPerCharacter: NodeSightCharDB
-## IconTexture: Interface\Icons\INV_Misc_Herb_01
+## IconTexture: Interface\AddOns\NodeSight\logo
 ## Category: Professions
 
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
 Locales\deDE.lua
 Locales\esES.lua
 Locales\esMX.lua
@@ -16,18 +20,12 @@ Locales\koKR.lua
 Locales\ptBR.lua
 Locales\zhCN.lua
 Locales\zhTW.lua
-Zones.lua
 QuestObjects.lua
-MinimapTiles.lua
-TownNPCs.lua
 Names.lua
-RareNames.lua
-MinimapShape.lua
 NodeSight.lua
 Switch.lua
 Sparkles.lua
-FarSparkles.lua
 SparkleWindow.lua
 WhatsNew.lua
-Setup.lua
+MinimapButton.lua
 Settings.lua

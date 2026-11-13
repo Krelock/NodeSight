@@ -1,4 +1,4 @@
--- NodeSight's sparkle window: a tab for each kind of node and one for the
+-- The sparkle window: a tab for each kind of node and one for the
 -- settings of all of them, the styles as tiles with a small preview each, the
 -- look's settings, and the node in 3D with its sparkles on it, as in the world.
 --
@@ -70,7 +70,7 @@ local SETS = {
 
 -- Settings for all sparkles (the General tab), saved under these keys.
 local GENERAL = { gameIcons = true, brightness = true, reachLook = true, combatHide = true, instanceHide = true,
-    harvest = true, grayTooHard = true, rareGlow = true, sparkleSound = true, gatherDim = true }
+    harvest = true, grayTooHard = true, myProfessions = true, rareGlow = true, sparkleSound = true, gatherDim = true }
 
 -- The tabs: each kind (its name, the "Sparkles on" box and the icon), then General.
 local TABS = {
@@ -111,13 +111,12 @@ end
 
 local Refresh, FrameNode, PlaceCamera, PickStyle, PlayHarvest
 
--- The sparkles in the world, near and far, after a change.
+-- The sparkles in the world after a change.
 local function Changed()
     ns.UpdateAll()
-    ns.RefreshFarSparkles()
 end
 
--- Each kind keeps every style's look as it was last left (NodeSightDB.styleLooks[kind][style]),
+-- Each kind keeps every style's look as it was last left (the settings' styleLooks[kind][style]),
 -- so a style picked again comes back with its changes.
 local LOOK = { "size", "height", "count", "color", "color2" }
 local IN_LOOK = { size = true, height = true, count = true, color = true, color2 = true }
@@ -348,7 +347,7 @@ local function Build()
     local gridHeight = floor((most + 4) / 5) * 80 - 4
     window = New("Frame", UIParent, "ButtonFrameTemplate")
     window:Hide()
-    window:SetSize(760, 366 + gridHeight)
+    window:SetSize(760, 402 + gridHeight)
     window:SetPoint("CENTER", 0, 20)
     window:SetFrameStrata("DIALOG")
     window:SetToplevel(true)
@@ -521,15 +520,17 @@ local function Build()
         "No sparkles in dungeons and raids."))
     window.grayTooHard = BoxFirst(Checkbox(general, -224, "Gray when your skill is too low", "grayTooHard",
         "Herbs and ore your skill is too low for sparkle gray."))
-    window.rareGlow = BoxFirst(Checkbox(general, -260, "Rare nodes stand out", "rareGlow",
+    window.myProfessions = BoxFirst(Checkbox(general, -260, "Only for my professions", "myProfessions",
+        "Herbs sparkle only if you have Herbalism, ore only with Mining, and corpses only with Skinning."))
+    window.rareGlow = BoxFirst(Checkbox(general, -296, "Rare nodes stand out", "rareGlow",
         "A gold glow on rare herbs and ore like Black Lotus and Truesilver."))
-    window.sparkleSound = BoxFirst(Checkbox(general, -296, "Sparkle sound", "sparkleSound",
+    window.sparkleSound = BoxFirst(Checkbox(general, -332, "Sparkle sound", "sparkleSound",
         "Plays a soft sound when something near you starts sparkling."))
-    window.gatherDim = BoxFirst(Checkbox(general, -332, "Dim while gathering", "gatherDim",
+    window.gatherDim = BoxFirst(Checkbox(general, -368, "Dim while gathering", "gatherDim",
         "Sparkles fade while you gather so you can see the node."))
     local harvest = New("DropdownButton", general, "WowStyle1DropdownTemplate")
     harvest:SetWidth(180)
-    Row(general, -372, "When gathered", harvest,
+    Row(general, -408, "When gathered", harvest,
         "What the sparkles do when you loot it. Picking one plays it on the preview.")
     window.harvest = harvest
     local show = New("Button", general, "UIPanelButtonTemplate")
@@ -651,6 +652,7 @@ function Refresh()
     window.interactOff:SetShown(ns.InteractOff())
     window.turnOn:SetShown(window.interactOff:IsShown())
     window.gameIcons:SetChecked(ns.db.gameIcons)
+    window.myProfessions:SetChecked(ns.db.myProfessions)
     window.brightness:SetValue(ns.db.brightness)
     window.reachLook:SetChecked(ns.db.reachLook)
     window.combatHide:SetChecked(ns.db.combatHide)
@@ -750,7 +752,7 @@ local function Open()
 end
 
 -- If opening it errors, the error is still reported, the window stays shut, and
--- from the next reload this version's Sparkles page has Blizzard's rows instead.
+-- from the next reload this version's sparkle settings in the options have Blizzard's rows instead.
 local failed
 function ns.ShowSparkleWindow()
     if failed then return end
@@ -761,10 +763,12 @@ function ns.ShowSparkleWindow()
     end
 end
 
--- After a change made elsewhere (the main page's Sparkles button).
+-- After a change made elsewhere (the minimap button).
 function ns.RefreshSparkleWindow()
     if window and window:IsShown() then Refresh() end
 end
+function ns.SparkleWindowShown() return window ~= nil and window:IsShown() end
+function ns.HideSparkleWindow() if window then window:Hide() end end
 
 ---------------------------------------------------------------------------
 -- Interact Key turned off

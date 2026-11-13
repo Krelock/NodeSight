@@ -1,6 +1,6 @@
--- NodeSight's What's New dialog (the patch notes), a notice shown once, and the bug report.
+-- NodeSight's What's New dialog (the patch notes) and its notices.
 --
--- Sections: After the fight, What's new (and the notice and the bug report).
+-- Sections: After the fight, What's new (and the notice), Minimap news.
 
 local ADDON_NAME, ns = ...
 
@@ -51,6 +51,18 @@ end
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
+        { version = "3.0.0",
+            { "New", {
+                { "Minimap button.", "On by default. Left Click opens the sparkle settings, Shift Left Click NodeSight's settings, Right Click turns all sparkles on or off, Shift Right Click turns switching on or off. Turn it off with Minimap button on NodeSight's settings page" },
+                { "Skill on herb and ore items.", "Herbs and ore in your bags show the skill they're gathered with, like \"Gathered with Mining (65)\", in the same colors as the node's tooltip. It goes with Required skill in tooltips" },
+                { "NodeSight's logo.", "In the addon list" },
+            } },
+            { "Changes", {
+                { "Minimap features removed.", "Blizzard's latest update patched out every way for addons to read the nodes on the minimap. Scanning, the symbols, far sparkles, the arrow, the sounds, the minimap tooltip's skill line, Switch's Pause near a herb or ore, the Advanced page and the bug report are gone" },
+                { "Sparkle settings.", "All on the Sparkles page and in the sparkle window, like NodeSight Sparkles. Only for my professions is on the window's General tab" },
+                { "Size of the game's own dots.", "Removed. If you had changed it, the game's own size comes back" },
+            } },
+        },
         { version = "2.0.7",
             { "New", {
                 { "Scan when you gather.", "Off by default. Starts a scan as you begin picking a herb or mining a vein. On the Scanning page" },
@@ -534,7 +546,7 @@ do
 
     -- Notice: one message in the same look, with an OK button.
     local notice
-    local function Show(title, body)
+    local function Show(title, body, once)
         if not notice then
             notice = NewFrame("Frame", UIParent)
             notice:SetFrameStrata("DIALOG")
@@ -554,83 +566,48 @@ do
             notice.text:SetWidth(WIDTHS[1] - 40)
             notice.text:SetJustifyH("LEFT")
             notice.text:SetSpacing(3)
-            DialogButton(notice, OKAY, function() notice:Hide() end):SetPoint("BOTTOMRIGHT", notice, "BOTTOM", -6, 16)
-            local never = DialogButton(notice, CONFIRM_POPUP_DONT_SHOW_AGAIN, function()
+            notice.okay = DialogButton(notice, OKAY, function() notice:Hide() end)
+            notice.never = DialogButton(notice, CONFIRM_POPUP_DONT_SHOW_AGAIN, function()
                 ns.NoMorePopups()
                 notice:Hide()
             end)
-            never:SetWidth(math.max(128, never:GetTextWidth() + 24))
-            never:SetPoint("BOTTOMLEFT", notice, "BOTTOM", 6, 16)
+            notice.never:SetWidth(math.max(128, notice.never:GetTextWidth() + 24))
+            notice.never:SetPoint("BOTTOMLEFT", notice, "BOTTOM", 6, 16)
         end
+        -- A message shown only once has no use for "Don't show this again".
+        notice.okay:ClearAllPoints()
+        if once then
+            notice.okay:SetPoint("BOTTOM", 0, 16)
+        else
+            notice.okay:SetPoint("BOTTOMRIGHT", notice, "BOTTOM", -6, 16)
+        end
+        notice.never:SetShown(not once)
         notice.text:SetText(NORMAL_FONT_COLOR:WrapTextInColorCode(title) .. "\n\n" .. body)
         notice:SetHeight(notice.text:GetStringHeight() + 73)
         notice:Show()
     end
-    function ShowNotice(title, body)
-        ns.AfterFight("notice", function() Show(title, body) end)
-    end
-
-    -- Bug report: the text (ns.ReportText) all selected in a box, to copy with Ctrl+C (an
-    -- addon can't copy to the clipboard itself). The mouse wheel scrolls it.
-    local report
-    function ns.ShowReport()
-        if not report then
-            report = NewFrame("Frame", UIParent)
-            report:SetFrameStrata("DIALOG")
-            report:SetToplevel(true)
-            report:EnableMouse(true)
-            report:SetPoint("TOP", UIParent, "TOP", 0, -135)
-            report:SetSize(640, 440)
-            local background = report:CreateTexture(nil, "BACKGROUND", nil, -7)
-            background:SetAtlas("UI-DialogBox-Background-Dark", true)
-            background:SetPoint("TOPLEFT", 7, -7)
-            background:SetPoint("BOTTOMRIGHT", -7, 7)
-            local edge = report:CreateTexture(nil, "BACKGROUND", nil, -4)
-            edge:SetAtlas("UI-DiamondDialogBox-Border", true)
-            edge:SetAllPoints()
-            local title = report:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-            title:SetPoint("TOP", 0, -20)
-            title:SetText("NodeSight bug report")
-            local hint = report:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-            hint:SetPoint("TOP", title, "BOTTOM", 0, -6)
-            hint:SetWidth(600)
-            hint:SetText("Press Ctrl+C to copy it all. When reporting a bug, please send this with it.")
-            local clip = NewFrame("Frame", report)
-            clip:SetPoint("TOPLEFT", 20, -62)
-            clip:SetPoint("BOTTOMRIGHT", -20, 48)
-            clip:SetClipsChildren(true)
-            local shade = clip:CreateTexture(nil, "BACKGROUND")
-            shade:SetColorTexture(0, 0, 0, 0.5)
-            shade:SetAllPoints()
-            local box = NewFrame("EditBox", clip)
-            box:SetMultiLine(true)
-            box:SetAutoFocus(false)
-            box:SetFontObject(GameFontHighlightSmall)
-            box:SetWidth(590)
-            box:SetPoint("TOPLEFT", 5, -5)
-            box:SetScript("OnEscapePressed", function() report:Hide() end)
-            -- Read only: typing puts the report back, all selected.
-            box:SetScript("OnTextChanged", function(self, typed)
-                if typed then
-                    self:SetText(report.text)
-                    self:HighlightText()
-                end
-            end)
-            local offset = 0
-            clip:EnableMouseWheel(true)
-            clip:SetScript("OnMouseWheel", function(_, delta)
-                offset = math.max(0, math.min(math.max(0, box:GetHeight() - clip:GetHeight() + 10), offset - delta * 40))
-                box:SetPoint("TOPLEFT", 5, -5 + offset)
-            end)
-            DialogButton(report, CLOSE, function() report:Hide() end):SetPoint("BOTTOM", 0, 16)
-            report.box = box
-        end
-        report.text = ns.ReportText()
-        report.box:SetText(report.text)
-        report:Show()
-        report.box:SetFocus()
-        report.box:HighlightText()
+    function ShowNotice(title, body, once)
+        ns.AfterFight("notice", function() Show(title, body, once) end)
     end
 end
 
 ns.ShowWhatsNew, ns.ShowNotice = ShowWhatsNew, ShowNotice
+
+---------------------------------------------------------------------------
+-- Minimap news
+---------------------------------------------------------------------------
+-- The game no longer lets addons read the minimap's nodes: told once per account.
+local MINIMAP_NEWS = RED_FONT_COLOR:WrapTextInColorCode("Blizzard's latest update patched out every way for addons to read "
+    .. "the nodes on the minimap, so everything NodeSight did on your minimap no longer works.")
+    .. "\n\nWhat still works:"
+    .. "\n- Sparkles on herbs, ore, chests and other things near you"
+    .. "\n- Switching between Find Herbs and Find Minerals as you travel"
+    .. "\n- The required skill in a herb's or ore's tooltip when you hover it"
+    .. "\n\nFor now, NodeSight will just be those features."
+    .. "\n\nIf anyone has suggestions on what to turn this into, if anything, I would love to hear your thoughts. "
+    .. "It could be a GatherMate type addon with my style of icons, for example."
+    .. "\n\nIf you just want my sparkles, I have another addon called NodeSight Sparkles, it's just the sparkles from NodeSight."
+
+function ns.ShowMinimapNews()
+    ShowNotice("NodeSight", MINIMAP_NEWS, true)
+end

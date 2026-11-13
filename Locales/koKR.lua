@@ -1,11 +1,12 @@
--- koKR names for NodeSight, mapped to the English names in Names.lua, one table per kind
+-- koKR names, mapped to the English names in Names.lua, one table per kind
 -- like the tables there. From Wowhead's WoW Forever object lists.
 -- Keys are written like Plain() makes them.
 --
 -- Another language: copy this file as Locales\<locale>.lua (frFR, esES, ...), set
 -- that locale in the GetLocale() line, put the client's names on the left (lowercase,
--- straight apostrophes), and list the file in NodeSight.toc before Names.lua.
--- Names left out are still learned by gathering.
+-- straight apostrophes), and list the file in the .toc before Names.lua.
+-- Names left out still sparkle, without the rare glow or the gray for a skill too low,
+-- and a chest left out sparkles as another object.
 
 if GetLocale() ~= "koKR" then return end
 local _, ns = ...
@@ -90,11 +91,7 @@ LOCALE.ORE = {
     ["주석 광맥"] = "tin vein",
     ["진은 광맥"] = "truesilver deposit",
 }
--- Ley lines and elemental convergences of the new racials.
-LOCALE.OTHER = {
-    ["정기의 합일"] = "elemental convergence",
-    ["지맥"] = "leyline",
-}
+
 LOCALE.TREASURE = {
     ["알렉스턴의 궤짝"] = "alexston's chest",
     ["얼라이언스 궤짝"] = "alliance chest",
