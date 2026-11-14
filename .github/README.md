@@ -5,6 +5,7 @@ When you track herbs or ore, the minimap just shows a dot for each one. You have
 ## Features
 * Red when your Herbalism or Mining is too low to gather it. Hover it and the tooltip says what it needs
 * Gold sparkles on the herb or ore in front of you. Change the color, area, height and how many (off by default)
+* Remembers where you gather herbs and ore and marks the places on your world map. Nothing is shared, and you can turn it off
 * Sparkles on chests, doors, quest objects and anything else you can interact with (off by default)
 * Switches between Find Herbs and Find Minerals by itself as you move. You need both Herbalism and Mining (off by default).
 
