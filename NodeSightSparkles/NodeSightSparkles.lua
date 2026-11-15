@@ -54,7 +54,7 @@ local defaults = {
     harvest = 5, -- how a gathered node finishes (Sparkles.lua's HARVESTS: Fade away)
     minimapButton = true, -- the minimap button (its place: minimapIcon, LibDBIcon's)
     townInteractOff = false, -- Interact Key off while resting in a town or inn
-    stoneBackground = false, -- the settings window's stone texture under the logo's brown
+    stoneBackground = true, -- the settings window's stone texture under the logo's brown
 }
 ns.db = defaults -- NodeSightSparklesCharDB from login on
 ns.defaults = defaults
