@@ -1,4 +1,6 @@
--- NodeSight's settings: the main page plus Switch and Sparkles.
+-- NodeSight's page in the game's Options: a button that opens NodeSight's own settings
+-- window, or, where that window can't be used (the gamepad UI, or it failed to open),
+-- Blizzard's own rows for every setting.
 -- Sections: Settings panel.
 
 local ADDON_NAME, ns = ...
@@ -20,19 +22,19 @@ local function GamepadUI()
     return Enum.InputDeviceInterfaceType ~= nil and style == Enum.InputDeviceInterfaceType.Gamepad
 end
 
--- The sparkle window errored on opening in this version; a new version tries it again.
-local function WindowFailed()
+-- A window errored on opening in this version; a new version tries it again.
+local function Failed(key)
     local version = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version")
-    if ns.db.sparkleWindowFailed ~= version then ns.db.sparkleWindowFailed = nil end
-    return ns.db.sparkleWindowFailed ~= nil
+    if ns.db[key] ~= version then ns.db[key] = nil end
+    return ns.db[key] ~= nil
 end
 
--- The sparkle settings are a page of Blizzard's rows instead of the window.
-function ns.OptionsOnly() return GamepadUI() or WindowFailed() end
+-- Every setting is a row of Blizzard's in the options instead of the window.
+function ns.OptionsOnly() return GamepadUI() or Failed("sparkleWindowFailed") end
 
 -- Sparkles are on, but Enable Interact Key is off (1 is gamepad only), so objects get no plate.
 local function InteractOff()
-    if GamepadUI() or ns.SetupPending() then return false end
+    if GamepadUI() or ns.SetupPending() or ns.InteractPaused() then return false end
     local any = false
     for _, kind in ipairs(ns.KINDS) do any = any or ns.db[kind] == true end
     local value = tonumber(C_CVar.GetCVar("softTargetInteract"))
@@ -54,10 +56,11 @@ local function Off(value)
     return tostring(value)
 end
 
+local TOWN_TIP = "Turns the game's Interact Key off while you're in a town or inn, so it doesn't pick the NPCs there. Nothing sparkles in town then."
+
 local function RegisterSettings()
     -- Rows go to the current page; Page() starts a subpage.
     local main, layout = Settings.RegisterVerticalLayoutCategory("NodeSight")
-    ns.settingsCategory = main
     local category, pages = main, { [main] = true }
     local function Page(name)
         category, layout = Settings.RegisterVerticalLayoutSubcategory(main, name)
@@ -65,45 +68,29 @@ local function RegisterSettings()
     end
 
     -- A setting saved in NodeSightDB[key], with its change callback.
-    local registered = {}
     local function Register(key, name, onChange)
         local setting = Settings.RegisterAddOnSetting(category, "NodeSight_" .. key, key, ns.db,
             type(defaults[key]), name, defaults[key])
         setting:SetValueChangedCallback(onChange)
-        registered[key] = setting
         return setting
     end
 
     local function Checkbox(key, name, tooltip, onChange)
         local setting = Register(key, name, onChange)
-        return setting, Settings.CreateCheckbox(category, setting, tooltip)
+        Settings.CreateCheckbox(category, setting, tooltip)
+        return setting
     end
 
-    local function Header(text, tooltip)
+    local function Header(text)
         if CreateSettingsListSectionHeaderInitializer then
-            local row = CreateSettingsListSectionHeaderInitializer(text, tooltip)
-            layout:AddInitializer(row)
-            return row
+            layout:AddInitializer(CreateSettingsListSectionHeaderInitializer(text))
         end
-    end
-
-    -- Shown rows are worked out again only when the page is redrawn.
-    local function Redraw()
-        if SettingsInbound and SettingsInbound.RepairDisplay then pcall(SettingsInbound.RepairDisplay) end
-    end
-
-    -- A row indented under another, shown only while shown() says so, where the client can.
-    local function Indent(row, parent, shown)
-        if not row or not parent then return end
-        if type(row.SetParentInitializer) == "function" then row:SetParentInitializer(parent, shown) end
-        if type(row.AddShownPredicate) == "function" then row:AddShownPredicate(shown) end
     end
 
     local function Slider(key, name, minValue, maxValue, tooltip, onChange, step, label)
         local options = Settings.CreateSliderOptions(minValue, maxValue, step or 1)
         options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, label)
-        local setting = Register(key, name, onChange)
-        return setting, Settings.CreateSlider(category, setting, options, tooltip)
+        Settings.CreateSlider(category, Register(key, name, onChange), options, tooltip)
     end
 
     -- choices: the labels, in order.
@@ -113,7 +100,12 @@ local function RegisterSettings()
             for value, label in ipairs(choices) do container:Add(value, label) end
             return container:GetData()
         end
-        return Settings.CreateDropdown(category, Register(key, name, onChange), GetOptions, tooltip)
+        Settings.CreateDropdown(category, Register(key, name, onChange), GetOptions, tooltip)
+    end
+
+    -- Search tags off (false): addon code adding them taints the options' search.
+    local function Button(text, onClick, tooltip)
+        layout:AddInitializer(CreateSettingsButtonInitializer(text, "Open", onClick, tooltip, false))
     end
 
     -- What's New button, left of Blizzard's Defaults button and parented to it (so
@@ -158,125 +150,82 @@ local function RegisterSettings()
         end
     end
 
-    local findersTip = "Switches between Find Herbs and Find Minerals as you travel. You need both trained and one active to start."
-    -- Toggling the switch also ends a stop after failed switches; other settings keep it.
-    local finders = Checkbox("switchFinders", "Switch between herbs and ore", findersTip,
-        function() SwitchReset() UpdateSwitch() Redraw() end)
-    Checkbox("skillLine", "Required skill in tooltips",
-        "Shows the skill a herb or ore needs in its tooltip when your mouse is on it in the world, and on herb and ore items.",
-        function() end) -- (tooltips are built again each time they show)
-
-    Checkbox("popups", "Popups",
-        "NodeSight's popups: when Enable Interact Key is off, and when the game needs a restart after an update. "
-            .. "They wait until a fight is over. Off: none at all.",
-        function() end)
-    Checkbox("minimapButton", "Minimap button",
-        "NodeSight's button on the minimap: left click opens the sparkle settings, Shift left click these settings, right click turns all sparkles on or off, Shift right click switching between herbs and ore. Ctrl Shift left click hides it.",
-        function() ns.MinimapButtonChanged() end)
-
-    -- Saved on the character whichever settings are in use; they switch at the next reload.
-    local own = Settings.RegisterAddOnSetting(category, "NodeSight_own", "own", NodeSightCharDB, "boolean",
-        "Settings for this character only", true)
-    own:SetValueChangedCallback(function() ns.AskReload() end)
-    Settings.CreateCheckbox(category, own,
-        "This character keeps its own NodeSight settings. Untick it to use the settings your other characters share. It offers a reload to switch.")
-
-
-    Page("Switch")
-    local findersRow = Settings.CreateCheckbox(category, finders, findersTip) -- the same setting as on NodeSight's own page
-    -- The rest of the page shows once Switch is on.
-    local function SwitchOn() return ns.db.switchFinders end
-    local function UnderSwitch(row) Indent(row, findersRow, SwitchOn) end
-    UnderSwitch(Header("When"))
-    -- The measure's change restarts the way and redraws the page, so only its slider shows.
-    local measure = Dropdown("switchMeasure", "Measure distance in", ns.SWITCH_MEASURES,
-        "How the distance between switches is measured: percent of what your minimap shows (it changes with the zoom), yards, or seconds on the move.",
-        function()
-            ns.SwitchMeasureChanged()
-            UpdateSwitch()
-            if SettingsInbound and SettingsInbound.RepairDisplay then pcall(SettingsInbound.RepairDisplay) end
-        end)
-    if measure and type(measure.AddShownPredicate) == "function" then measure:AddShownPredicate(SwitchOn) end
-    -- A distance slider goes under the measure and shows only at its value, where the client can.
-    local function Under(slider, value)
-        if not slider then return end
-        local function Chosen() return ns.db.switchMeasure == value end
-        if measure and type(slider.SetParentInitializer) == "function" then
-            slider:SetParentInitializer(measure, Chosen)
-        end
-        if type(slider.AddShownPredicate) == "function" then
-            slider:AddShownPredicate(Chosen)
-            slider:AddShownPredicate(SwitchOn)
-        end
+    if not ns.OptionsOnly() then
+        -- Everything is in NodeSight's window.
+        Button("NodeSight settings", ns.ShowSettingsWindow, "All of NodeSight's settings, the sparkles' too.")
+        return Settings.RegisterAddOnCategory(main)
     end
-    local percent, percentSlider = Slider("switchPercent", "Distance between switches", 20, 100,
-        "How far you go between switches, in percent of what your minimap shows: farther when zoomed out or outdoors. The default is " .. defaults.switchPercent .. " %.",
-        UpdateSwitch, 5, Percent)
-    Under(percentSlider, 1)
-    local yards, seconds = ns.SWITCH_RANGES.switchDistanceYards, ns.SWITCH_RANGES.switchSeconds
-    local _, yardsSlider = Slider("switchDistanceYards", "Distance between switches (yards)", yards[1], yards[2],
-        "How far you go between switches, in yards. The default is " .. defaults.switchDistanceYards .. ".",
-        UpdateSwitch, yards[3])
-    Under(yardsSlider, 2)
-    local _, secondsSlider = Slider("switchSeconds", "Time between switches (seconds)", seconds[1], seconds[2],
-        "How long you move between switches, in seconds. Time standing still doesn't count. The default is " .. defaults.switchSeconds .. ".",
-        UpdateSwitch, seconds[3])
-    Under(secondsSlider, 3)
-    -- The yards in its label follow the minimap's zoom while the settings are open.
-    if percentSlider then percentSlider.reinitializeOnValueChanged = true end
-    local zoom = CreateFrame("Frame")
-    zoom:RegisterEvent("MINIMAP_UPDATE_ZOOM")
-    zoom:SetScript("OnEvent", function()
-        if SettingsPanel and SettingsPanel:IsShown() then percent:NotifyUpdate() end
-    end)
-    UnderSwitch(select(2, Checkbox("switchMounted", "Only while mounted",
-        "Switches only while you ride a mount. Travel Form and Ghost Wolf don't count.",
-        UpdateSwitch)))
-    UnderSwitch(Header("Pauses"))
-    UnderSwitch(select(2, Checkbox("switchPauseBusy", "Pause while casting, looting or with a spell or item on the cursor",
-        "Switching pauses while you cast, gather or loot, and while a spell waits for a target or something is on your cursor.",
-        UpdateSwitch)))
-    UnderSwitch(select(2, Slider("switchEnemyYards", "Pause with an enemy targeted within about (yards)", 0, 60,
-        "Switching pauses while you target a living enemy this close, and for a second after you mouse over one. Distances are rough: the game doesn't give exact ones.",
-        UpdateSwitch, 1, Off)))
-    UnderSwitch(select(2, Checkbox("switchPauseStealth", "Pause while stealthed",
-        "Switching pauses while you're stealthed.",
-        UpdateSwitch)))
-    UnderSwitch(select(2, Slider("switchAfterCast", "Pause after your own spells (seconds)", 0, 10,
-        "Switching pauses this long after your own spells end, and after you dismount, so the switch's global cooldown doesn't get in your way.",
-        UpdateSwitch, 1, Off)))
-    UnderSwitch(Header("Where"))
-    UnderSwitch(select(2, Checkbox("switchWorld", "Switch in the open world",
-        "Switches while you're in the open world.",
-        UpdateSwitch)))
-    UnderSwitch(select(2, Checkbox("switchDungeons", "Switch in dungeons",
-        "Switches while you're in a dungeon.",
-        UpdateSwitch)))
-    UnderSwitch(select(2, Checkbox("switchRaids", "Switch in raids",
-        "Switches while you're in a raid.",
-        UpdateSwitch)))
-    UnderSwitch(select(2, Checkbox("switchBattlegrounds", "Switch in battlegrounds",
-        "Switches while you're in a battleground.",
-        UpdateSwitch)))
-    if CreateSettingsListSectionHeaderInitializer then
-        layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Thanks to tester617 for the Switch page"))
-    end
+    do
+        -- Blizzard's rows. Every row always shows: rows hidden or indented from addon code
+        -- would taint the options list (its dropdowns are then blocked in combat).
+        local findersTip = "Switches between Find Herbs and Find Minerals as you travel. You need both trained and one active to start."
+        -- Toggling the switch also ends a stop after failed switches; other settings keep it.
+        local finders = Checkbox("switchFinders", "Switch between herbs and ore", findersTip,
+            function() SwitchReset() UpdateSwitch() end)
+        Checkbox("skillLine", "Required skill in tooltips",
+            "Shows the skill a herb or ore needs in its tooltip when your mouse is on it in the world, and on herb and ore items.",
+            function() end) -- (tooltips are built again each time they show)
+        Checkbox("popups", "Popups",
+            "NodeSight's popups: when Enable Interact Key is off, and when the game needs a restart after an update. "
+                .. "They wait until a fight is over. Off: none at all.",
+            function() end)
+        Checkbox("minimapButton", "Minimap button",
+            "NodeSight's button on the minimap: left click opens the sparkle window, right click turns all sparkles on or off, Shift right click the Herb/Ore Switch. Shift left click says where these settings are.",
+            function() ns.MinimapButtonChanged() end)
+        -- Saved on the character whichever settings are in use; they switch at the next reload.
+        local own = Settings.RegisterAddOnSetting(category, "NodeSight_own", "own", NodeSightCharDB, "boolean",
+            "Settings for this character only", true)
+        own:SetValueChangedCallback(function() ns.AskReload() end)
+        Settings.CreateCheckbox(category, own,
+            "This character keeps its own NodeSight settings. Untick it to use the settings your other characters share. It offers a reload to switch.")
+        local town = Checkbox("townInteractOff", "Interact Key off in towns (Beta)", TOWN_TIP, function() ns.Setup() end)
 
-    -- The sparkles' settings are all in their own window (this page's button opens it).
-    -- A controller can't reach that window, and its color picker and menus would run
-    -- Blizzard's gamepad code tainted, so with the gamepad UI on the page has
-    -- Blizzard's own rows for the basics instead (until a reload, if it's switched).
-    -- The same if the window failed to open.
-    Page("Sparkles")
-    local sparklesPage = category
-    ns.sparklesCategory = sparklesPage
-    if GamepadUI() or WindowFailed() then
+        Page("Herb/Ore Switch")
+        Settings.CreateCheckbox(category, finders, findersTip) -- the same setting as on NodeSight's own page
+        Header("When")
+        Dropdown("switchMeasure", "Measure distance in", ns.SWITCH_MEASURES,
+            "How the distance between switches is measured: percent of what your minimap shows (it changes with the zoom), yards, or seconds on the move. Only the matching distance below is used.",
+            function() ns.SwitchMeasureChanged() UpdateSwitch() end)
+        Slider("switchPercent", "Distance between switches", 20, 100,
+            "With % of the minimap: how far you go between switches, in percent of what your minimap shows. The default is " .. defaults.switchPercent .. " %.",
+            UpdateSwitch, 5, Percent)
+        local yards, seconds = ns.SWITCH_RANGES.switchDistanceYards, ns.SWITCH_RANGES.switchSeconds
+        Slider("switchDistanceYards", "Distance between switches (yards)", yards[1], yards[2],
+            "With Yards: how far you go between switches. The default is " .. defaults.switchDistanceYards .. ".",
+            UpdateSwitch, yards[3])
+        Slider("switchSeconds", "Time between switches (seconds)", seconds[1], seconds[2],
+            "With Seconds: how long you move between switches. Time standing still doesn't count. The default is " .. defaults.switchSeconds .. ".",
+            UpdateSwitch, seconds[3])
+        Checkbox("switchMounted", "Only while mounted",
+            "Switches only while you ride a mount. Travel Form and Ghost Wolf don't count.", UpdateSwitch)
+        Header("Pauses")
+        Checkbox("switchPauseBusy", "Pause while casting, looting or with a spell or item on the cursor",
+            "Switching pauses while you cast, gather or loot, and while a spell waits for a target or something is on your cursor.",
+            UpdateSwitch)
+        Slider("switchEnemyYards", "Pause with an enemy targeted within about (yards)", 0, 60,
+            "Switching pauses while you target a living enemy this close, and for a second after you mouse over one. Distances are rough: the game doesn't give exact ones.",
+            UpdateSwitch, 1, Off)
+        Checkbox("switchPauseStealth", "Pause while stealthed", "Switching pauses while you're stealthed.", UpdateSwitch)
+        Slider("switchAfterCast", "Pause after your own spells (seconds)", 0, 10,
+            "Switching pauses this long after your own spells end, and after you dismount, so the switch's global cooldown doesn't get in your way.",
+            UpdateSwitch, 1, Off)
+        Header("Where")
+        Checkbox("switchWorld", "Switch in the open world", "Switches while you're in the open world.", UpdateSwitch)
+        Checkbox("switchDungeons", "Switch in dungeons", "Switches while you're in a dungeon.", UpdateSwitch)
+        Checkbox("switchRaids", "Switch in raids", "Switches while you're in a raid.", UpdateSwitch)
+        Checkbox("switchBattlegrounds", "Switch in battlegrounds", "Switches while you're in a battleground.", UpdateSwitch)
+        Header("Thanks to tester617 for the Switch page")
+
+        -- The sparkles' basics. A controller can't reach the window, and its color picker and
+        -- menus would run Blizzard's gamepad code tainted.
+        Page("Sparkles")
         local function SparklesChanged() ns.UpdateAll() ns.Setup() end
         local function LookChanged() ns.UpdateAll() end
         for _, tab in ipairs(ns.SPARKLE_TABS) do
             if tab.on then Checkbox(tab.key, tab.on, tab.tip .. ns.SPARKLE_NEEDS, SparklesChanged) end
         end
         Checkbox("gameIcons", "Keep the game's icons", "Keeps the game's own icon over things you can interact with.", SparklesChanged)
+        Settings.CreateCheckbox(category, town, TOWN_TIP) -- the same setting as on the main page
         Slider("brightness", "Brightness", 10, 100, "How bright the sparkles are.", LookChanged)
         Checkbox("reachLook", "Dimmer out of reach", "Dimmer when it's too far to gather. Flashes when you get in range.", LookChanged)
         Checkbox("combatHide", "Hide in combat", "No sparkles while you're in combat.", LookChanged)
@@ -290,10 +239,6 @@ local function RegisterSettings()
         local finishes = {}
         for i, finish in ipairs(ns.HARVESTS) do finishes[i] = finish.name end
         Dropdown("harvest", "When gathered", finishes, "What the sparkles do when you loot it.", LookChanged)
-    else
-        -- Search tags off (false): addon code adding them taints the options' search.
-        layout:AddInitializer(CreateSettingsButtonInitializer("Sparkle window", "Open", ns.ShowSparkleWindow,
-            "All the sparkle settings, with a preview.", false))
     end
 
     Settings.RegisterAddOnCategory(main)

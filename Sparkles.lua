@@ -15,7 +15,7 @@ local sin, cos, floor, max, min, abs, pi = math.sin, math.cos, math.floor, math.
 
 -- Any sparkles on? Only then does the addon touch interact settings or plates.
 local function SparklesOn()
-    return ns.db.herbs or ns.db.ore or ns.db.chests or ns.db.quests or ns.db.others or ns.db.bobber or ns.db.skinning
+    return ns.db.herbs or ns.db.ore or ns.db.chests or ns.db.quests or ns.db.others or ns.db.bobber or ns.db.skinning or ns.db.loot
 end
 
 -- The gathering nodes' sparkle (world/skillactivated/tradeskillnodes/sparkle.blp).
@@ -72,11 +72,11 @@ local known = {} -- plate: what its object's icon said it was
 ---------------------------------------------------------------------------
 -- Herbs' keys have no prefix.
 
-local KINDS = { "herbs", "ore", "chests", "quests", "others", "bobber", "skinning" }
+local KINDS = { "herbs", "ore", "chests", "quests", "others", "bobber", "skinning", "loot" }
 local KEYS = {
     herbs = { style = "herbStyle", color = "sparkleColor", color2 = "sparkleColor2", size = "size", height = "height", count = "count" },
 }
-for _, kind in ipairs({ "ore", "chests", "quests", "others", "bobber", "skinning" }) do
+for _, kind in ipairs({ "ore", "chests", "quests", "others", "bobber", "skinning", "loot" }) do
     KEYS[kind] = { style = kind .. "Style", color = kind .. "Color", color2 = kind .. "Color2", size = kind .. "Size", height = kind .. "Height",
         count = kind .. "Count" }
 end
@@ -122,7 +122,7 @@ local function CarryOverLooks(db)
         local saved = db[KEYS.herbs[what]]
         if saved ~= nil then
             for kind, keys in pairs(KEYS) do
-                if kind ~= "herbs" and db[keys[what]] == nil and not ((kind == "bobber" or kind == "skinning") and what == "height") then db[keys[what]] = saved end
+                if kind ~= "herbs" and db[keys[what]] == nil and not ((kind == "bobber" or kind == "skinning" or kind == "loot") and what == "height") then db[keys[what]] = saved end
             end
         end
     end
@@ -139,14 +139,16 @@ local function HasName(name, a, b)
     return name:find(a, 1, true) ~= nil or (b ~= nil and name:find(b, 1, true) ~= nil)
 end
 
--- "herbs", "ore", "skinning", "quests", "others", or "plain" (never sparkles: guild
--- vault, mailbox, chairs, doors). A hidden icon counts as "others".
+-- "herbs", "ore", "skinning", "loot" (the loot cursor: a corpse to loot, or a chest),
+-- "quests", "others", or "plain" (never sparkles: guild vault, mailbox, chairs, doors).
+-- A hidden icon counts as "others".
 local function Kind(icon)
     if not icon:IsShown() then return "others" end
     local texture, atlas = icon:GetTexture(), icon:GetAtlas()
     if HasName(texture, "herb") or HasName(atlas, "herb") then return "herbs" end
     if HasName(texture, "mine", "mining") or HasName(atlas, "mine", "mining") then return "ore" end
     if HasName(texture, "skin") or HasName(atlas, "skin") then return "skinning" end
+    if HasName(texture, "loot") or HasName(atlas, "loot") then return "loot" end
     if HasName(texture, "buy") or HasName(atlas, "buy") then return "plain" end
     if HasName(texture, "mail") or HasName(atlas, "mail") then return "plain" end
     if HasName(texture, "questinteract") or HasName(atlas, "questinteract") then return "quests" end
@@ -951,7 +953,7 @@ local function Toward(value, goal, step)
 end
 
 local function UpdateReach(frame, elapsed)
-    local near = InReach(frame.unit)
+    local near = not frame.far and InReach(frame.unit)
     if near ~= frame.near then
         frame.held = frame.held + elapsed
         if frame.held >= REACH_HOLD then
@@ -1130,7 +1132,8 @@ end)
 ---------------------------------------------------------------------------
 
 -- Puts the sparkle area on a plate and shows the kind's style. over: a preview
--- (on any frame), with a look to show instead of the saved one (style, size, height, count).
+-- (on any frame), with a look to show instead of the saved one (style, size, height, count),
+-- and an example of a setting: rare (the gold glow), far (out of reach), tooHard (gray).
 local function ShowSparkles(namePlate, kind, unit, over)
     local frames = over and previews or sparkles
     local frame = frames[namePlate]
@@ -1153,7 +1156,8 @@ local function ShowSparkles(namePlate, kind, unit, over)
     local name = not over and unit and UnitName(unit)
     if issecretvalue(name) or type(name) ~= "string" then name = nil end
     frame.name = name
-    frame.rare = name and ns.db.rareGlow and RARE[ns.NodeKey(name)] or nil
+    frame.rare = over and over.rare or name and ns.db.rareGlow and RARE[ns.NodeKey(name)] or nil
+    frame.far = over and over.far or nil
     frame.lower = over and over.lower or name and LOWER[ns.NodeKey(name)] or nil
     if fresh and name and ns.db.sparkleSound then
         local now = GetTime()
@@ -1175,7 +1179,7 @@ local function ShowSparkles(namePlate, kind, unit, over)
     local style = STYLES[FrameLook(frame, "style")] or STYLES[1]
     local color, color2 = Colors(kind)
     if over and over.color then color, color2 = over.color, over.color2 or over.color end
-    if name and ns.db.grayTooHard and (kind == "herbs" or kind == "ore") and ns.TooHard(name, kind) then
+    if over and over.tooHard or name and ns.db.grayTooHard and (kind == "herbs" or kind == "ore") and ns.TooHard(name, kind) then
         color, color2 = TOO_HARD_GRAY, TOO_HARD_GRAY
     end
     local count = FrameLook(frame, "count")
@@ -1457,6 +1461,7 @@ end)
 -- Weed has no herb icon) and quest objects.
 local function SparkleKind(unit, icon)
     local kind, read = ObjectKind(unit, icon)
+    if kind == "loot" then kind = "others" end -- (an object to loot: a chest is told by its name)
     if kind == "plain" or kind == "others" then
         if ns.db.bobber and IsBobber(unit) then return "bobber" end
         local name = UnitName(unit)
@@ -1490,9 +1495,10 @@ local function Corpse(unit)
     return not issecretvalue(player) and not player
 end
 
--- A corpse sparkles only with the skinning icon: a corpse still to loot has the game's own loot sparkle.
+-- A corpse sparkles with the loot icon (still to loot) or the skinning icon (looted, to skin).
 local function CorpseKind(unit, icon)
-    return ObjectKind(unit, icon) == "skinning" and "skinning" or "plain"
+    local kind = ObjectKind(unit, icon)
+    return (kind == "skinning" or kind == "loot") and kind or "plain"
 end
 
 -- A friendly NPC's plate that shows only because it is your interact target.
@@ -1520,8 +1526,9 @@ local function Update(unit)
     local unitFrame = namePlate and namePlate.UnitFrame
     if not unitFrame then return end -- forbidden (friendly in instances) or gone
     local object = UnitIsGameObject(unit)
-    local corpse = not object and ns.db.skinning and Corpse(unit)
-    if not object and not corpse and ns.db.skinning and (extra[namePlate] or InteractOnly(unit)) then
+    local corpses = ns.db.skinning or ns.db.loot
+    local corpse = not object and corpses and Corpse(unit)
+    if not object and not corpse and corpses and (extra[namePlate] or InteractOnly(unit)) then
         extra[namePlate] = true
         if hidden[unitFrame] then SetHidden(unitFrame, false) end
         SetBare(unitFrame, true)
@@ -1592,7 +1599,7 @@ end)
 local RANGE = 30 -- yards (default 10)
 
 local WANTED = {
-    { "softTargetInteract", "3" },
+    { "softTargetInteract", "3", town = true },
     { "SoftTargetIconGameObject", "1" },
     { "SoftTargetInteractArc", "2" }, -- anywhere around you, not only in front
     { "SoftTargetInteractRange", tostring(RANGE) },
@@ -1606,7 +1613,18 @@ local pendingSetup -- a change is waiting for combat to end
 local corpseShown -- the plates setting is on for the corpse you target
 
 local function CorpseTargeted()
-    return Mine("skinning") and UnitExists("softinteract") and Corpse("softinteract") or false
+    return (Mine("skinning") or Mine("loot")) and UnitExists("softinteract") and Corpse("softinteract") or false
+end
+
+-- Interact Key off in towns: there the game would pick NPCs you can talk to rather than objects.
+local function InTown() return ns.db.townInteractOff == true and (IsResting() == true or ns.InTownArea()) end
+local townShown -- the Interact Key is off for a town
+local TOWN_EVENTS = { PLAYER_UPDATE_RESTING = true, ZONE_CHANGED = true, ZONE_CHANGED_INDOORS = true, ZONE_CHANGED_NEW_AREA = true }
+
+-- Your own value without the keyboard part (1 is gamepad only), so a controller still talks to NPCs.
+local function TownValue(own)
+    local value = tonumber(own) or 0
+    return value % 2 == 1 and "1" or "0"
 end
 
 -- CVars can come back reformatted ("30.000000" for 30).
@@ -1624,9 +1642,11 @@ end
 -- Sets each needed CVar, saving the old value.
 local function ApplySetup()
     corpseShown = CorpseTargeted()
+    townShown = InTown()
     for _, entry in ipairs(WANTED) do
         local cvar, value = entry[1], entry[2]
         local old = C_CVar.GetCVar(cvar)
+        if entry.town and townShown then value = TownValue(ns.db.saved[cvar] or old) end
         if entry.npcIcon and ns.db.gameIcons or entry.corpse and not corpseShown then
             PutBack(cvar)
         elseif old ~= nil and not Same(old, value) then
@@ -1656,10 +1676,15 @@ local function Setup()
     if SparklesOn() then ApplySetup() else RestoreSetup() end
 end
 
--- A corpse becoming the interact target, or no longer being it.
+-- A corpse becoming the interact target, or no longer being it; towns.
 local corpseWatch = CreateFrame("Frame")
 corpseWatch:RegisterEvent("PLAYER_SOFT_INTERACT_CHANGED")
-corpseWatch:SetScript("OnEvent", function()
+for event in pairs(TOWN_EVENTS) do corpseWatch:RegisterEvent(event) end
+corpseWatch:SetScript("OnEvent", function(_, event)
+    if TOWN_EVENTS[event] then
+        if InTown() ~= (townShown or false) then Setup() end
+        return
+    end
     if CorpseTargeted() ~= corpseShown then Setup() end
 end)
 
@@ -1677,3 +1702,5 @@ ns.KINDS, ns.SPARKLE_KEYS, ns.SPARKLE_STYLES, ns.StyleFits = KINDS, KEYS, STYLES
 ns.CarryOverLooks, ns.SparkleLook, ns.SparkleRGB, ns.SparkleColors, ns.SPARKLE_LOWER = CarryOverLooks, Look, RGB, Colors, LOWER
 -- Is a Setup waiting for the end of combat?
 function ns.SetupPending() return pendingSetup end
+-- Is the Interact Key off because you're in town (Interact Key off in towns)?
+ns.InteractPaused = InTown

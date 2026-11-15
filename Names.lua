@@ -1,7 +1,7 @@
 -- Name lists: the kind of node from its name (English, and for other clients the
 -- names in Locales), which objects are chests, and the skill each herb and ore needs.
 --
--- In order: NodeKind, TooHard, NodeSkill, SkillLevel, HasProfession.
+-- In order: NodeKind, TooHard, NodeSkill, SkillLevel, HasProfession, towns.
 
 local _, ns = ...
 
@@ -180,7 +180,34 @@ local function HasProfession(kind)
     return has[kind] ~= false
 end
 
+-- Towns and camps (the game marks none as a town, and only an inn is a rest area there).
+-- Forever's area IDs: Alliance, Horde, neutral, Zephras Isle's villages.
+local TOWN_AREAS = {
+    87, 24, 108, 69, 42, 144, 150, 271, 320, 348, 1438, 131, 77, 186, 442, 415, 467, 608, 489, 1116, 513, 1998, 2418, 3197, 99,
+    362, 380, 378, 222, 159, 228, 272, 321, 340, 117, 75, 431, 2897, 460, 484, 2408, 1099, 3317, 496, 367, 221, 154, 1997,
+    35, 392, 976, 2255, 3425, 541, 1446, 2268, 977, 2479,
+    16624, 16635, 16636, 16638,
+}
+local townNames -- this client's names for them (some end in a space)
+
+local function Trim(text) return (text:match("^%s*(.-)%s*$")) end
+
+-- Are you in one of those towns (by the sub-zone's name)?
+local function InTownArea()
+    local sub = GetSubZoneText()
+    if issecretvalue(sub) or not sub then return false end
+    if not townNames then
+        townNames = {}
+        for _, id in ipairs(TOWN_AREAS) do
+            local name = C_Map.GetAreaInfo(id)
+            if name then townNames[Trim(name)] = true end
+        end
+    end
+    return townNames[Trim(sub)] == true
+end
+
 -- Used by the other files.
+ns.InTownArea = InTownArea
 ns.HasProfession, ns.hasProfession = HasProfession, has
 ns.Plain, ns.NodeKind, ns.NodeKey = Plain, NodeKind, Key
 ns.skills, ns.professions, ns.TooHard, ns.SkillLevel, ns.NodeSkill = skills, professions, TooHard, SkillLevel, NodeSkill

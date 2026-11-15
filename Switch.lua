@@ -135,6 +135,7 @@ local function Allowed()
     if issecretvalue(area) or not AREAS[area] or not db[AREAS[area]] then return false end
     return not db.switchMounted or IsSet(IsMounted())
 end
+ns.SwitchAllowed = Allowed
 
 -- An enemy: attackable, alive, hostile or neutral (no reaction counts too), not a critter.
 -- A secret counts as enemy for its point. Second result: true only for a readable yes from

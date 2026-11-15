@@ -36,6 +36,7 @@ local defaults = {
     others = false, -- sparkles on other objects
     bobber = false, -- sparkles on your fishing bobber
     skinning = false, -- sparkles on corpses you can skin
+    loot = false, -- sparkles on corpses that still have loot
     gameIcons = false, -- keep the game's interact icons while sparkles are on
     skillLine = true, -- "Requires Herbalism (15)" in herb and ore tooltips
     popups = true, -- NodeSight's popups (ns.AfterFight)
@@ -61,6 +62,7 @@ local defaults = {
     othersStyle = 1, othersColor = "ffffffff", othersSize = 100, othersHeight = -60, othersCount = 9,
     bobberStyle = 6, bobberColor = "ffffffff", bobberSize = 100, bobberHeight = 0, bobberCount = 9,
     skinningStyle = 1, skinningColor = "ffffffff", skinningSize = 100, skinningHeight = -115, skinningCount = 9,
+    lootStyle = 1, lootColor = "ffffffff", lootSize = 100, lootHeight = -115, lootCount = 9,
     brightness = 100, -- sparkle alpha, in percent
     reachLook = false, -- dimmer out of reach, a flash in reach
     combatHide = false, -- no sparkles in combat
@@ -72,6 +74,8 @@ local defaults = {
     rareGlow = false, -- a gold glow around rare herbs and ore
     harvest = 5, -- how a gathered node finishes (Sparkles.lua's HARVESTS: Fade away)
     minimapButton = true, -- the minimap button (its place: minimapIcon, LibDBIcon's)
+    townInteractOff = false, -- Interact Key off while resting in a town or inn
+    stoneBackground = false, -- the settings window's stone texture under the logo's brown
 }
 local db = defaults -- NodeSightDB once it's loaded
 ns.db = db -- shared with the other files
@@ -200,7 +204,18 @@ local function OnItemTooltip(tooltip, data)
     local kind = NodeKind(node)
     local level, need = SkillLevel(node, kind)
     if not level or not professions[kind] then return end
-    tooltip:AddLine(GATHERED:format(professions[kind], need), SkillColor(level):GetRGB())
+    local text, color = GATHERED:format(professions[kind], need), SkillColor(level)
+    -- Under the game's "Crafting Reagent" line, as its second line: other addons' lines
+    -- (prices) come before this post-call.
+    for i = 2, tooltip:NumLines() do
+        local left = tooltip:GetLeftLine(i)
+        local line = left and left:GetText()
+        if not issecretvalue(line) and line == PROFESSIONS_USED_IN_COOKING then
+            left:SetText(line .. "\n" .. color:WrapTextInColorCode(text))
+            return
+        end
+    end
+    tooltip:AddLine(text, color:GetRGB())
 end
 
 local function OnObjectTooltip(tooltip, data)
@@ -378,7 +393,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
             events:UnregisterEvent("ADDON_LOADED")
             -- After an update, a /reload only loads the files the old .toc listed:
             -- stay off until the game is restarted.
-            if not (ns.Plain and ns.Mute and ns.Setup and ns.ShowSparkleWindow and ns.ShowWhatsNew and ns.MinimapButton and ns.RegisterSettings) then
+            if not (ns.Plain and ns.Mute and ns.Setup and ns.ShowSparkleWindow and ns.ShowWhatsNew and ns.ShowSettingsWindow and ns.MinimapButton and ns.RegisterSettings) then
                 events:UnregisterAllEvents()
                 if ns.ShowNotice then
                     pcall(ns.ShowNotice, "NodeSight needs a game restart", "NodeSight was updated while the game was running, "
