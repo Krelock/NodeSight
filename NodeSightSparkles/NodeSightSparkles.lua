@@ -27,7 +27,8 @@ local defaults = {
     quests = false, -- sparkles on quest objects
     others = false, -- sparkles on other objects
     bobber = true, -- Beta: sparkles on your fishing bobber
-    skinning = false, -- Beta: sparkles on corpses you can skin
+    skinning = false, -- sparkles on corpses you can skin
+    loot = false, -- sparkles on corpses that still have loot
     gameIcons = false, -- keep the game's interact icons while sparkles are on
     -- Each kind's sparkles (Sparkles.lua's KEYS): style (Sparkles.lua's STYLES),
     -- tint "aarrggbb" (white = none), area size, offset from the plate's bottom,
@@ -39,6 +40,7 @@ local defaults = {
     othersStyle = 1, othersColor = "ffffffff", othersSize = 100, othersHeight = -60, othersCount = 9,
     bobberStyle = 6, bobberColor = "ffffffff", bobberSize = 100, bobberHeight = 0, bobberCount = 9,
     skinningStyle = 1, skinningColor = "ffffffff", skinningSize = 100, skinningHeight = -115, skinningCount = 9,
+    lootStyle = 1, lootColor = "ffffffff", lootSize = 100, lootHeight = -115, lootCount = 9,
     brightness = 100, -- sparkle alpha, in percent
     reachLook = false, -- dimmer out of reach, a flash in reach
     combatHide = false, -- no sparkles in combat
@@ -51,6 +53,8 @@ local defaults = {
     rareGlow = false, -- a gold glow around rare herbs and ore
     harvest = 5, -- how a gathered node finishes (Sparkles.lua's HARVESTS: Fade away)
     minimapButton = true, -- the minimap button (its place: minimapIcon, LibDBIcon's)
+    townInteractOff = false, -- Interact Key off while resting in a town or inn
+    stoneBackground = false, -- the settings window's stone texture under the logo's brown
 }
 ns.db = defaults -- NodeSightSparklesCharDB from login on
 ns.defaults = defaults

@@ -21,7 +21,7 @@ end
 -- Sparkles are on, but Enable Interact Key is off (1 is gamepad only), so objects get no plate.
 -- The gamepad UI sets it to 1 or 0 itself on every target change, and 1 works with a controller.
 local function InteractOff()
-    if GamepadUI() or ns.SetupPending() then return false end
+    if GamepadUI() or ns.SetupPending() or ns.InteractPaused() then return false end
     local any = false
     for _, kind in ipairs(ns.KINDS) do any = any or ns.db[kind] == true end
     local value = tonumber(C_CVar.GetCVar("softTargetInteract"))
@@ -35,7 +35,6 @@ ns.INTERACT_OFF = ("Sparkles need %s (%s > %s)."):format(ENABLE_INTERACT_TEXT, S
 -- nodeSightOn: NodeSight is loaded and this addon stays off, so the page only says so.
 local function RegisterSettings(nodeSightOn)
     local category, layout = Settings.RegisterVerticalLayoutCategory("NodeSight Sparkles")
-    ns.settingsCategory = category
     if nodeSightOn then
         layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("Off while NodeSight is on (it has the same sparkles)"))
         Settings.RegisterAddOnCategory(category)
@@ -81,6 +80,7 @@ local function RegisterSettings(nodeSightOn)
             if tab.on then Checkbox(tab.key, tab.on, tab.tip .. ns.SPARKLE_NEEDS, SparklesChanged) end
         end
         Checkbox("gameIcons", "Keep the game's icons", "Keeps the game's own icon over things you can interact with.", SparklesChanged)
+        Checkbox("townInteractOff", "Interact Key off in towns (Beta)", "Turns the game's Interact Key off while you're in a town or inn, so it doesn't pick the NPCs there. Nothing sparkles in town then.", SparklesChanged)
         Slider("brightness", "Brightness", 10, 100, "How bright the sparkles are.", LookChanged)
         Checkbox("reachLook", "Dimmer out of reach", "Dimmer when it's too far to gather. Flashes when you get in range.", LookChanged)
         Checkbox("combatHide", "Hide in combat", "No sparkles while you're in combat.", LookChanged)
