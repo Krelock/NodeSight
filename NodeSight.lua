@@ -75,7 +75,7 @@ local defaults = {
     harvest = 5, -- how a gathered node finishes (Sparkles.lua's HARVESTS: Fade away)
     minimapButton = true, -- the minimap button (its place: minimapIcon, LibDBIcon's)
     townInteractOff = false, -- Interact Key off while resting in a town or inn
-    stoneBackground = false, -- the settings window's stone texture under the logo's brown
+    stoneBackground = true, -- the settings window's stone texture under the logo's brown
 }
 local db = defaults -- NodeSightDB once it's loaded
 ns.db = db -- shared with the other files
@@ -339,6 +339,11 @@ local function OnAddonLoaded()
     if firstInstall then NodeSightDB.notesSeen = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") end
     NavBack(settings)
     ns.CarryOverLooks(settings)
+    -- Stone background on once for settings saved while it was off by default (stoneOn: done).
+    if settings.stoneOn == nil then
+        settings.stoneOn = true
+        if settings.stoneBackground == false then settings.stoneBackground = true end
+    end
     for key, value in pairs(defaults) do
         if settings[key] == nil then settings[key] = value end
     end
