@@ -49,6 +49,7 @@ local defaults = {
     gatherDim = true, -- sparkles fade back while you gather the node
     grayTooHard = false, -- gray sparkles on herbs and ore above your skill
     myProfessions = true, -- herb, ore and skinning sparkles only with Herbalism, Mining or Skinning
+    cultivation = false, -- Cultivation's icon over a herb you can cultivate (Tauren)
     popups = true, -- the Enable Interact Key popup
     rareGlow = false, -- a gold glow around rare herbs and ore
     harvest = 5, -- how a gathered node finishes (Sparkles.lua's HARVESTS: Fade away)
@@ -158,7 +159,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
             events:UnregisterEvent("ADDON_LOADED")
             -- After an update, a /reload only loads the files the old .toc listed:
             -- stay off until the game is restarted.
-            if not (ns.TooHard and ns.Setup and ns.ShowSparkleWindow and ns.MinimapButton and ns.RegisterSettings) then
+            if not (ns.TooHard and ns.Setup and ns.CanCultivate and ns.ShowSparkleWindow and ns.MinimapButton and ns.RegisterSettings) then
                 events:UnregisterAllEvents()
                 return
             end

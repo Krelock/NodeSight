@@ -71,8 +71,8 @@ local SETS = {
 
 -- Settings for all sparkles (the General tab), saved under these keys.
 local GENERAL = { gameIcons = true, brightness = true, reachLook = true, combatHide = true, instanceHide = true,
-    harvest = true, grayTooHard = true, myProfessions = true, rareGlow = true, sparkleSound = true, gatherDim = true,
-    minimapButton = true, townInteractOff = true, stoneBackground = true }
+    harvest = true, grayTooHard = true, myProfessions = true, cultivation = true, rareGlow = true, sparkleSound = true,
+    gatherDim = true, minimapButton = true, townInteractOff = true, stoneBackground = true }
 
 -- The list's sparkle entries: each kind (its name, what it sparkles on and its icon), then the settings.
 local TABS = {
@@ -99,7 +99,7 @@ local GAME_ICONS = { herbs = "Crosshair_GatherHerbs_64", ore = "Crosshair_Mine_6
     quests = "Crosshair_questinteract_64", others = "Crosshair_interact_64", bobber = "Crosshair_interact_64",
     skinning = "Crosshair_Skin_64", loot = "Crosshair_lootall_64" }
 -- Added to the on/off box's tooltip.
-local NEEDS = " Sparkles turn on the game's Interact Key. Turn them all off and your settings go back."
+local NEEDS = " Sparkles turn on the game's Interact Key. Turn them all off (and the Cultivation icon) and your settings go back."
 
 local window -- made the first time it opens
 
@@ -165,7 +165,8 @@ local function Set(what, value)
     if GENERAL[what] then
         ns.db[what] = value
         Changed()
-        if what == "gameIcons" or what == "townInteractOff" then ns.Setup() end
+        if what == "gameIcons" or what == "townInteractOff" or what == "cultivation" then ns.Setup() end
+        if what == "cultivation" then ns.CultivationRefresh() end
         if what == "minimapButton" and ns.MinimapButtonChanged then ns.MinimapButtonChanged() end
         if value and EXAMPLES[what] then return ShowExample(what) end
         return Refresh()
@@ -711,6 +712,8 @@ local function Build()
     over:SetPoint("CENTER", window.anchor)
     window.gameIcon = over:CreateTexture(nil, "OVERLAY")
     window.gameIcon:SetAllPoints()
+    -- In its place on a herb, the Cultivation icon while its switch is on (it covers the game's icon in the world).
+    if ns.CultivationPreviewIcon then window.cultivationIcon = ns.CultivationPreviewIcon(over, window.gameIcon) end
     local icons = New("Frame", preview)
     icons:SetAllPoints()
     icons:SetFrameLevel(scene:GetFrameLevel() + 10)
@@ -856,9 +859,11 @@ local function Build()
     -- An addon with pages of its own has these there.
     window.minimapButton = At(Checkbox(general, -364, "Minimap button", "minimapButton",
         "The button on the minimap."), RIGHT_COLUMN)
-    window.own = At(Checkbox(general, -396, "Settings for this character only", "own",
+    window.cultivation = At(Checkbox(general, -396, "Show when Cultivation is ready", "cultivation",
+        "Tauren: the Cultivation icon over a herb you can cultivate now. Works without herb sparkles and without Herbalism. Like sparkles, it turns on the game's Interact Key."))
+    window.own = At(Checkbox(general, -428, "Settings for this character only", "own",
         "This character keeps its own settings. Untick it to use the settings your other characters share. It offers a reload to switch."))
-    window.stone = At(Checkbox(general, -396, "Stone background", "stoneBackground",
+    window.stone = At(Checkbox(general, -428, "Stone background", "stoneBackground",
         "Blizzard's stone texture behind this window, warmed to the logo's brown. Off: plain brown."), RIGHT_COLUMN)
     for _, box in ipairs({ window.minimapButton, window.own, window.stone }) do
         for _, part in ipairs({ box, box.label, box.hover }) do part:SetShown(not ns.WINDOW_PAGES) end
@@ -999,8 +1004,11 @@ function Refresh()
     window.everything:SetChecked(everything)
     window.gameIcons:SetChecked(ns.db.gameIcons)
     window.gameIcon:SetAtlas(GAME_ICONS[kind])
-    window.gameIcon:SetShown(ns.db.gameIcons == true)
+    local cultivation = window.cultivationIcon and kind == "herbs" and ns.db.cultivation == true
+    window.gameIcon:SetShown(ns.db.gameIcons == true and not cultivation)
+    if window.cultivationIcon then window.cultivationIcon:SetShown(cultivation) end
     window.myProfessions:SetChecked(ns.db.myProfessions)
+    window.cultivation:SetChecked(ns.db.cultivation)
     window.minimapButton:SetChecked(ns.db.minimapButton)
     window.townInteractOff:SetChecked(ns.db.townInteractOff)
     window.own:SetChecked(not ns.OwnSettings or ns.OwnSettings())

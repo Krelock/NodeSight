@@ -18,11 +18,12 @@ local function WindowFailed()
     return ns.db.sparkleWindowFailed ~= nil
 end
 
--- Sparkles are on, but Enable Interact Key is off (1 is gamepad only), so objects get no plate.
+-- Sparkles or the Cultivation icon are on, but Enable Interact Key is off (1 is gamepad
+-- only), so objects get no plate.
 -- The gamepad UI sets it to 1 or 0 itself on every target change, and 1 works with a controller.
 local function InteractOff()
     if GamepadUI() or ns.SetupPending() or ns.InteractPaused() then return false end
-    local any = false
+    local any = ns.CultivationOn()
     for _, kind in ipairs(ns.KINDS) do any = any or ns.db[kind] == true end
     local value = tonumber(C_CVar.GetCVar("softTargetInteract"))
     return any and value ~= nil and value < 2
@@ -76,6 +77,7 @@ local function RegisterSettings(nodeSightOn)
     if GamepadUI() or WindowFailed() then
         local function SparklesChanged() ns.UpdateAll() ns.Setup() end
         local function LookChanged() ns.UpdateAll() end
+        local function CultivationChanged() SparklesChanged() ns.CultivationRefresh() end
         for _, tab in ipairs(ns.SPARKLE_TABS) do
             if tab.on then Checkbox(tab.key, tab.on, tab.tip .. ns.SPARKLE_NEEDS, SparklesChanged) end
         end
@@ -88,6 +90,9 @@ local function RegisterSettings(nodeSightOn)
         Checkbox("grayTooHard", "Gray when your skill is too low", "Herbs and ore your skill is too low for sparkle gray.", LookChanged)
         Checkbox("myProfessions", "Only for my professions",
             "Herbs sparkle only if you have Herbalism, ore only with Mining, and corpses only with Skinning.", LookChanged)
+        Checkbox("cultivation", "Show when Cultivation is ready",
+            "Tauren: the Cultivation icon over a herb you can cultivate now. Works without herb sparkles and without Herbalism. Like sparkles, it turns on the game's Interact Key.",
+            CultivationChanged)
         Checkbox("rareGlow", "Rare nodes stand out", "A gold glow on rare herbs and ore like Black Lotus and Truesilver.", LookChanged)
         Checkbox("sparkleSound", "Sparkle sound", "Plays a soft sound when something near you starts sparkling.", LookChanged)
         Checkbox("gatherDim", "Dim while gathering", "Sparkles fade while you gather so you can see the node.", LookChanged)
