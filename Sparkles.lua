@@ -66,6 +66,7 @@ local spare = {}
 local previews = {}
 local leaving = {} -- plate: its sparkles fading out
 local known = {} -- plate: what its object's icon said it was
+local looted = {} -- plate: a corpse whose loot window opened (its sparkles gone until the plate's next unit)
 
 ---------------------------------------------------------------------------
 -- Each kind's look
@@ -1267,6 +1268,8 @@ end
 -- The cast only names the node: of nodes with that name, the one under the mouse,
 -- else the interact target, is the one gathered (nil: can't tell, all of them).
 local PICKED = { "mouseover", "softinteract" }
+-- Where a loot window's corpse can be: the interact target, under the mouse, or targeted.
+local LOOTED_FROM = { "softinteract", "mouseover", "target" }
 local function GatheredOne(name)
     for _, token in ipairs(PICKED) do
         for _, frame in pairs(sparkles) do
@@ -1299,6 +1302,25 @@ gatherWatch:SetScript("OnEvent", function(_, event, _, a, b)
                 StartHarvest(frame)
                 frame:SetScript("OnUpdate", Animate)
             end
+        end
+        -- A corpse being looted fades out now, not when the game takes its plate away.
+        local corpse
+        for _, token in ipairs(LOOTED_FROM) do
+            for _, frame in pairs(sparkles) do
+                if not corpse and frame.kind == "loot" and IsUnit(frame, token) then corpse = frame end
+            end
+        end
+        if not corpse then -- can't tell: the only lootable corpse sparkling, if there is just one
+            for _, frame in pairs(sparkles) do
+                if frame.kind == "loot" then
+                    if corpse then return end
+                    corpse = frame
+                end
+            end
+        end
+        if corpse then
+            looted[corpse.plate] = true
+            HideSparkles(corpse.plate, true)
         end
         return
     end
@@ -1556,6 +1578,7 @@ local function Update(unit)
         -- being it fades out, not taken for an other object.
         if kind == "others" and known[namePlate] then return HideSparkles(namePlate, true) end
         if kind ~= "others" then known[namePlate] = kind end
+        if kind == "loot" and looted[namePlate] then return HideSparkles(namePlate, true) end
         if Mine(kind) and not hide then ShowSparkles(namePlate, kind, unit) else HideSparkles(namePlate, true) end
     else
         if hidden[unitFrame] then SetHidden(unitFrame, false) end
@@ -1576,9 +1599,10 @@ hooksecurefunc(NamePlateDriverFrame, "OnNamePlateAdded", function(_, unit)
     if Idle() then
         wipe(known)
         wipe(extra)
+        wipe(looted)
     elseif unit:find("^nameplate%d+$") then
         local namePlate = C_NamePlate.GetNamePlateForUnit(unit)
-        if namePlate then known[namePlate], extra[namePlate] = nil, nil end -- a new object on it
+        if namePlate then known[namePlate], extra[namePlate], looted[namePlate] = nil, nil, nil end -- a new object on it
     end
     Update(unit)
 end)
