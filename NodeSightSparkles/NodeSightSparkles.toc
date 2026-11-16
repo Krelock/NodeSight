@@ -2,7 +2,7 @@
 ## Title: NodeSight Sparkles
 ## Notes: Sparkles on the herb, ore, chest or quest object in front of you, in the style and color you pick.
 ## Author: Krelock
-## Version: 1.3.0
+## Version: 1.3.0.1
 ## SavedVariables: NodeSightSparklesDB
 ## SavedVariablesPerCharacter: NodeSightSparklesCharDB
 ## IconTexture: Interface\AddOns\NodeSightSparkles\logo
