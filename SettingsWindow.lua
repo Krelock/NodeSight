@@ -42,7 +42,6 @@ end
 local AFTER = {
     switchFinders = function() ns.SwitchReset() ns.UpdateSwitch() end,
     minimapButton = function() if ns.MinimapButtonChanged then ns.MinimapButtonChanged() end end,
-    townInteractOff = function() ns.Setup() end,
     collect = function() ns.UpdateCollect() end,
     collectMap = function() ns.RefreshNodePins() end,
 }
@@ -186,12 +185,12 @@ local function Seconds(value) return ("%d s"):format(value) end
 local function YardsOrOff(value) return value == 0 and "Off" or Yards(value) end
 local function SecondsOrOff(value) return value == 0 and "Off" or Seconds(value) end
 
--- General: NodeSight's own settings on the left, Towns on the right.
-local function GeneralColumns(column, towns, page)
+-- General: NodeSight's own settings.
+local function GeneralColumns(column, _, page)
     -- The page's title alone on top with a gray line under it, then each column headed.
     page.about = Label(page, "NodeSight's own settings. The sparkles have their pages below Sparkles.", "GameFontDisableSmall")
     page.about:SetPoint("TOPLEFT", LEFT, -38)
-    column.top, towns.top = -56, -56
+    column.top = -56
     Header(column, "Options")
     Checkbox(column, "skillLine", "Required skill in tooltips",
         "Shows the skill a herb or ore needs in its tooltip when your mouse is on it in the world, and on herb and ore items.")
@@ -202,9 +201,6 @@ local function GeneralColumns(column, towns, page)
     Checkbox(column, "own", "Settings for this character only",
         "This character keeps its own NodeSight settings. Untick it to use the settings your other characters share. It offers a reload to switch.")
     Checkbox(column, "stoneBackground", "Stone background", "Blizzard's stone texture behind this window, warmed to the logo's brown. Off: plain brown.")
-    Header(towns, "Towns")
-    Checkbox(towns, "townInteractOff", "Interact Key off in towns (Beta)",
-        "Turns the game's Interact Key off while you're in a town or inn, so it doesn't pick the NPCs there. Nothing sparkles in town then.")
 end
 
 -- The Herb/Ore Switch: its line and box over both columns, then When, Switch in and the
@@ -305,9 +301,9 @@ local function CollectColumns(column, places, page)
     Header(column, "Collecting")
     Checkbox(column, "collect", "Remember where I gather",
         "Remembers each place you gather a herb or ore. Off: nothing new is remembered and the world map shows no marks; the places remembered are kept.")
-    Checkbox(column, "collectMap", "Show them on the world map",
+    Checkbox(column, "collectMap", "World map marks",
         "A small herb or ore symbol on the world map for each place you gathered at. Put your mouse on one to see what it was.")
-    Checkbox(column, "collectMinimap", "Show them on the minimap",
+    Checkbox(column, "collectMinimap", "Minimap marks",
         "The same symbols on the minimap for the places near you. They let the mouse through to the game's own dots.")
     Header(column, "Symbols")
     local size, opacity = ns.COLLECT_RANGES.collectSize, ns.COLLECT_RANGES.collectOpacity

@@ -128,16 +128,23 @@ local function Problems()
     local cvar = ns.RefusedCVar()
     if cvar then list[#list + 1] = { ns.RefusedText(cvar), true } end
     if ns.SetupPending() then list[#list + 1] = { "Sparkles turn on when this fight ends." } end
-    if ns.InteractPaused() then list[#list + 1] = { "Nothing sparkles in town (Interact Key off in towns)." } end
-    if ns.db.instanceHide and IsInInstance() then list[#list + 1] = { "No sparkles in instances (Hide in instances)." } end
-    if ns.db.combatHide and UnitAffectingCombat("player") then list[#list + 1] = { "No sparkles in combat (Hide in combat)." } end
+    if ns.InteractPaused() then
+        list[#list + 1] = { "Nothing sparkles in town: Interact Key off in towns is ticked. Click to change it.", false, "townInteractOff" }
+    end
+    if ns.db.instanceHide and IsInInstance() then
+        list[#list + 1] = { "No sparkles in instances: Hide in instances is ticked. Click to change it.", false, "instanceHide" }
+    end
+    if ns.db.combatHide and UnitAffectingCombat("player") then
+        list[#list + 1] = { "No sparkles in combat: Hide in combat is ticked. Click to change it.", false, "combatHide" }
+    end
     if ns.db.myProfessions then
         local missing = {}
         for _, kind in ipairs({ "herbs", "ore", "skinning" }) do
             if ns.db[kind] and not ns.HasProfession(kind) then missing[#missing + 1] = PROFESSIONS[kind] end
         end
         if missing[1] then
-            list[#list + 1] = { ("No %s on this character (Only for my professions)."):format(table.concat(missing, " or ")) }
+            list[#list + 1] = { ("No %s on this character: Only for my professions is ticked. Click to change it.")
+                :format(table.concat(missing, " or ")), false, "myProfessions" }
         end
     end
     return list
@@ -481,6 +488,21 @@ local function ListEntry(list, y, entry)
     return item
 end
 
+-- A setting shown from a warning: Blizzard's proc glow round its box for a few seconds.
+local FLASH_SECONDS = 3
+local function Flash(box)
+    local flash = window.flash
+    if not (flash and box) then return end
+    flash:ClearAllPoints()
+    flash:SetPoint("CENTER", box)
+    flash:SetSize(box:GetWidth() * 1.4, box:GetHeight() * 1.4)
+    flash:Show()
+    flash.ProcLoop:Play()
+    flash.token = (flash.token or 0) + 1
+    local token = flash.token
+    C_Timer.After(FLASH_SECONDS, function() if flash.token == token then flash:Hide() end end)
+end
+
 local function Build()
     -- The style grid is as tall as the biggest tab's styles need (and None), five a row.
     local most = 0
@@ -549,6 +571,17 @@ local function Build()
         local lines = {}
         for i, reason in ipairs(problem.list or {}) do lines[i] = reason[1] end
         return table.concat(lines, "\n")
+    end)
+    -- A reason with a setting: clicked, Sparkle settings with that box flashing.
+    problem:SetScript("OnMouseUp", function()
+        local key = problem.list and problem.list[1] and problem.list[1][3]
+        if not key then return end
+        PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB)
+        for _, entry in ipairs(TABS) do
+            if entry.key == "general" then window.tab = entry end
+        end
+        Refresh()
+        Flash(window[key])
     end)
     window.problem = problem
     ButtonFrameTemplate_HideButtonBar(window)
@@ -898,6 +931,11 @@ local function Build()
         window.glow = New("Frame", window.Inset, "ActionButtonSpellAlertTemplate")
         window.glow.ProcStartFlipbook:Hide()
         window.glow:SetFrameLevel(window.everything:GetFrameLevel() + 2)
+        -- (On the page, so it goes when another page is picked.)
+        window.flash = New("Frame", general, "ActionButtonSpellAlertTemplate")
+        window.flash.ProcStartFlipbook:Hide()
+        window.flash:SetFrameLevel(window.everything:GetFrameLevel() + 2)
+        window.flash:Hide()
     end
 
     -- The addon's own pages, beside the list.

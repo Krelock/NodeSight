@@ -179,7 +179,6 @@ local function RegisterSettings()
         own:SetValueChangedCallback(function() ns.AskReload() end)
         Settings.CreateCheckbox(category, own,
             "This character keeps its own NodeSight settings. Untick it to use the settings your other characters share. It offers a reload to switch.")
-        local town = Checkbox("townInteractOff", "Interact Key off in towns (Beta)", TOWN_TIP, function() ns.Setup() end)
 
         Page("Herb/Ore Switch")
         Settings.CreateCheckbox(category, finders, findersTip) -- the same setting as on NodeSight's own page
@@ -221,10 +220,10 @@ local function RegisterSettings()
         Checkbox("collect", "Remember where I gather",
             "Remembers each place you gather a herb or ore, on this computer only. Off: nothing new is remembered and the world map shows no marks; the places remembered are kept.",
             function() ns.UpdateCollect() end)
-        Checkbox("collectMap", "Show them on the world map",
+        Checkbox("collectMap", "World map marks",
             "A small herb or ore icon on the world map for each place you gathered at. Put your mouse on one to see what it was.",
             function() ns.RefreshNodePins() end)
-        Checkbox("collectMinimap", "Show them on the minimap",
+        Checkbox("collectMinimap", "Minimap marks",
             "The same symbols on the minimap for the places near you. They let the mouse through to the game's own dots.",
             function() ns.RefreshNodePins() end)
         local function MapChanged() ns.RefreshNodePins() end
@@ -255,7 +254,7 @@ local function RegisterSettings()
             if tab.on then Checkbox(tab.key, tab.on, tab.tip .. ns.SPARKLE_NEEDS, SparklesChanged) end
         end
         Checkbox("gameIcons", "Keep the game's icons", "Keeps the game's own icon over things you can interact with.", SparklesChanged)
-        Settings.CreateCheckbox(category, town, TOWN_TIP) -- the same setting as on the main page
+        Checkbox("townInteractOff", "Interact Key off in towns (Beta)", TOWN_TIP, function() ns.Setup() end)
         Slider("brightness", "Brightness", 10, 100, "How bright the sparkles are.", LookChanged)
         Checkbox("reachLook", "Dimmer out of reach", "Dimmer when it's too far to gather. Flashes when you get in range.", LookChanged)
         Checkbox("combatHide", "Hide in combat", "No sparkles while you're in combat.", LookChanged)

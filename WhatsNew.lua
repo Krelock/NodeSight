@@ -53,12 +53,13 @@ do
     local WHATS_NEW = {
         { version = "3.2.0",
             { "New", {
-                { "Collecting (Beta).", "On by default. NodeSight remembers each place you gather a herb or ore and marks it on your world map and minimap with the node's own icon. Pick the symbols' picture, shape, size, minimap opacity and skill colors on the new Collecting (Beta) page, where Forget all clears them. Thanks to Urfoks for Collecting" },
+                { "Collecting (Beta).", "Off by default. NodeSight remembers each place you gather a herb or ore and marks it on your world map and minimap with the node's own icon. Pick the symbols' picture, shape, size, minimap opacity and skill colors on the new Collecting (Beta) page, where you turn it on with Remember where I gather and Forget all clears them. Thanks to Urfoks for Collecting" },
                 { "Show when Cultivation is ready.", "Off by default. For Tauren: the Cultivation icon over a herb you can cultivate right now. Works without herb sparkles and without Herbalism. Tick it on Sparkle settings. Thanks to tester617" },
-                { "Why sparkles aren't showing.", "The sparkle window now says when something keeps sparkles away: waiting for a fight to end, in a town, Hide in combat or Hide in instances, no Herbalism, Mining or Skinning with Only for my professions on, or a setting that keeps being turned off" },
+                { "Why sparkles aren't showing.", "The sparkle window now says when something keeps sparkles away: waiting for a fight to end, in a town, Hide in combat or Hide in instances, no Herbalism, Mining or Skinning with Only for my professions on, or a setting that keeps being turned off. When one of your settings is the reason, click the warning to go to it, and it flashes" },
             } },
             { "Changes", {
                 { "Interact settings put back.", "If Options or another addon changes a setting sparkles need, NodeSight sets it back right away instead of at the next loading screen. If it keeps being changed, NodeSight leaves it and tells you" },
+                { "Interact Key off in towns (Beta).", "Moved from the General page to Sparkle settings, next to the other sparkle settings" },
                 { "Logo.", "The NodeSight logo now sits in the settings window's own bronze ring" },
                 { "Checkboxes.", "Now right of their names, lined up with the sliders and dropdowns" },
             } },
