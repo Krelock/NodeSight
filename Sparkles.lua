@@ -13,9 +13,16 @@ local ipairs, pairs = ipairs, pairs
 local random = math.random
 local sin, cos, floor, max, min, abs, pi = math.sin, math.cos, math.floor, math.max, math.min, math.abs, math.pi
 
--- Any sparkles on? Only then does the addon touch interact settings or plates.
-local function SparklesOn()
+-- Any sparkle switch on? Only then are Blizzard's object plates hidden.
+local function SparkleSwitchesOn()
     return ns.db.herbs or ns.db.ore or ns.db.chests or ns.db.quests or ns.db.others or ns.db.bobber or ns.db.skinning or ns.db.loot
+end
+
+-- Any sparkles on, or the Cultivation icon (Cultivation.lua) for a player who knows
+-- the racial? Only then does the addon touch interact settings or plates.
+local function SparklesOn()
+    if not ns.CultivationOn then return false end -- Cultivation.lua not loaded (updated without a restart): stay off
+    return SparkleSwitchesOn() or ns.CultivationOn()
 end
 
 -- The gathering nodes' sparkle (world/skillactivated/tradeskillnodes/sparkle.blp).
@@ -1374,6 +1381,7 @@ end
 -- Nothing to do: sparkles off and nothing of ours on any plate.
 local function Idle()
     return not SparklesOn() and not next(hidden) and not next(bare) and not next(sparkles)
+        and not (ns.cultivationIcons and next(ns.cultivationIcons))
 end
 
 -- Quest objects you loot or use often have the plain interact icon (a pumpkin has
@@ -1532,6 +1540,18 @@ local function InteractOnly(unit)
     return not issecretvalue(picked) and picked == true
 end
 
+-- The Cultivation icon (Cultivation.lua) over a herb you can cultivate now, whatever
+-- its sparkles; on any other plate none. A secret name or GUID goes on as unknown.
+local function CultivationIcon(namePlate, unit, kind, hide)
+    if kind == "herbs" and not hide then
+        local name, guid = UnitName(unit), UnitGUID(unit)
+        if issecretvalue(name) then name = nil end
+        if issecretvalue(guid) then guid = nil end
+        if ns.CanCultivate(name, guid) then return ns.ShowCultivation(namePlate) end
+    end
+    ns.HideCultivation(namePlate)
+end
+
 -- A plate got a unit or changed: hide object plates and sparkle by kind.
 local function Update(unit)
     if Idle() then return end
@@ -1554,13 +1574,15 @@ local function Update(unit)
         extra[namePlate] = true
         if hidden[unitFrame] then SetHidden(unitFrame, false) end
         SetBare(unitFrame, true)
+        ns.HideCultivation(namePlate)
         return HideSparkles(namePlate)
     end
     extra[namePlate] = nil
     SetBare(unitFrame, false)
     if (object or corpse) and SparklesOn() then
-        -- Hide every object plate (alpha only); sparkle herbs, ore and, if set, others.
-        if not ns.db.gameIcons then
+        -- Hide every object plate (alpha only; not for the Cultivation icon alone); sparkle
+        -- herbs, ore and, if set, others.
+        if not ns.db.gameIcons and SparkleSwitchesOn() then
             SetHidden(unitFrame, true)
         elseif hidden[unitFrame] then
             SetHidden(unitFrame, false)
@@ -1569,11 +1591,13 @@ local function Update(unit)
         -- A gathered node loses its gathering icon as it goes: its finish plays out in its own look.
         local gathered = sparkles[namePlate]
         if gathered and gathered.harvested then
+            ns.HideCultivation(namePlate)
             if ns.db[gathered.kind] and not hide then return end
             return HideSparkles(namePlate, true)
         end
         local icon = unitFrame.SoftTargetFrame.Icon
         local kind = object and SparkleKind(unit, icon) or CorpseKind(unit, icon)
+        CultivationIcon(namePlate, unit, kind, hide)
         -- The game shows the icon only on the interact target: a herb or ore that stops
         -- being it fades out, not taken for an other object.
         if kind == "others" and known[namePlate] then return HideSparkles(namePlate, true) end
@@ -1582,6 +1606,7 @@ local function Update(unit)
         if Mine(kind) and not hide then ShowSparkles(namePlate, kind, unit) else HideSparkles(namePlate, true) end
     else
         if hidden[unitFrame] then SetHidden(unitFrame, false) end
+        ns.HideCultivation(namePlate)
         HideSparkles(namePlate)
     end
 end
@@ -1627,7 +1652,8 @@ local WANTED = {
     { "SoftTargetIconGameObject", "1" },
     { "SoftTargetInteractArc", "2" }, -- anywhere around you, not only in front
     { "SoftTargetInteractRange", tostring(RANGE) },
-    -- NPC interact icons have no plate to hide, so shrink them to 0.
+    -- NPC interact icons have no plate to hide, so shrink them to 0 (only with a sparkle
+    -- switch on: the Cultivation switch alone leaves them, like Blizzard's object plates).
     { "SoftTargetWorldtextSize", "0", npcIcon = true },
     -- Corpses only get a plate with this. It would give the NPC you can talk to
     -- one too (hiding its own name), so it's on only while a corpse is the target.
@@ -1671,7 +1697,7 @@ local function ApplySetup()
         local cvar, value = entry[1], entry[2]
         local old = C_CVar.GetCVar(cvar)
         if entry.town and townShown then value = TownValue(ns.db.saved[cvar] or old) end
-        if entry.npcIcon and ns.db.gameIcons or entry.corpse and not corpseShown then
+        if entry.npcIcon and (ns.db.gameIcons or not SparkleSwitchesOn()) or entry.corpse and not corpseShown then
             PutBack(cvar)
         elseif old ~= nil and not Same(old, value) then
             C_CVar.SetCVar(cvar, value)

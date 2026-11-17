@@ -24,6 +24,7 @@ Names.lua
 QuestObjects.lua
 NodeSightSparkles.lua
 Sparkles.lua
+Cultivation.lua
 SparkleWindow.lua
 MinimapButton.lua
 Settings.lua
