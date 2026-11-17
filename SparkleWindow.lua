@@ -1,14 +1,14 @@
--- The sparkle window: a tab for each kind of node and one for the
--- settings of all of them, the styles as tiles with a small preview each, the
--- look's settings, and the node in 3D with its sparkles on it, as in the world.
+-- The sparkle window: a list on the left with each kind of node and the settings for all
+-- of them (and the addon's own pages, if it adds any), the styles as tiles with a small
+-- preview each (None turns the kind off), the look's settings, and the node in 3D with
+-- its sparkles on it, as in the world.
 --
--- Sections: Nodes to preview, Changing the look, Building the window, Showing a tab,
+-- Sections: Nodes to preview, Changing the look, Building the window, Showing a page,
 -- Interact Key turned off.
 
 local ADDON_NAME, ns = ...
 
 local ipairs, floor, format = ipairs, math.floor, string.format
-local GENERAL_LABEL = GENERAL -- Blizzard's word, before the name is used for the keys below
 local sqrt, sin, cos, tan, max = math.sqrt, math.sin, math.cos, math.tan, math.max
 
 ---------------------------------------------------------------------------
@@ -41,6 +41,7 @@ local NODES = {
         { "Young Wolf", 447, creature = true }, { "Flatland Cougar", 1059, creature = true },
     },
 }
+NODES.loot = NODES.skinning
 local DEAD = 6 -- the "Dead" animation: a corpse lying still
 
 -- The camera looks down a little, as you see a node on the ground, and the
@@ -54,7 +55,7 @@ local ZOOM_IN, ZOOM_START, ZOOM_OUT = 0.4, 1.6, 2.2 -- times that distance
 local YARD = 768 / (2 * 25 * tan(math.rad(27)))
 local PLATE_OVER = 1.25 -- yards from the top of the node's box up to its plate
 local AREA = 100 -- the camera also stands back far enough for sparkles this size
-local NEARER = { herbs = 0.85, skinning = 0.65 } -- small next to their sparkles (herbs) or their box (a corpse): the camera nearer
+local NEARER = { herbs = 0.85, skinning = 0.65, loot = 0.65 } -- small next to their sparkles (herbs) or their box (a corpse): the camera nearer
 
 -- Color sets, from the game's own colors (item qualities, class colors, gold text).
 local SETS = {
@@ -70,10 +71,10 @@ local SETS = {
 
 -- Settings for all sparkles (the General tab), saved under these keys.
 local GENERAL = { gameIcons = true, brightness = true, reachLook = true, combatHide = true, instanceHide = true,
-    harvest = true, grayTooHard = true, myProfessions = true, rareGlow = true, sparkleSound = true, gatherDim = true,
-    minimapButton = true }
+    harvest = true, grayTooHard = true, myProfessions = true, cultivation = true, rareGlow = true, sparkleSound = true,
+    gatherDim = true, minimapButton = true, townInteractOff = true, stoneBackground = true }
 
--- The tabs: each kind (its name, the "Sparkles on" box and the icon), then General.
+-- The list's sparkle entries: each kind (its name, what it sparkles on and its icon), then the settings.
 local TABS = {
     { key = "herbs", name = "Herbs", on = "Sparkles on herbs", icon = "Interface\\Icons\\INV_Misc_Herb_01",
         tip = "Sparkles on the herb in front of you." },
@@ -87,12 +88,18 @@ local TABS = {
         tip = "Sparkles on anything else you can use. Not mailboxes, chairs or doors." },
     { key = "bobber", name = "Fishing bobber", on = "Sparkles on your fishing bobber", icon = "Interface\\Icons\\Trade_Fishing",
         tip = "Sparkles on your bobber so it's easier to spot." },
-    { key = "skinning", name = "Skinning", on = "Sparkles on skinnable corpses (Beta)", icon = "Interface\\Icons\\INV_Misc_Pelt_Wolf_01",
+    { key = "skinning", name = "Skinning", on = "Sparkles on skinnable corpses", icon = "Interface\\Icons\\INV_Misc_Pelt_Wolf_01",
         tip = "Sparkles on corpses you can skin, once they're looted." },
-    { key = "general", name = GENERAL_LABEL, icon = "Interface\\Icons\\INV_Misc_Gear_01" },
+    { key = "loot", name = "Lootable corpses", on = "Sparkles on lootable corpses", icon = "Interface\\Icons\\INV_Misc_Bag_08",
+        tip = "Sparkles on corpses that still have loot." },
+    { key = "general", name = "Sparkle settings", icon = "Interface\\Icons\\INV_Misc_Gear_01" },
 }
+-- The game's own icon over each kind when it's the interact target (its cursor's atlas).
+local GAME_ICONS = { herbs = "Crosshair_GatherHerbs_64", ore = "Crosshair_Mine_64", chests = "Crosshair_lootall_64",
+    quests = "Crosshair_questinteract_64", others = "Crosshair_interact_64", bobber = "Crosshair_interact_64",
+    skinning = "Crosshair_Skin_64", loot = "Crosshair_lootall_64" }
 -- Added to the on/off box's tooltip.
-local NEEDS = " Sparkles turn on the game's Interact Key. Turn them all off and your settings go back."
+local NEEDS = " Sparkles turn on the game's Interact Key. Turn them all off (and the Cultivation icon) and your settings go back."
 
 local window -- made the first time it opens
 
@@ -104,13 +111,16 @@ local window -- made the first time it opens
 local function Kinds()
     return { window.tab.key }
 end
-local function Shown() return window.tab.key == "general" and "herbs" or window.tab.key end
+local function Shown() return (window.tab.key == "general" or window.tab.page) and "herbs" or window.tab.key end
 
 local function Hex(r, g, b)
     return format("ff%02x%02x%02x", floor(r * 255 + 0.5), floor(g * 255 + 0.5), floor(b * 255 + 0.5))
 end
 
-local Refresh, FrameNode, PlaceCamera, PickStyle, PlayHarvest
+local Refresh, FrameNode, PlaceCamera, PickStyle, PlayHarvest, ShowExample
+-- The settings the preview shows for a few seconds when they're ticked, and what it shows.
+local EXAMPLES = { rareGlow = "rare", reachLook = "far", grayTooHard = "tooHard" }
+local EXAMPLE_TIME = 3
 
 -- The sparkles in the world after a change.
 local function Changed()
@@ -131,7 +141,7 @@ end
 
 -- Kinds whose every style starts at one height: the bobber floats on the water, and a
 -- corpse lies well under its plate (it stays where the living creature's head was).
-local START_HEIGHT = { bobber = 0, skinning = -115 }
+local START_HEIGHT = { bobber = 0, skinning = -115, loot = -115 }
 
 -- Style i's look for a kind: as it was left, or the one it comes with.
 local function LookOf(kind, i)
@@ -155,8 +165,10 @@ local function Set(what, value)
     if GENERAL[what] then
         ns.db[what] = value
         Changed()
-        if what == "gameIcons" then ns.Setup() end
+        if what == "gameIcons" or what == "townInteractOff" or what == "cultivation" then ns.Setup() end
+        if what == "cultivation" then ns.CultivationRefresh() end
         if what == "minimapButton" and ns.MinimapButtonChanged then ns.MinimapButtonChanged() end
+        if value and EXAMPLES[what] then return ShowExample(what) end
         return Refresh()
     end
     local kinds = what == "everything" and ns.KINDS or Kinds()
@@ -173,12 +185,34 @@ local function Set(what, value)
     Refresh()
 end
 
--- A style, with its look as it was left, for the tab's kinds.
+-- A kind on or off (its box in the list).
+local function SetKind(kind, on)
+    ns.db[kind] = on
+    Changed()
+    ns.Setup()
+    Refresh()
+end
+
+-- A style, with its look as it was left, for the tab's kinds; it turns them on.
 function PickStyle(i)
     for _, kind in ipairs(Kinds()) do
         local keys, look = ns.SPARKLE_KEYS[kind], LookOf(kind, i)
         ns.db[keys.style] = i
         for _, what in ipairs(LOOK) do ns.db[keys[what]] = look[what] end
+        ns.db[kind] = true
+    end
+    Changed()
+    ns.Setup()
+    Refresh()
+end
+
+-- The kind's style and look as they come (on or off stays as it is).
+local function Defaults()
+    for _, kind in ipairs(Kinds()) do
+        local keys = ns.SPARKLE_KEYS[kind]
+        ns.db[keys.style] = ns.defaults[keys.style]
+        for _, what in ipairs(LOOK) do ns.db[keys[what]] = ns.defaults[keys[what]] end
+        ns.db.styleLooks[kind] = nil
     end
     Changed()
     Refresh()
@@ -231,16 +265,6 @@ local function New(kind, parent, template)
     return frame
 end
 
--- Blizzard's tab sizes itself from its parent when shown, and one made with no
--- parent is shown as it's made, so tabs are made on a frame of our own.
-local tabHolder = CreateFrame("Frame")
-
-local function NewTab(parent)
-    local tab = CreateFrame("Button", nil, tabHolder, "PanelTabButtonTemplate")
-    tab:SetParent(parent)
-    return tab
-end
-
 local function Label(parent, text, font)
     local label = parent:CreateFontString(nil, "ARTWORK", font or "GameFontNormal")
     label:SetText(text)
@@ -264,7 +288,8 @@ end
 -- (room for the labels). Its tooltip shows over the
 -- label too, as on Blizzard's rows.
 local COLUMN = 150
-local RIGHT_COLUMN = 210 -- the General tab's second column
+local RIGHT_COLUMN = 235 -- the settings page's second column
+local LIST = 180 -- the list's width
 local function Row(panel, y, text, control, tip)
     local label = Label(panel, text)
     label:SetPoint("LEFT", panel, "TOPLEFT", 0, y)
@@ -343,25 +368,153 @@ local function Tile(grid, i, style)
     return tile
 end
 
+-- The first tile: no sparkles on the kind.
+local function NoneTile(grid)
+    local tile = New("Button", grid)
+    tile:SetSize(81, 76)
+    local background = tile:CreateTexture(nil, "BACKGROUND")
+    background:SetAtlas("collections-background-tile")
+    background:SetAllPoints()
+    tile.border = tile:CreateTexture(nil, "BORDER")
+    tile.border:SetAllPoints()
+    local highlight = tile:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetAtlas("PetList-ButtonHighlight")
+    highlight:SetAllPoints()
+    tile.name = Label(tile, NONE, "GameFontNormalSmall")
+    tile.name:SetPoint("BOTTOM", 0, 8)
+    tile:SetScript("OnClick", function()
+        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
+        Set("on", false)
+    end)
+    Tooltip(tile, NONE, function()
+        return "Turns off " .. window.tab.on:lower() .. ". Pick a style to turn them back on."
+    end)
+    return tile
+end
+
+-- A row in the list: a page of the addon's, a kind (its on/off box and icon) or the settings.
+-- A line in one color fading out to the right (header lines, the picked row's edges).
+local function Fade(texture, r, g, b, a)
+    texture:SetColorTexture(1, 1, 1, 1)
+    texture:SetGradient("HORIZONTAL", CreateColor(r, g, b, a), CreateColor(r, g, b, 0))
+end
+
+local function ListEntry(list, y, entry)
+    local item = New("Button", list)
+    item:SetSize(LIST - 12, 22)
+    item:SetPoint("TOPLEFT", 4, y)
+    -- The picked row: the logo's brown a shade lighter, bronze lines fading out above and
+    -- below it, a gold bar at its left.
+    item.selected = item:CreateTexture(nil, "BACKGROUND")
+    item.selected:SetColorTexture(46 / 255, 38 / 255, 27 / 255)
+    item.selected:SetAllPoints()
+    item.picked = { item.selected }
+    for _, edge in ipairs({ "TOP", "BOTTOM" }) do
+        local line = item:CreateTexture(nil, "BORDER")
+        line:SetPoint(edge .. "LEFT")
+        line:SetPoint(edge .. "RIGHT")
+        line:SetHeight(1)
+        Fade(line, 0.47, 0.39, 0.24, 1)
+        item.picked[#item.picked + 1] = line
+    end
+    local bar = item:CreateTexture(nil, "BORDER")
+    bar:SetPoint("TOPLEFT")
+    bar:SetPoint("BOTTOMLEFT")
+    bar:SetWidth(3)
+    bar:SetColorTexture(1, 0.82, 0)
+    item.picked[#item.picked + 1] = bar
+    item:SetHighlightAtlas("Options_List_Hover")
+    local x = 10
+    if entry.on then
+        local box = New("CheckButton", item, "MinimalCheckboxTemplate")
+        box:SetSize(20, 20)
+        box:SetPoint("LEFT", 4, 0)
+        box:SetScript("OnClick", function(self)
+            PlaySound(self:GetChecked() and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
+            SetKind(entry.key, self:GetChecked() == true)
+        end)
+        Tooltip(box, entry.on, entry.tip .. NEEDS)
+        item.box = box
+        item.icon = item:CreateTexture(nil, "ARTWORK")
+        item.icon:SetTexture(entry.icon)
+        item.icon:SetSize(16, 16)
+        item.icon:SetPoint("LEFT", 28, 0)
+        x = 48
+    end
+    item.text = Label(item, entry.list or entry.name)
+    item.text:SetPoint("LEFT", x, 0)
+    item:SetScript("OnClick", function()
+        PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB)
+        window.tab = entry
+        Refresh()
+    end)
+    return item
+end
+
 local function Build()
-    -- The style grid is as tall as the biggest tab's styles need, five a row.
+    -- The style grid is as tall as the biggest tab's styles need (and None), five a row.
     local most = 0
     for _, tab in ipairs(TABS) do
         local n = 0
         for i in ipairs(ns.SPARKLE_STYLES) do
             if ns.StyleFits(i, tab.key) then n = n + 1 end
         end
-        most = max(most, n)
+        most = max(most, n + 1)
     end
     local gridHeight = floor((most + 4) / 5) * 80 - 4
     window = New("Frame", UIParent, "ButtonFrameTemplate")
     window:Hide()
-    window:SetSize(760, 402 + gridHeight)
+    window:SetSize(760 + LIST, 402 + gridHeight)
     window:SetPoint("CENTER", 0, 20)
     window:SetFrameStrata("DIALOG")
     window:SetToplevel(true)
     window:EnableMouse(true)
-    window:SetTitle("NodeSight Sparkles")
+    -- Dragged by any empty part of it and kept on screen (back in the middle after a reload).
+    window:SetMovable(true)
+    window:SetClampedToScreen(true)
+    window:RegisterForDrag("LeftButton")
+    window:SetScript("OnDragStart", window.StartMoving)
+    window:SetScript("OnDragStop", window.StopMovingOrSizing)
+    window:SetTitle(C_AddOns.GetAddOnMetadata(ADDON_NAME, "Title") or ADDON_NAME)
+    local logo = "Interface\\AddOns\\" .. ADDON_NAME .. "\\logo"
+    window:SetPortraitToAsset(logo)
+    -- The logo in a gold ring (the minimap tracking ring's) on a dark circle over the frame's
+    -- portrait ring, in place of the portrait (whose round mask sits off the ring's middle).
+    local corner = window.NineSlice and window.NineSlice.TopLeftCorner
+    if corner then
+        local size = corner:GetWidth()
+        if not (size and size > 0) then size = 95 end
+        window.PortraitContainer:Hide()
+        local badge = New("Frame", window.NineSlice)
+        badge:SetSize(size * 0.68, size * 0.68) -- (just over the frame's ring)
+        badge:SetPoint("CENTER", corner, "TOPLEFT", size * 0.397, -size * 0.397) -- (the ring's middle in the art)
+        local shadow = badge:CreateTexture(nil, "BACKGROUND")
+        badge.shadow = shadow
+        shadow:SetAtlas("gamepad-actionbar-circleslot-dropshadow")
+        shadow:SetPoint("TOPLEFT", -size * 0.12, size * 0.12)
+        shadow:SetPoint("BOTTOMRIGHT", size * 0.125, -size * 0.125)
+        -- A round piece of the badge: a texture under a circle mask its own size.
+        local function Round(layer, scale)
+            local piece = badge:CreateTexture(nil, layer)
+            piece:SetSize(size * 0.68 * scale, size * 0.68 * scale)
+            piece:SetPoint("CENTER")
+            local mask = badge:CreateMaskTexture()
+            mask:SetAllPoints(piece)
+            mask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+            piece:AddMaskTexture(mask)
+            return piece
+        end
+        Round("BORDER", 1):SetColorTexture(27 / 255, 23 / 255, 18 / 255) -- (the logo's own dark)
+        Round("ARTWORK", 0.8):SetTexture(logo)
+        -- The ring's outside is 0.8 of the part shown, on the circle's edge.
+        badge.ring = badge:CreateTexture(nil, "OVERLAY")
+        badge.ring:SetSize(size * 0.68 / 0.8, size * 0.68 / 0.8)
+        badge.ring:SetPoint("CENTER")
+        badge.ring:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        badge.ring:SetTexCoord(0, 0.625, -1 / 64, 39 / 64) -- (its ring's middle at 20, 19 of 64)
+        badge.ring:SetVertexColor(0.82, 0.74, 0.55) -- the minimap's bright gold softened, nearer the frame's metal
+        window.badge = badge
+    end
     window.interactOff = Label(window, ns.INTERACT_OFF, "GameFontRed")
     window.interactOff:SetPoint("TOP", 0, -36)
     -- Turns it back on with the rest of what sparkles need (after the fight, in combat).
@@ -381,17 +534,122 @@ local function Build()
     window:SetScript("OnShow", function() PlaySound(SOUNDKIT.IG_CHARACTER_INFO_OPEN) end)
     window:SetScript("OnHide", function() PlaySound(SOUNDKIT.IG_CHARACTER_INFO_CLOSE) end)
     window.tab, window.node = TABS[1], {}
+    -- The list and pages in the logo's own dark brown (#1B1712), and the strip under the
+    -- title too (over the frame's gray streaks).
+    window.backdrop = window.Inset:CreateTexture(nil, "BACKGROUND", nil, 7)
+    window.backdrop:SetAllPoints()
+    window.strip = window:CreateTexture(nil, "BORDER", nil, 1)
+    window.strip:SetPoint("TOPLEFT", 2, -21)
+    window.strip:SetPoint("BOTTOMRIGHT", window, "TOPRIGHT", -2, -60)
+    window.strip:SetColorTexture(27 / 255, 23 / 255, 18 / 255)
+    -- What's New (an addon that has its notes) in the strip's right end: gold words with a
+    -- notes icon, white under the mouse, like a link. The version in the bottom right corner.
+    if ns.ShowWhatsNew then
+        local news = New("Button", window)
+        news:SetPoint("RIGHT", window, "TOPRIGHT", -16, -40)
+        local icon = news:CreateTexture(nil, "ARTWORK")
+        icon:SetTexture("Interface\\Icons\\INV_Misc_Note_01")
+        icon:SetSize(18, 18)
+        icon:SetPoint("LEFT")
+        news.label = Label(news, GAMEMENU_NEW_BUTTON, "GameFontNormal")
+        news.label:SetPoint("LEFT", icon, "RIGHT", 5, 0)
+        news:SetSize(18 + 5 + news.label:GetStringWidth(), 22)
+        news:SetScript("OnEnter", function() news.label:SetFontObject("GameFontHighlight") end)
+        news:SetScript("OnLeave", function() news.label:SetFontObject("GameFontNormal") end)
+        news:SetScript("OnClick", function()
+            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+            ns.ShowWhatsNew()
+        end)
+        window.news = news
+    end
+    window.version = Label(window, ("%s %s"):format(GAME_VERSION_LABEL, C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or ""), "GameFontDisableSmall")
+    window.version:SetPoint("BOTTOMRIGHT", -16, 12)
 
-    -- The preview: the node turning slowly on Blizzard's mount journal background.
+    -- The list on the left: the addon's own pages, then the sparkles.
+    local list = New("Frame", window.Inset)
+    list:SetPoint("TOPLEFT", 2, -2) -- (inside the inset's border, no gap to it)
+    list:SetPoint("BOTTOMLEFT", 2, 2)
+    list:SetWidth(LIST - 2)
+    -- On a panel of its own: a shade lighter (added, so the stone shows through), a thin line beside it.
+    local panel = list:CreateTexture(nil, "BACKGROUND", nil, -1)
+    panel:SetAllPoints()
+    panel:SetColorTexture(7 / 255, 5 / 255, 4 / 255)
+    panel:SetBlendMode("ADD")
+    local divider = list:CreateTexture(nil, "BORDER")
+    divider:SetPoint("TOPRIGHT")
+    divider:SetPoint("BOTTOMRIGHT")
+    divider:SetWidth(1)
+    divider:SetColorTexture(70 / 255, 58 / 255, 40 / 255)
+    window.listPanel, window.listDivider = panel, divider
+    window.list, window.pages, window.Tabs = {}, {}, {}
+    local y = -6
+    for i, entry in ipairs(ns.WINDOW_PAGES or {}) do
+        entry.index = nil
+        window.list[i] = ListEntry(list, y, entry)
+        y = y - 24
+    end
+    if ns.WINDOW_PAGES then
+        local header = Label(list, "Sparkles", "GameFontNormalLarge")
+        header:SetPoint("TOPLEFT", 10, y - 8)
+        local line = list:CreateTexture(nil, "ARTWORK")
+        Fade(line, 1, 0.82, 0, 0.67) -- (the logo's gold)
+        line:SetHeight(1)
+        line:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -3)
+        line:SetPoint("RIGHT", list, "RIGHT", -8, 0)
+        y = y - 36
+    end
+    for i, tab in ipairs(TABS) do
+        tab.index = i
+        window.Tabs[i] = ListEntry(list, y, tab)
+        y = y - 24
+    end
+
+    -- The preview: the node turning slowly on Blizzard's mount journal background. It fills its
+    -- column, from the list's line to the inset's border at the top and bottom.
     local preview = New("Frame", window.Inset)
-    preview:SetPoint("TOPLEFT", 8, -8)
-    preview:SetPoint("BOTTOMLEFT", 8, 8)
-    preview:SetWidth(280)
+    preview:SetPoint("TOPLEFT", LIST, -2)
+    preview:SetPoint("BOTTOMLEFT", LIST, 2)
+    preview:SetWidth(288)
     preview:SetClipsChildren(true)
+    -- Its edge, over everything in it (the preview clips what it holds): a thin line in the
+    -- headers' gold with a dark one round it.
+    local edge = New("Frame", window.Inset)
+    edge:SetAllPoints(preview)
+    edge:SetFrameLevel(preview:GetFrameLevel() + 50)
+    window.edge = edge
+    edge.gold = {}
+    -- A strip along one side: across the top or bottom, or down the left or right.
+    local function Side(side, layer, sublevel, out, width)
+        local piece = edge:CreateTexture(nil, layer, nil, sublevel)
+        if side == "TOP" or side == "BOTTOM" then
+            local y = side == "TOP" and out or -out
+            piece:SetPoint(side .. "LEFT", -out, y)
+            piece:SetPoint(side .. "RIGHT", out, y)
+            piece:SetHeight(width)
+        else
+            local x = side == "LEFT" and -out or out
+            piece:SetPoint("TOP" .. side, x, out)
+            piece:SetPoint("BOTTOM" .. side, x, -out)
+            piece:SetWidth(width)
+        end
+        return piece
+    end
+    for _, side in ipairs({ "TOP", "BOTTOM", "LEFT", "RIGHT" }) do
+        local dark = Side(side, "OVERLAY", 0, 2, 3) -- (from 2 outside to 1 in)
+        dark:SetColorTexture(0.04, 0.03, 0.02, 1)
+        local gold = Side(side, "OVERLAY", 1, 0, 1)
+        gold:SetColorTexture(0.47, 0.39, 0.24, 1)
+        edge.gold[#edge.gold + 1] = dark
+        edge.gold[#edge.gold + 1] = gold
+    end
+    -- Its backdrop: Blizzard's mount journal art grayed and tinted the logo's brown and gold.
     local background = preview:CreateTexture(nil, "BACKGROUND")
     background:SetTexture("Interface\\PetBattles\\MountJournal-BG")
     background:SetTexCoord(2 / 512, 0.78515625, 2 / 512, 510 / 512) -- the picture's left corners are white
     background:SetAllPoints()
+    background:SetDesaturated(true)
+    background:SetVertexColor(0.59, 0.47, 0.24)
+    window.previewBackdrop = background
     local scene = New("ModelScene", preview)
     scene:SetAllPoints()
     scene:SetCameraFieldOfView(FOV)
@@ -444,27 +702,56 @@ local function Build()
     off:SetAllPoints()
     off:SetFrameLevel(scene:GetFrameLevel() + 10)
     window.offText = Label(off, "Sparkles are off", "GameFontNormalLarge")
-    window.offText:SetPoint("BOTTOM", 0, 44)
-    window.offHint = Label(off, "Tick the glowing box to turn them on.", "GameFontHighlight")
+    window.offText:SetPoint("BOTTOM", 0, 60)
+    window.offHint = Label(off, "Pick a style to turn them on.", "GameFontHighlight")
     window.offHint:SetPoint("TOP", window.offText, "BOTTOM", 0, -6)
     window.off = off
+    -- The game's icon over the node, while Keep the game's icons is on (its box in the corner).
+    local over = New("Frame", scene.zoomer) -- (its own frame: the sparkles are the anchor's)
+    over:SetSize(32, 32)
+    over:SetPoint("CENTER", window.anchor)
+    window.gameIcon = over:CreateTexture(nil, "OVERLAY")
+    window.gameIcon:SetAllPoints()
+    -- In its place on a herb, the Cultivation icon while its switch is on (it covers the game's icon in the world).
+    if ns.CultivationPreviewIcon then window.cultivationIcon = ns.CultivationPreviewIcon(over, window.gameIcon) end
+    local icons = New("Frame", preview)
+    icons:SetAllPoints()
+    icons:SetFrameLevel(scene:GetFrameLevel() + 10)
+    local box = New("CheckButton", icons, "MinimalCheckboxTemplate")
+    box:SetPoint("BOTTOMLEFT", 8, 6)
+    box:SetScript("OnClick", function(self)
+        PlaySound(self:GetChecked() and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
+        Set("gameIcons", self:GetChecked())
+    end)
+    box.label = Label(icons, "Keep the game's icons", "GameFontNormal")
+    box.label:SetPoint("LEFT", box, "RIGHT", 4, 0)
+    Tooltip(box, "Keep the game's icons", "Keeps the game's own icon over things you can interact with.")
+    window.gameIcons = box
 
     -- The styles.
+    -- A kind's page: its name and a gray line on it on top (like the addon's own pages), then the styles.
+    window.kindTitle = Label(window.Inset, "", "GameFontHighlightLarge")
+    window.kindTitle:SetPoint("TOPLEFT", preview, "TOPRIGHT", 12, -12)
+    window.kindAbout = Label(window.Inset, "", "GameFontDisableSmall")
+    window.kindAbout:SetPoint("TOPLEFT", preview, "TOPRIGHT", 12, -36)
     local grid = New("Frame", window.Inset)
-    grid:SetPoint("TOPLEFT", preview, "TOPRIGHT", 10, 0)
+    grid:SetPoint("TOPLEFT", preview, "TOPRIGHT", 10, -58)
     grid:SetSize(428, gridHeight)
     window.tiles = {}
+    window.none = NoneTile(grid)
     for i, style in ipairs(ns.SPARKLE_STYLES) do window.tiles[i] = Tile(grid, i, style) end
 
     -- The rest of the look.
     local panel = New("Frame", window.Inset)
     panel:SetPoint("TOPLEFT", grid, "BOTTOMLEFT", 0, -26)
     panel:SetPoint("BOTTOMRIGHT", -8, 8)
-    window.on = Checkbox(panel, 0, "", "on")
-    window.on:SetPoint("LEFT", panel, "TOPLEFT", -4, 0) -- the box first: the kinds' names are long
-    window.on.label:ClearAllPoints()
-    window.on.label:SetPoint("LEFT", window.on, "RIGHT", 4, 0)
-    Tooltip(window.on, function() return window.tab.on end, function() return window.tab.tip .. NEEDS end)
+    local defaults = New("Button", panel, "UIPanelButtonTemplate")
+    defaults:SetSize(110, 22)
+    defaults:SetText(DEFAULTS)
+    defaults:SetPoint("LEFT", panel, "TOPLEFT", 0, 0)
+    defaults:SetScript("OnClick", Defaults)
+    Tooltip(defaults, DEFAULTS, "Puts this kind's style, colors, area, height and count back to how they come. On or off stays as it is.")
+    window.defaults = defaults
     local swatch = New("Button", panel, "ColorSwatchTemplate")
     swatch:SetSize(22, 22)
     swatch:SetScript("OnClick", function() PickColor("color") end)
@@ -502,61 +789,50 @@ local function Build()
     window.count = Slider(panel, -184, "Count", "count", 1, 20,
         "How many sparkles show at once. Some styles don't use it.", true)
 
-    -- The General tab: settings for all sparkles.
-    window.look = { grid, panel }
+    -- The settings page: for all sparkles, under headers.
+    window.look, window.preview = { grid, panel, window.kindTitle, window.kindAbout }, preview
     local general = New("Frame", window.Inset)
-    general:SetPoint("TOPLEFT", grid, "TOPLEFT", 0, -14)
+    general:SetPoint("TOPLEFT", grid, "TOPLEFT", 0, 38) -- (as high as the kind's name)
     general:SetPoint("BOTTOMRIGHT", -8, 8)
     window.general = general
-    local function BoxFirst(box) -- long names: the box first, its words after it
-        box:SetPoint("LEFT", general, "TOPLEFT", -4, select(5, box:GetPoint(1)))
+    local function At(box, x) -- the box first, its words after it
+        local y = select(5, box:GetPoint(1))
+        box:ClearAllPoints()
+        box:SetPoint("LEFT", general, "TOPLEFT", x or -4, y)
         box.label:ClearAllPoints()
         box.label:SetPoint("LEFT", box, "RIGHT", 4, 0)
+        local width = (x or -4) > 0 and 190 or 205 -- (a longer label wraps instead of leaving the page)
+        box.label:SetWidth(width)
+        box.label:SetJustifyH("LEFT")
+        box.hover:ClearAllPoints()
+        box.hover:SetPoint("LEFT", box.label, "LEFT")
+        box.hover:SetSize(math.min(box.label:GetStringWidth(), width) + 4, 26)
         box:SetFrameLevel(box:GetFrameLevel() + 1) -- over its row's tooltip area, so all of it takes the click
         return box
     end
-    window.everything = BoxFirst(Checkbox(general, 0, "Sparkles on everything", "everything",
-        "Turns them all on or off at once. Each tab has its own box too." .. NEEDS))
-    -- A second column at the top right, beside the first two rows.
-    local function BoxRight(box)
-        local y = select(5, box:GetPoint(1))
-        box:ClearAllPoints()
-        box:SetPoint("LEFT", general, "TOPLEFT", RIGHT_COLUMN, y)
-        box.label:ClearAllPoints()
-        box.label:SetPoint("LEFT", box, "RIGHT", 4, 0)
-        box.hover:ClearAllPoints()
-        box.hover:SetPoint("LEFT", box.label, "LEFT")
-        box.hover:SetSize(box.label:GetStringWidth() + 4, 26)
-        box:SetFrameLevel(box:GetFrameLevel() + 1)
-        return box
+    local function Header(y, text)
+        local header = Label(general, text, "GameFontNormalLarge")
+        header:SetPoint("LEFT", general, "TOPLEFT", 0, y)
+        local line = general:CreateTexture(nil, "ARTWORK")
+        Fade(line, 1, 0.82, 0, 0.67) -- (the logo's gold)
+        line:SetHeight(1)
+        line:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -3)
+        line:SetPoint("RIGHT", general, "RIGHT", -12, 0)
     end
-    window.minimapButton = BoxRight(Checkbox(general, 0, "Minimap button", "minimapButton",
-        "The button on the minimap. Ctrl Shift Left Click on it hides it too."))
-    window.own = BoxRight(Checkbox(general, -36, "Settings for this character only", "own",
-        "This character keeps its own settings. Untick it to use the settings your other characters share. It offers a reload to switch."))
-    window.gameIcons = BoxFirst(Checkbox(general, -36, "Keep the game's icons", "gameIcons",
-        "Keeps the game's own icon over things you can interact with."))
-    window.brightness = Slider(general, -76, "Brightness", "brightness", 10, 100,
+    window.everything = At(Checkbox(general, 0, "Sparkles on everything", "everything",
+        "Turns them all on or off at once. Each kind's None tile turns that one off." .. NEEDS))
+    Header(-36, "Look")
+    window.brightness = Slider(general, -66, "Brightness", "brightness", 10, 100,
         "How bright the sparkles are.")
-    window.reachLook = BoxFirst(Checkbox(general, -116, "Dimmer out of reach", "reachLook",
+    window.reachLook = At(Checkbox(general, -98, "Dimmer out of reach", "reachLook",
         "Dimmer when it's too far to gather. Flashes when you get in range."))
-    window.combatHide = BoxFirst(Checkbox(general, -152, "Hide in combat", "combatHide",
-        "No sparkles while you're in combat."))
-    window.instanceHide = BoxFirst(Checkbox(general, -188, "Hide in instances", "instanceHide",
-        "No sparkles in dungeons and raids."))
-    window.grayTooHard = BoxFirst(Checkbox(general, -224, "Gray when your skill is too low", "grayTooHard",
+    window.rareGlow = At(Checkbox(general, -98, "Rare nodes stand out", "rareGlow",
+        "A gold glow on rare herbs and ore like Black Lotus and Truesilver."), RIGHT_COLUMN)
+    window.grayTooHard = At(Checkbox(general, -130, "Gray when your skill is too low", "grayTooHard",
         "Herbs and ore your skill is too low for sparkle gray."))
-    window.myProfessions = BoxFirst(Checkbox(general, -260, "Only for my professions", "myProfessions",
-        "Herbs sparkle only if you have Herbalism, ore only with Mining, and corpses only with Skinning."))
-    window.rareGlow = BoxFirst(Checkbox(general, -296, "Rare nodes stand out", "rareGlow",
-        "A gold glow on rare herbs and ore like Black Lotus and Truesilver."))
-    window.sparkleSound = BoxFirst(Checkbox(general, -332, "Sparkle sound", "sparkleSound",
-        "Plays a soft sound when something near you starts sparkling."))
-    window.gatherDim = BoxFirst(Checkbox(general, -368, "Dim while gathering", "gatherDim",
-        "Sparkles fade while you gather so you can see the node."))
     local harvest = New("DropdownButton", general, "WowStyle1DropdownTemplate")
     harvest:SetWidth(180)
-    Row(general, -408, "When gathered", harvest,
+    Row(general, -164, "When gathered", harvest,
         "What the sparkles do when you loot it. Picking one plays it on the preview.")
     window.harvest = harvest
     local show = New("Button", general, "UIPanelButtonTemplate")
@@ -566,6 +842,32 @@ local function Build()
     show:SetScript("OnClick", function() PlayHarvest() end)
     Tooltip(show, PREVIEW, "Plays it on the preview.")
     window.showHarvest = show
+    Header(-202, "When to hide")
+    window.combatHide = At(Checkbox(general, -232, "Hide in combat", "combatHide",
+        "No sparkles while you're in combat."))
+    window.instanceHide = At(Checkbox(general, -232, "Hide in instances", "instanceHide",
+        "No sparkles in dungeons and raids."), RIGHT_COLUMN)
+    window.gatherDim = At(Checkbox(general, -264, "Dim while gathering", "gatherDim",
+        "Sparkles fade while you gather so you can see the node."))
+    Header(-302, "Extras")
+    window.sparkleSound = At(Checkbox(general, -332, "Sparkle sound", "sparkleSound",
+        "Plays a soft sound when something near you starts sparkling."))
+    window.townInteractOff = At(Checkbox(general, -332, "Interact Key off in towns (Beta)", "townInteractOff",
+        "Turns the game's Interact Key off while you're in a town or inn, so it doesn't pick the NPCs there. Nothing sparkles in town then."), RIGHT_COLUMN)
+    window.myProfessions = At(Checkbox(general, -364, "Only for my professions", "myProfessions",
+        "Herbs sparkle only if you have Herbalism, ore only with Mining, and corpses only with Skinning."))
+    -- An addon with pages of its own has these there.
+    window.minimapButton = At(Checkbox(general, -364, "Minimap button", "minimapButton",
+        "The button on the minimap."), RIGHT_COLUMN)
+    window.cultivation = At(Checkbox(general, -396, "Show when Cultivation is ready", "cultivation",
+        "Tauren: the Cultivation icon over a herb you can cultivate now. Works without herb sparkles and without Herbalism. Like sparkles, it turns on the game's Interact Key."))
+    window.own = At(Checkbox(general, -428, "Settings for this character only", "own",
+        "This character keeps its own settings. Untick it to use the settings your other characters share. It offers a reload to switch."))
+    window.stone = At(Checkbox(general, -428, "Stone background", "stoneBackground",
+        "Blizzard's stone texture behind this window, warmed to the logo's brown. Off: plain brown."), RIGHT_COLUMN)
+    for _, box in ipairs({ window.minimapButton, window.own, window.stone }) do
+        for _, part in ipairs({ box, box.label, box.hover }) do part:SetShown(not ns.WINDOW_PAGES) end
+    end
     -- Blizzard's proc glow round the box that turns them on: only its loop, as on
     -- an action button whose alert skips the burst.
     if ActionButtonSpellAlertMixin then
@@ -574,33 +876,26 @@ local function Build()
         window.glow:SetFrameLevel(window.everything:GetFrameLevel() + 2)
     end
 
-    -- The tabs along the bottom, as on Forever's friends list.
-    window.Tabs = {}
-    for i, tab in ipairs(TABS) do
-        tab.index = i
-        local button = NewTab(window)
-        button:SetID(i)
-        button:SetText(tab.name)
-        if i == 1 then button:SetPoint("TOPLEFT", window, "BOTTOMLEFT", 11, 2) end
-        button:SetScript("OnClick", function()
-            PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB)
-            window.tab = tab
-            Refresh()
-        end)
-        window.Tabs[i] = button
-        PanelTemplates_TabResize(button, 0)
+    -- The addon's own pages, beside the list.
+    for i, entry in ipairs(ns.WINDOW_PAGES or {}) do
+        local page = New("Frame", window.Inset)
+        page:SetPoint("TOPLEFT", LIST + 4, -4)
+        page:SetPoint("BOTTOMRIGHT", -4, 4)
+        entry.page = page
+        entry.build(page)
+        window.pages[i] = page
     end
-    PanelTemplates_SetNumTabs(window, #TABS)
 
     -- Closes with the options window it was opened from.
     if SettingsPanel and SettingsPanel.HookScript then
         SettingsPanel:HookScript("OnHide", function() window:Hide() end)
     end
     window.Set = Set -- what the controls do, by name
+    window.SetSetting = ns.WindowSet -- the addon's own pages' settings, by key
 end
 
 ---------------------------------------------------------------------------
--- Showing a tab
+-- Showing a page
 ---------------------------------------------------------------------------
 
 -- The camera, then the sparkles where the node's plate is on screen (the top of its box
@@ -667,20 +962,57 @@ end
 function Refresh()
     local tab, kind = window.tab, Shown()
     window.refreshing = true
-    PanelTemplates_SetTab(window, tab.index)
-    window:SetPortraitToAsset(tab.icon)
+    window.selectedTab = tab.index
+    for _, entry in ipairs(ns.WINDOW_PAGES or {}) do entry.page:SetShown(entry == tab) end
+    local items = {}
+    for i, entry in ipairs(ns.WINDOW_PAGES or {}) do items[#items + 1] = { window.list[i], entry } end
+    for i, entry in ipairs(TABS) do items[#items + 1] = { window.Tabs[i], entry } end
+    for _, pair in ipairs(items) do
+        local item, entry = pair[1], pair[2]
+        for _, part in ipairs(item.picked) do part:SetShown(entry == tab) end
+        local off = entry.on and not ns.db[entry.key]
+        if item.box then item.box:SetChecked(not off) end
+        item.text:SetFontObject(entry == tab and "GameFontHighlight" or off and "GameFontDisable" or "GameFontNormal")
+    end
     local isGeneral = tab.key == "general"
-    for _, part in ipairs(window.look) do part:SetShown(not isGeneral) end
+    for _, part in ipairs(window.look) do part:SetShown(not isGeneral and not tab.page) end
+    window.kindTitle:SetText(tab.name)
+    window.kindAbout:SetText(tab.tip or "")
     window.general:SetShown(isGeneral)
+    window.preview:SetShown(not tab.page)
+    window.edge:SetShown(not tab.page)
+    window.interactOff:SetShown(ns.InteractOff())
+    window.turnOn:SetShown(window.interactOff:IsShown())
+    -- Stone background: the inset's stone with the logo's brown added over it (its grain
+    -- kept, its average that brown); off, plain brown.
+    if ns.db.stoneBackground == true then
+        window.backdrop:SetColorTexture(14 / 255, 10 / 255, 5 / 255)
+        window.backdrop:SetBlendMode("ADD")
+    else
+        window.backdrop:SetColorTexture(27 / 255, 23 / 255, 18 / 255)
+        window.backdrop:SetBlendMode("BLEND")
+    end
+    if tab.page then
+        tab.refresh(tab.page)
+        window.off:SetShown(false)
+        if window.glow then window.glow:SetShown(false) end
+        window.refreshing = nil
+        return
+    end
     local everything = true
     for _, k in ipairs(ns.KINDS) do everything = everything and ns.db[k] == true end
     window.everything:SetChecked(everything)
-    window.interactOff:SetShown(ns.InteractOff())
-    window.turnOn:SetShown(window.interactOff:IsShown())
     window.gameIcons:SetChecked(ns.db.gameIcons)
+    window.gameIcon:SetAtlas(GAME_ICONS[kind])
+    local cultivation = window.cultivationIcon and kind == "herbs" and ns.db.cultivation == true
+    window.gameIcon:SetShown(ns.db.gameIcons == true and not cultivation)
+    if window.cultivationIcon then window.cultivationIcon:SetShown(cultivation) end
     window.myProfessions:SetChecked(ns.db.myProfessions)
+    window.cultivation:SetChecked(ns.db.cultivation)
     window.minimapButton:SetChecked(ns.db.minimapButton)
+    window.townInteractOff:SetChecked(ns.db.townInteractOff)
     window.own:SetChecked(not ns.OwnSettings or ns.OwnSettings())
+    window.stone:SetChecked(ns.db.stoneBackground == true)
     window.brightness:SetValue(ns.db.brightness)
     window.reachLook:SetChecked(ns.db.reachLook)
     window.combatHide:SetChecked(ns.db.combatHide)
@@ -699,17 +1031,15 @@ function Refresh()
     end)
     local on = true
     for _, k in ipairs(Kinds()) do on = on and ns.db[k] end
-    window.on:SetChecked(on)
-    window.on.label:SetText(tab.on or "")
     local anyOn = false
     for _, k in ipairs(ns.KINDS) do anyOn = anyOn or ns.db[k] == true end
-    local off = isGeneral and not anyOn or not isGeneral and not on
-    window.off:SetShown(off)
+    window.off:SetShown(not isGeneral and not on)
     local glow = window.glow
     if glow then
+        local off = isGeneral and not anyOn
         glow:SetShown(off)
         if off then
-            local box = isGeneral and window.everything or window.on
+            local box = window.everything
             glow:ClearAllPoints()
             glow:SetPoint("CENTER", box)
             glow:SetSize(box:GetWidth() * 1.4, box:GetHeight() * 1.4) -- Blizzard's size on a button
@@ -731,8 +1061,12 @@ function Refresh()
     window.height:SetValue(ns.SparkleLook(kind, "height"))
     window.count:SetValue(ns.SparkleLook(kind, "count"))
     window.refreshing = nil
-    local chosen = ns.SparkleLook(kind, "style")
-    local at = 0 -- five across: the styles for every kind, then the tab's own
+    local chosen = on and ns.SparkleLook(kind, "style")
+    window.none.border:SetAtlas(on and "PetList-ButtonBackground" or "PetList-ButtonSelect")
+    window.none.name:SetFontObject(on and GameFontNormalSmall or GameFontHighlightSmall)
+    window.none:SetPoint("TOPLEFT", 0, 0)
+    window.none:SetShown(not isGeneral)
+    local at = 1 -- five across: None, the styles for every kind, then the tab's own
     for pass = 1, 2 do
         for i, tile in ipairs(window.tiles) do
             local style = ns.SPARKLE_STYLES[i]
@@ -752,8 +1086,27 @@ function Refresh()
         end
     end
     local node = NODES[kind][window.node[kind] or 1]
-    ns.ShowSparkles(window.anchor, kind, nil, { lower = ns.SPARKLE_LOWER[node[1]:lower()] }) -- the saved look, as a preview
+    local example = EXAMPLES[window.example]
+    if ns.db[kind] or example then -- (the preview's own kind: on Sparkle settings, the last one shown)
+        ns.ShowSparkles(window.anchor, kind, nil, { lower = ns.SPARKLE_LOWER[node[1]:lower()], -- the saved look, as a preview
+            rare = example == "rare", far = example == "far", tooHard = example == "tooHard" })
+    elseif ns.SparklePreviews[window.anchor] then
+        ns.SparklePreviews[window.anchor]:Hide() -- (off: the node alone, as it would be in the world)
+    end
     ShowNode()
+end
+
+-- A ticked setting's look on the preview (EXAMPLES) for a few seconds, then the usual look.
+function ShowExample(what)
+    window.example = what
+    window.examples = (window.examples or 0) + 1
+    local shown = window.examples
+    Refresh()
+    C_Timer.After(EXAMPLE_TIME, function()
+        if window.examples ~= shown then return end -- another one started since
+        window.example = nil
+        if window:IsShown() then Refresh() end
+    end)
 end
 
 -- The finish on the preview's node, then the sparkles back.
@@ -773,8 +1126,17 @@ function PlayHarvest()
     end)
 end
 
-local function Open()
+-- key: the page to show (a kind, "general", one of the addon's pages, or "sparkles" for the
+-- sparkles as they were last shown); nil keeps the last.
+local function Open(key)
     if not window then Build() end
+    for _, entry in ipairs(ns.WINDOW_PAGES or {}) do
+        if entry.key == key then window.tab = entry end
+    end
+    for _, entry in ipairs(TABS) do
+        if entry.key == key then window.tab = entry end
+    end
+    if key == "sparkles" and window.tab.page then window.tab = TABS[1] end
     window:Show()
     Refresh()
 end
@@ -782,9 +1144,9 @@ end
 -- If opening it errors, the error is still reported, the window stays shut, and
 -- from the next reload this version's sparkle settings in the options have Blizzard's rows instead.
 local failed
-function ns.ShowSparkleWindow()
+function ns.ShowSparkleWindow(key)
     if failed then return end
-    failed = not xpcall(Open, geterrorhandler())
+    failed = not xpcall(Open, geterrorhandler(), key)
     if failed then
         ns.db.sparkleWindowFailed = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version")
         if window then window:Hide() end
@@ -796,6 +1158,8 @@ function ns.RefreshSparkleWindow()
     if window and window:IsShown() then Refresh() end
 end
 function ns.SparkleWindowShown() return window ~= nil and window:IsShown() end
+-- The page shown (a kind, "general" or one of the addon's own).
+function ns.SparkleWindowPage() return window and window.tab.key end
 function ns.HideSparkleWindow() if window then window:Hide() end end
 
 ---------------------------------------------------------------------------
@@ -824,7 +1188,7 @@ end
 local function ShowNotice()
     if not notice then
         notice = New("Frame", UIParent)
-        notice:SetFrameStrata("DIALOG")
+        notice:SetFrameStrata("FULLSCREEN_DIALOG") -- (over the settings window, which can open it)
         notice:SetToplevel(true)
         notice:EnableMouse(true)
         notice:SetPoint("TOP", UIParent, "TOP", 0, -135)
@@ -871,7 +1235,7 @@ local reloadAsk
 function ns.AskReload()
     if not reloadAsk then
         reloadAsk = New("Frame", UIParent)
-        reloadAsk:SetFrameStrata("DIALOG")
+        reloadAsk:SetFrameStrata("FULLSCREEN_DIALOG") -- (over the settings window, which opens it)
         reloadAsk:SetToplevel(true)
         reloadAsk:EnableMouse(true)
         reloadAsk:SetPoint("TOP", UIParent, "TOP", 0, -135)

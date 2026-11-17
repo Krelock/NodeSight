@@ -51,6 +51,35 @@ end
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
+        { version = "3.1.0",
+            { "New", {
+                { "Settings window.", "All of NodeSight's settings are now in one window with the sparkles: General and Herb/Ore Switch at the top of the list, then each kind of sparkle and Sparkle settings. Left Click the minimap button to open it, or NodeSight settings in Options > AddOns. Drag it by any empty part to move it" },
+                { "Lootable corpses.", "Off by default. Corpses that still have loot sparkle, so you don't walk past them. Tick Lootable corpses in the settings window's list" },
+                { "Interact Key off in towns (Beta).", "Off by default. Turns the Interact Key off in towns and inns so it doesn't pick the NPCs there. Nothing sparkles in town then. Turn it on under Towns on the General page" },
+                { "Stone background.", "Off by default. Blizzard's stone texture behind the settings window, warmed to NodeSight's brown. On the General page" },
+                { "Examples in the preview.", "On Sparkle settings, ticking Rare nodes stand out, Dimmer out of reach or Gray when your skill is too low shows it on the preview for a few seconds" },
+            } },
+            { "Changes", {
+                { "Keep the game's icons.", "Now under the preview on each kind's page, and the preview shows the game's icon over the node while it's on" },
+                { "Skinning.", "No longer Beta" },
+                { "The preview.", "Shows no sparkles while that kind is off" },
+                { "Herb and ore tooltips.", "In your bags, \"Gathered with ...\" is on the Crafting Reagent line instead of under the vendor and auction prices" },
+            } },
+            { "Fixes", {
+                { "Options error in combat.", "Opening a dropdown in Blizzard's Options during a fight could be blocked with an error naming NodeSight. NodeSight's settings are no longer in Options, so this can't happen" },
+            } },
+        },
+        { version = "3.0.2",
+            { "Changes", {
+                { "Minimap button tooltip.", "Spaced into groups, and Shift Right Click now says Herb/Ore Switch" },
+                { "Shift Left Click on the minimap button.", "Says in chat where NodeSight's settings are (Options > AddOns > NodeSight) instead of opening them. With the gamepad UI on, Left Click says where the sparkle settings are" },
+                { "Hiding the minimap button.", "Ctrl Shift Left Click no longer hides it; untick Minimap button in NodeSight's settings or the sparkle window's General tab" },
+                { "Herb/Ore Switch page.", "The Switch page in Options is now called Herb/Ore Switch" },
+            } },
+            { "Fixes", {
+                { "Edit Mode error.", "After opening NodeSight's settings from the minimap button, opening Edit Mode could fill your error log (\"tainted by NodeSight\") until a reload. The button no longer opens Options" },
+            } },
+        },
         { version = "3.0.1",
             { "New", {
                 { "Settings for this character only and Minimap button.", "In the sparkle window's General tab, at the top right" },
@@ -130,7 +159,7 @@ do
     function ShowWhatsNew()
         if not dialog.frame then
             local frame = NewFrame("Frame", UIParent)
-            frame:SetFrameStrata("DIALOG")
+            frame:SetFrameStrata("FULLSCREEN_DIALOG") -- (over the settings window, whose button opens it)
             frame:SetToplevel(true)
             frame:EnableMouse(true)
             frame:SetPoint("TOP", UIParent, "TOP", 0, -135)
@@ -174,7 +203,7 @@ do
     local function Show(title, body, once)
         if not notice then
             notice = NewFrame("Frame", UIParent)
-            notice:SetFrameStrata("DIALOG")
+            notice:SetFrameStrata("FULLSCREEN_DIALOG")
             notice:SetToplevel(true)
             notice:EnableMouse(true)
             notice:SetPoint("TOP", UIParent, "TOP", 0, -135)

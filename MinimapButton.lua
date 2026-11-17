@@ -1,7 +1,9 @@
--- NodeSight's minimap button (LibDBIcon, from Libs): left click opens the sparkle
--- settings, Shift left click NodeSight's Options page, right click turns every kind of
--- sparkle on or off, Shift right click switching between herbs and ore, Ctrl Shift left
--- click hides the button. Its place is saved with the settings.
+-- NodeSight's minimap button (LibDBIcon, from Libs): left click opens NodeSight's window on
+-- its settings, Shift left click on the sparkles, right click turns every kind of sparkle
+-- on or off, Shift right click switching between herbs and ore. Its place is saved with
+-- the settings.
+-- It never opens Options: Blizzard opens that window inside the caller's code, so the
+-- window manager would run tainted and later break Edit Mode. Our own windows are fine.
 
 local ADDON_NAME, ns = ...
 
@@ -15,10 +17,6 @@ local function AllOn()
         if not ns.db[kind] then return false end
     end
     return true
-end
-
-local function OpenPage(category)
-    if category then Settings.OpenToCategory(category:GetID()) end
 end
 
 -- A click and what it does: the click in gold, the action in white.
@@ -35,11 +33,14 @@ local function Tooltip(tooltip)
     local r, g, b = NORMAL_FONT_COLOR:GetRGB()
     local gr, gg, gb = GRAY_FONT_COLOR:GetRGB()
     tooltip:AddDoubleLine("NodeSight", C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or "", r, g, b, gr, gg, gb)
-    Hint(tooltip, "Left Click", "Sparkle Settings")
-    Hint(tooltip, "Shift Left Click", "NodeSight Settings")
+    tooltip:AddLine(" ")
+    Hint(tooltip, "Left Click", "NodeSight Settings")
+    if not ns.OptionsOnly() then -- (no window with the gamepad UI: the settings are on pages)
+        Hint(tooltip, "Shift Left Click", "Sparkle Settings")
+    end
+    tooltip:AddLine(" ")
     Hint(tooltip, "Right Click", AllOn() and "Turn Sparkles Off" or "Turn Sparkles On")
-    Hint(tooltip, "Shift Right Click", ns.db.switchFinders and "Turn Switching Off" or "Turn Switching On")
-    Hint(tooltip, "Ctrl Shift Left Click", "Hide This Button")
+    Hint(tooltip, "Shift Right Click", ns.db.switchFinders and "Turn Herb/Ore Switch Off" or "Turn Herb/Ore Switch On")
 end
 
 -- The tooltip shown over the button is redrawn after a click changes it.
@@ -50,6 +51,9 @@ local function Retooltip(frame)
     Tooltip(tooltip)
     tooltip:Show()
 end
+
+-- Where Options has them (Esc > Options > AddOns).
+local SETTINGS_PAGE = "Settings are in Options > AddOns > NodeSight."
 
 local function Say(text)
     DEFAULT_CHAT_FRAME:AddMessage(NORMAL_FONT_COLOR:WrapTextInColorCode("NodeSight") .. ": " .. text)
@@ -65,20 +69,13 @@ local function ToggleAll()
     Say(on and "Sparkles turned on." or "Sparkles turned off.")
 end
 
--- Switching between Find Herbs and Find Minerals, as its checkbox does.
+-- Switch between herbs and ore (Find Herbs and Find Minerals in turn), as its checkbox does.
 local function ToggleSwitch()
     ns.db.switchFinders = not ns.db.switchFinders
     ns.SwitchReset()
     ns.UpdateSwitch()
-    Say(ns.db.switchFinders and "Switching between herbs and ore turned on." or "Switching between herbs and ore turned off.")
-end
-
--- As the Minimap button setting turned off (it turns the button back on).
-local function HideButton(frame)
-    if frame and shownTooltip and shownTooltip:IsOwned(frame) then shownTooltip:Hide() end
-    ns.db.minimapButton = false
-    ns.MinimapButtonChanged()
-    ns.RefreshSparkleWindow()
+    Say(ns.db.switchFinders and "Herb/Ore Switch turned on." or "Herb/Ore Switch turned off.")
+    ns.RefreshSettingsWindow()
 end
 
 local function Clicked(frame, button)
@@ -86,16 +83,10 @@ local function Clicked(frame, button)
         if IsShiftKeyDown() then ToggleSwitch() else ToggleAll() end
         return Retooltip(frame)
     end
-    if IsControlKeyDown() and IsShiftKeyDown() then return HideButton(frame) end
-    if IsShiftKeyDown() then return OpenPage(ns.settingsCategory) end
-    -- The sparkle window, or its page where the window isn't used (gamepad UI).
-    if ns.OptionsOnly() then
-        OpenPage(ns.sparklesCategory)
-    elseif ns.SparkleWindowShown() then
-        ns.HideSparkleWindow()
-    else
-        ns.ShowSparkleWindow()
-    end
+    if ns.OptionsOnly() then return Say(SETTINGS_PAGE) end -- the window isn't used (gamepad UI)
+    if ns.SparkleWindowShown() then return ns.HideSparkleWindow() end
+    if IsShiftKeyDown() then return ns.ShowSparkleWindow("sparkles") end
+    ns.ShowSettingsWindow()
 end
 
 local function Icon() return LibStub and LibStub("LibDBIcon-1.0", true) end

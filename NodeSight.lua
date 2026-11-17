@@ -14,7 +14,6 @@
 --   NodeSight.lua    defaults, the tooltip line, loading and events
 --   Switch.lua       the finder switch: when to switch, whether it worked, and the mute of its click
 --   Sparkles.lua     sparkles on the herb or ore in front of you
---   Collect.lua      remembers where you gathered, and marks the places on the world map
 --   SparkleWindow.lua the sparkle window: on/off and the look for each kind, with a 3D preview
 --   WhatsNew.lua     the patch notes dialog
 --   MinimapButton.lua the minimap button
@@ -37,6 +36,7 @@ local defaults = {
     others = false, -- sparkles on other objects
     bobber = false, -- sparkles on your fishing bobber
     skinning = false, -- sparkles on corpses you can skin
+    loot = false, -- sparkles on corpses that still have loot
     gameIcons = false, -- keep the game's interact icons while sparkles are on
     skillLine = true, -- "Requires Herbalism (15)" in herb and ore tooltips
     popups = true, -- NodeSight's popups (ns.AfterFight)
@@ -62,6 +62,7 @@ local defaults = {
     othersStyle = 1, othersColor = "ffffffff", othersSize = 100, othersHeight = -60, othersCount = 9,
     bobberStyle = 6, bobberColor = "ffffffff", bobberSize = 100, bobberHeight = 0, bobberCount = 9,
     skinningStyle = 1, skinningColor = "ffffffff", skinningSize = 100, skinningHeight = -115, skinningCount = 9,
+    lootStyle = 1, lootColor = "ffffffff", lootSize = 100, lootHeight = -115, lootCount = 9,
     brightness = 100, -- sparkle alpha, in percent
     reachLook = false, -- dimmer out of reach, a flash in reach
     combatHide = false, -- no sparkles in combat
@@ -70,11 +71,12 @@ local defaults = {
     gatherDim = true, -- sparkles fade back while you gather the node
     grayTooHard = false, -- gray sparkles on herbs and ore above your skill
     myProfessions = true, -- herb, ore and skinning sparkles only with Herbalism, Mining or Skinning
+    cultivation = false, -- Cultivation's icon over a herb you can cultivate (Tauren)
     rareGlow = false, -- a gold glow around rare herbs and ore
     harvest = 5, -- how a gathered node finishes (Sparkles.lua's HARVESTS: Fade away)
     minimapButton = true, -- the minimap button (its place: minimapIcon, LibDBIcon's)
-    collect = true, -- remember where you gather herbs and ore (Collect.lua)
-    collectMap = true, -- mark the remembered places on the world map
+    townInteractOff = false, -- Interact Key off while resting in a town or inn
+    stoneBackground = true, -- the settings window's stone texture under the logo's brown
 }
 local db = defaults -- NodeSightDB once it's loaded
 ns.db = db -- shared with the other files
@@ -203,7 +205,18 @@ local function OnItemTooltip(tooltip, data)
     local kind = NodeKind(node)
     local level, need = SkillLevel(node, kind)
     if not level or not professions[kind] then return end
-    tooltip:AddLine(GATHERED:format(professions[kind], need), SkillColor(level):GetRGB())
+    local text, color = GATHERED:format(professions[kind], need), SkillColor(level)
+    -- Under the game's "Crafting Reagent" line, as its second line: other addons' lines
+    -- (prices) come before this post-call.
+    for i = 2, tooltip:NumLines() do
+        local left = tooltip:GetLeftLine(i)
+        local line = left and left:GetText()
+        if not issecretvalue(line) and line == PROFESSIONS_USED_IN_COOKING then
+            left:SetText(line .. "\n" .. color:WrapTextInColorCode(text))
+            return
+        end
+    end
+    tooltip:AddLine(text, color:GetRGB())
 end
 
 local function OnObjectTooltip(tooltip, data)
@@ -286,12 +299,10 @@ NodeSightAPI = {
 
 -- Settings: this character's own (NodeSightCharDB, the default, started from the
 -- shared ones) or the ones shared by every character that has its own turned off
--- (NodeSightDB). Quest objects, the places
--- you gathered at and the CVars to put back are always shared.
+-- (NodeSightDB). Quest objects and the CVars to put back are always shared.
 local function LoadSettings()
     NodeSightDB = NodeSightDB or {}
-    local SHARED = { learned = true, questObjects = true, saved = true, applied = true, rareNames = true, report = true,
-        nodes = true, collectTold = true }
+    local SHARED = { learned = true, questObjects = true, saved = true, applied = true, rareNames = true, report = true }
     if type(NodeSightCharDB) ~= "table" then
         NodeSightCharDB = { own = true }
         for key, value in pairs(NodeSightDB) do
@@ -329,6 +340,11 @@ local function OnAddonLoaded()
     if firstInstall then NodeSightDB.notesSeen = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") end
     NavBack(settings)
     ns.CarryOverLooks(settings)
+    -- Stone background on once for settings saved while it was off by default (stoneOn: done).
+    if settings.stoneOn == nil then
+        settings.stoneOn = true
+        if settings.stoneBackground == false then settings.stoneBackground = true end
+    end
     for key, value in pairs(defaults) do
         if settings[key] == nil then settings[key] = value end
     end
@@ -365,7 +381,6 @@ local function OnAddonLoaded()
     NodeSightDB.applied = NodeSightDB.applied or {}
     ns.RegisterSettings()
     ns.MinimapButton()
-    ns.Collect()
     if OBJECT_TOOLTIP then TooltipDataProcessor.AddTooltipPostCall(OBJECT_TOOLTIP, OnObjectTooltip) end
     if ITEM_TOOLTIP then TooltipDataProcessor.AddTooltipPostCall(ITEM_TOOLTIP, OnItemTooltip) end
 end
@@ -384,7 +399,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
             events:UnregisterEvent("ADDON_LOADED")
             -- After an update, a /reload only loads the files the old .toc listed:
             -- stay off until the game is restarted.
-            if not (ns.Plain and ns.Mute and ns.Setup and ns.ShowSparkleWindow and ns.ShowWhatsNew and ns.MinimapButton and ns.RegisterSettings and ns.Collect) then
+            if not (ns.Plain and ns.Mute and ns.Setup and ns.CanCultivate and ns.ShowSparkleWindow and ns.ShowWhatsNew and ns.ShowSettingsWindow and ns.MinimapButton and ns.RegisterSettings) then
                 events:UnregisterAllEvents()
                 if ns.ShowNotice then
                     pcall(ns.ShowNotice, "NodeSight needs a game restart", "NodeSight was updated while the game was running, "

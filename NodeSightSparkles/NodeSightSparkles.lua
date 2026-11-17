@@ -27,7 +27,8 @@ local defaults = {
     quests = false, -- sparkles on quest objects
     others = false, -- sparkles on other objects
     bobber = true, -- Beta: sparkles on your fishing bobber
-    skinning = false, -- Beta: sparkles on corpses you can skin
+    skinning = false, -- sparkles on corpses you can skin
+    loot = false, -- sparkles on corpses that still have loot
     gameIcons = false, -- keep the game's interact icons while sparkles are on
     -- Each kind's sparkles (Sparkles.lua's KEYS): style (Sparkles.lua's STYLES),
     -- tint "aarrggbb" (white = none), area size, offset from the plate's bottom,
@@ -39,6 +40,7 @@ local defaults = {
     othersStyle = 1, othersColor = "ffffffff", othersSize = 100, othersHeight = -60, othersCount = 9,
     bobberStyle = 6, bobberColor = "ffffffff", bobberSize = 100, bobberHeight = 0, bobberCount = 9,
     skinningStyle = 1, skinningColor = "ffffffff", skinningSize = 100, skinningHeight = -115, skinningCount = 9,
+    lootStyle = 1, lootColor = "ffffffff", lootSize = 100, lootHeight = -115, lootCount = 9,
     brightness = 100, -- sparkle alpha, in percent
     reachLook = false, -- dimmer out of reach, a flash in reach
     combatHide = false, -- no sparkles in combat
@@ -47,10 +49,13 @@ local defaults = {
     gatherDim = true, -- sparkles fade back while you gather the node
     grayTooHard = false, -- gray sparkles on herbs and ore above your skill
     myProfessions = true, -- herb, ore and skinning sparkles only with Herbalism, Mining or Skinning
+    cultivation = false, -- Cultivation's icon over a herb you can cultivate (Tauren)
     popups = true, -- the Enable Interact Key popup
     rareGlow = false, -- a gold glow around rare herbs and ore
     harvest = 5, -- how a gathered node finishes (Sparkles.lua's HARVESTS: Fade away)
     minimapButton = true, -- the minimap button (its place: minimapIcon, LibDBIcon's)
+    townInteractOff = false, -- Interact Key off while resting in a town or inn
+    stoneBackground = true, -- the settings window's stone texture under the logo's brown
 }
 ns.db = defaults -- NodeSightSparklesCharDB from login on
 ns.defaults = defaults
@@ -154,7 +159,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
             events:UnregisterEvent("ADDON_LOADED")
             -- After an update, a /reload only loads the files the old .toc listed:
             -- stay off until the game is restarted.
-            if not (ns.TooHard and ns.Setup and ns.ShowSparkleWindow and ns.MinimapButton and ns.RegisterSettings) then
+            if not (ns.TooHard and ns.Setup and ns.CanCultivate and ns.ShowSparkleWindow and ns.MinimapButton and ns.RegisterSettings) then
                 events:UnregisterAllEvents()
                 return
             end

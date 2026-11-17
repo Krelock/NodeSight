@@ -1,7 +1,9 @@
 -- NodeSight Sparkles' minimap button (LibDBIcon, from Libs): left click opens the sparkle
--- window (the Options page with the gamepad UI on, or after the window failed to open),
--- right click turns every kind of sparkle on or off, Ctrl Shift left click hides the
--- button. Its place is saved per character.
+-- window (nothing with the gamepad UI on, or after the window failed to open), right click
+-- turns every kind of sparkle on or off, Ctrl Shift left click hides the button. Its place
+-- is saved per character.
+-- It never opens Options: Blizzard opens that window inside the caller's code, so the
+-- window manager would run tainted and later break Edit Mode.
 
 local ADDON_NAME, ns = ...
 
@@ -31,8 +33,10 @@ local function Tooltip(tooltip)
     local r, g, b = NORMAL_FONT_COLOR:GetRGB()
     local gr, gg, gb = GRAY_FONT_COLOR:GetRGB()
     tooltip:AddDoubleLine("NodeSight Sparkles", C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version") or "", r, g, b, gr, gg, gb)
-    Hint(tooltip, "Left Click", "Sparkle Settings")
+    tooltip:AddLine(" ")
+    if not ns.OptionsOnly() then Hint(tooltip, "Left Click", "Sparkle Settings") end -- (no window with the gamepad UI)
     Hint(tooltip, "Right Click", AllOn() and "Turn Sparkles Off" or "Turn Sparkles On")
+    tooltip:AddLine(" ")
     Hint(tooltip, "Ctrl Shift Left Click", "Hide This Button")
 end
 
@@ -69,9 +73,8 @@ local function Clicked(frame, button)
         return
     end
     if IsControlKeyDown() and IsShiftKeyDown() then return HideButton(frame) end
-    if ns.OptionsOnly() then
-        if ns.settingsCategory then Settings.OpenToCategory(ns.settingsCategory:GetID()) end
-    elseif ns.SparkleWindowShown() then
+    if ns.OptionsOnly() then return end -- the window isn't used (gamepad UI)
+    if ns.SparkleWindowShown() then
         ns.HideSparkleWindow()
     else
         ns.ShowSparkleWindow()
