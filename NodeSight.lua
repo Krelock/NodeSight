@@ -14,6 +14,7 @@
 --   NodeSight.lua    defaults, the tooltip line, loading and events
 --   Switch.lua       the finder switch: when to switch, whether it worked, and the mute of its click
 --   Sparkles.lua     sparkles on the herb or ore in front of you
+--   Collect.lua      where you gathered, marked on the world map
 --   SparkleWindow.lua the sparkle window: on/off and the look for each kind, with a 3D preview
 --   WhatsNew.lua     the patch notes dialog
 --   MinimapButton.lua the minimap button
@@ -75,6 +76,15 @@ local defaults = {
     rareGlow = false, -- a gold glow around rare herbs and ore
     harvest = 5, -- how a gathered node finishes (Sparkles.lua's HARVESTS: Fade away)
     minimapButton = true, -- the minimap button (its place: minimapIcon, LibDBIcon's)
+    collect = true, -- remember where you gather herbs and ore (Collect.lua)
+    collectMap = true, -- and mark those places on the world map
+    collectMinimap = true, -- and on the minimap
+    collectPicture = 1, -- the map symbols' picture (Collect.lua's PICTURES): each node's own icon
+    collectShape = 3, -- their shape (SHAPES): round with a gold ring
+    collectSize = 11, -- their size
+    collectOpacity = 75, -- how much of the minimap symbols shows (%): the node under one shows through
+    collectSkill = 1, -- how they show your skill (SKILL_LOOKS): red when too low
+    collectOreRings = false, -- green and rust rings for tin and iron
     townInteractOff = false, -- Interact Key off while resting in a town or inn
     stoneBackground = true, -- the settings window's stone texture under the logo's brown
 }
@@ -299,10 +309,10 @@ NodeSightAPI = {
 
 -- Settings: this character's own (NodeSightCharDB, the default, started from the
 -- shared ones) or the ones shared by every character that has its own turned off
--- (NodeSightDB). Quest objects and the CVars to put back are always shared.
+-- (NodeSightDB). Quest objects, gathered places and the CVars to put back are always shared.
 local function LoadSettings()
     NodeSightDB = NodeSightDB or {}
-    local SHARED = { learned = true, questObjects = true, saved = true, applied = true, rareNames = true, report = true }
+    local SHARED = { learned = true, questObjects = true, saved = true, applied = true, rareNames = true, report = true, nodes = true }
     if type(NodeSightCharDB) ~= "table" then
         NodeSightCharDB = { own = true }
         for key, value in pairs(NodeSightDB) do
@@ -367,7 +377,14 @@ local function OnAddonLoaded()
     end
     if not ns.HARVESTS[settings.harvest] then settings.harvest = defaults.harvest end
     if not ns.SWITCH_MEASURES[settings.switchMeasure] then settings.switchMeasure = defaults.switchMeasure end
-    -- A hand-edited distance: a number in its slider's range, else the default.
+    if not ns.COLLECT_PICTURES[settings.collectPicture] then settings.collectPicture = defaults.collectPicture end
+    if not ns.COLLECT_SHAPES[settings.collectShape] then settings.collectShape = defaults.collectShape end
+    if not ns.COLLECT_SKILL_LOOKS[settings.collectSkill] then settings.collectSkill = defaults.collectSkill end
+    -- A hand-edited number: one in its slider's range, else the default.
+    for key, range in pairs(ns.COLLECT_RANGES) do
+        local value = tonumber(settings[key]) or defaults[key]
+        settings[key] = math.max(range[1], math.min(range[2], value))
+    end
     for key, range in pairs(ns.SWITCH_RANGES) do
         local value = tonumber(settings[key]) or defaults[key]
         settings[key] = math.max(range[1], math.min(range[2], value))
@@ -381,6 +398,7 @@ local function OnAddonLoaded()
     NodeSightDB.applied = NodeSightDB.applied or {}
     ns.RegisterSettings()
     ns.MinimapButton()
+    ns.Collect()
     if OBJECT_TOOLTIP then TooltipDataProcessor.AddTooltipPostCall(OBJECT_TOOLTIP, OnObjectTooltip) end
     if ITEM_TOOLTIP then TooltipDataProcessor.AddTooltipPostCall(ITEM_TOOLTIP, OnItemTooltip) end
 end
@@ -399,7 +417,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
             events:UnregisterEvent("ADDON_LOADED")
             -- After an update, a /reload only loads the files the old .toc listed:
             -- stay off until the game is restarted.
-            if not (ns.Plain and ns.Mute and ns.Setup and ns.CanCultivate and ns.ShowSparkleWindow and ns.ShowWhatsNew and ns.ShowSettingsWindow and ns.MinimapButton and ns.RegisterSettings) then
+            if not (ns.Plain and ns.Mute and ns.Setup and ns.CanCultivate and ns.ShowSparkleWindow and ns.ShowWhatsNew and ns.ShowSettingsWindow and ns.MinimapButton and ns.RegisterSettings and ns.Collect) then
                 events:UnregisterAllEvents()
                 if ns.ShowNotice then
                     pcall(ns.ShowNotice, "NodeSight needs a game restart", "NodeSight was updated while the game was running, "

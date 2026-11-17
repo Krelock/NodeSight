@@ -113,6 +113,36 @@ local function Kinds()
 end
 local function Shown() return (window.tab.key == "general" or window.tab.page) and "herbs" or window.tab.key end
 
+-- Why sparkles may not show while some are on, most important first: { text, red }.
+-- (Enable Interact Key off has a line and button of its own.)
+local PROFESSIONS = { herbs = "Herbalism", ore = "Mining", skinning = "Skinning" }
+local CVAR_NAMES = { SoftTargetIconGameObject = "Interact Key Icons" }
+function ns.RefusedText(cvar)
+    return ("Something keeps turning off %s, which sparkles need. Another addon or a setting may be changing it.")
+        :format(CVAR_NAMES[cvar] or cvar)
+end
+local function Problems()
+    local list, any = {}, false
+    for _, kind in ipairs(ns.KINDS) do any = any or ns.db[kind] == true end
+    if not any then return list end
+    local cvar = ns.RefusedCVar()
+    if cvar then list[#list + 1] = { ns.RefusedText(cvar), true } end
+    if ns.SetupPending() then list[#list + 1] = { "Sparkles turn on when this fight ends." } end
+    if ns.InteractPaused() then list[#list + 1] = { "Nothing sparkles in town (Interact Key off in towns)." } end
+    if ns.db.instanceHide and IsInInstance() then list[#list + 1] = { "No sparkles in instances (Hide in instances)." } end
+    if ns.db.combatHide and UnitAffectingCombat("player") then list[#list + 1] = { "No sparkles in combat (Hide in combat)." } end
+    if ns.db.myProfessions then
+        local missing = {}
+        for _, kind in ipairs({ "herbs", "ore", "skinning" }) do
+            if ns.db[kind] and not ns.HasProfession(kind) then missing[#missing + 1] = PROFESSIONS[kind] end
+        end
+        if missing[1] then
+            list[#list + 1] = { ("No %s on this character (Only for my professions)."):format(table.concat(missing, " or ")) }
+        end
+    end
+    return list
+end
+
 local function Hex(r, g, b)
     return format("ff%02x%02x%02x", floor(r * 255 + 0.5), floor(g * 255 + 0.5), floor(b * 255 + 0.5))
 end
@@ -478,42 +508,23 @@ local function Build()
     window:SetTitle(C_AddOns.GetAddOnMetadata(ADDON_NAME, "Title") or ADDON_NAME)
     local logo = "Interface\\AddOns\\" .. ADDON_NAME .. "\\logo"
     window:SetPortraitToAsset(logo)
-    -- The logo in a gold ring (the minimap tracking ring's) on a dark circle over the frame's
-    -- portrait ring, in place of the portrait (whose round mask sits off the ring's middle).
+    -- The logo in the frame's own bronze ring, filling its hole, in place of the
+    -- portrait (whose round mask sits off the ring's middle). Under the ring, as the
+    -- portrait is.
     local corner = window.NineSlice and window.NineSlice.TopLeftCorner
     if corner then
         local size = corner:GetWidth()
         if not (size and size > 0) then size = 95 end
-        window.PortraitContainer:Hide()
-        local badge = New("Frame", window.NineSlice)
-        badge:SetSize(size * 0.68, size * 0.68) -- (just over the frame's ring)
-        badge:SetPoint("CENTER", corner, "TOPLEFT", size * 0.397, -size * 0.397) -- (the ring's middle in the art)
-        local shadow = badge:CreateTexture(nil, "BACKGROUND")
-        badge.shadow = shadow
-        shadow:SetAtlas("gamepad-actionbar-circleslot-dropshadow")
-        shadow:SetPoint("TOPLEFT", -size * 0.12, size * 0.12)
-        shadow:SetPoint("BOTTOMRIGHT", size * 0.125, -size * 0.125)
-        -- A round piece of the badge: a texture under a circle mask its own size.
-        local function Round(layer, scale)
-            local piece = badge:CreateTexture(nil, layer)
-            piece:SetSize(size * 0.68 * scale, size * 0.68 * scale)
-            piece:SetPoint("CENTER")
-            local mask = badge:CreateMaskTexture()
-            mask:SetAllPoints(piece)
-            mask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-            piece:AddMaskTexture(mask)
-            return piece
-        end
-        Round("BORDER", 1):SetColorTexture(27 / 255, 23 / 255, 18 / 255) -- (the logo's own dark)
-        Round("ARTWORK", 0.8):SetTexture(logo)
-        -- The ring's outside is 0.8 of the part shown, on the circle's edge.
-        badge.ring = badge:CreateTexture(nil, "OVERLAY")
-        badge.ring:SetSize(size * 0.68 / 0.8, size * 0.68 / 0.8)
-        badge.ring:SetPoint("CENTER")
-        badge.ring:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-        badge.ring:SetTexCoord(0, 0.625, -1 / 64, 39 / 64) -- (its ring's middle at 20, 19 of 64)
-        badge.ring:SetVertexColor(0.82, 0.74, 0.55) -- the minimap's bright gold softened, nearer the frame's metal
-        window.badge = badge
+        window.PortraitContainer.portrait:Hide()
+        local art = window.PortraitContainer:CreateTexture(nil, "OVERLAY")
+        art:SetSize(size * 0.51, size * 0.51) -- (a little past the hole, under the ring)
+        art:SetPoint("CENTER", corner, "TOPLEFT", size * 0.401, -size * 0.401) -- (the ring's middle in the art)
+        art:SetTexture(logo)
+        local mask = window.PortraitContainer:CreateMaskTexture()
+        mask:SetAllPoints(art)
+        mask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        art:AddMaskTexture(mask)
+        window.logo = art
     end
     window.interactOff = Label(window, ns.INTERACT_OFF, "GameFontRed")
     window.interactOff:SetPoint("TOP", 0, -36)
@@ -528,6 +539,18 @@ local function Build()
     end)
     Tooltip(turnOn, ENABLE_INTERACT_TEXT, "Turns the game's Enable Interact Key back on, so sparkles show again.")
     window.turnOn = turnOn
+    -- Otherwise the first reason sparkles may not show, with all of them in its tooltip.
+    local problem = New("Frame", window)
+    problem:SetPoint("TOP", 0, -36)
+    problem:EnableMouse(true)
+    problem.text = Label(problem, "", "GameFontRed")
+    problem.text:SetPoint("CENTER")
+    Tooltip(problem, "Why sparkles may not show", function()
+        local lines = {}
+        for i, reason in ipairs(problem.list or {}) do lines[i] = reason[1] end
+        return table.concat(lines, "\n")
+    end)
+    window.problem = problem
     ButtonFrameTemplate_HideButtonBar(window)
     window.CloseButton:SetScript("OnClick", function() window:Hide() end)
     -- (The previews hide with it, and their frames only run while shown.)
@@ -795,19 +818,20 @@ local function Build()
     general:SetPoint("TOPLEFT", grid, "TOPLEFT", 0, 38) -- (as high as the kind's name)
     general:SetPoint("BOTTOMRIGHT", -8, 8)
     window.general = general
-    local function At(box, x) -- the box first, its words after it
+    local function At(box, x) -- its words first, the box right after them (as in Blizzard's options)
+        x = x or 0
         local y = select(5, box:GetPoint(1))
-        box:ClearAllPoints()
-        box:SetPoint("LEFT", general, "TOPLEFT", x or -4, y)
+        local width = 170 -- (a longer label wraps instead of reaching the next column)
         box.label:ClearAllPoints()
-        box.label:SetPoint("LEFT", box, "RIGHT", 4, 0)
-        local width = (x or -4) > 0 and 190 or 205 -- (a longer label wraps instead of leaving the page)
+        box.label:SetPoint("LEFT", general, "TOPLEFT", x, y)
         box.label:SetWidth(width)
         box.label:SetJustifyH("LEFT")
+        box:ClearAllPoints()
+        box:SetPoint("LEFT", general, "TOPLEFT", x + width + 4, y)
         box.hover:ClearAllPoints()
         box.hover:SetPoint("LEFT", box.label, "LEFT")
-        box.hover:SetSize(math.min(box.label:GetStringWidth(), width) + 4, 26)
-        box:SetFrameLevel(box:GetFrameLevel() + 1) -- over its row's tooltip area, so all of it takes the click
+        box.hover:SetSize(width + 4, 26)
+        box.hover:SetScript("OnMouseDown", function() box:Click() end) -- its words click it too
         return box
     end
     local function Header(y, text)
@@ -983,6 +1007,14 @@ function Refresh()
     window.edge:SetShown(not tab.page)
     window.interactOff:SetShown(ns.InteractOff())
     window.turnOn:SetShown(window.interactOff:IsShown())
+    local problems = window.interactOff:IsShown() and {} or Problems()
+    window.problem.list = problems
+    window.problem:SetShown(problems[1] ~= nil)
+    if problems[1] then
+        window.problem.text:SetFontObject(problems[1][2] and "GameFontRed" or "GameFontNormal")
+        window.problem.text:SetText(problems[1][1])
+        window.problem:SetSize(window.problem.text:GetStringWidth() + 8, 20)
+    end
     -- Stone background: the inset's stone with the logo's brown added over it (its grain
     -- kept, its average that brown); off, plain brown.
     if ns.db.stoneBackground == true then
@@ -1165,7 +1197,8 @@ function ns.HideSparkleWindow() if window then window:Hide() end end
 ---------------------------------------------------------------------------
 -- Interact Key turned off
 ---------------------------------------------------------------------------
--- Turned off while sparkles are on: a dialog like the game's offers it back.
+-- Turned off while sparkles are on: a dialog like the game's offers it back. The same
+-- dialog says when another CVar sparkles need keeps being turned off.
 
 local notice
 
@@ -1185,7 +1218,7 @@ local function DialogButton(parent, text, onClick)
     return button
 end
 
-local function ShowNotice()
+local function ShowNotice(message)
     if not notice then
         notice = New("Frame", UIParent)
         notice:SetFrameStrata("FULLSCREEN_DIALOG") -- (over the settings window, which can open it)
@@ -1204,9 +1237,6 @@ local function ShowNotice()
         text:SetPoint("TOP", 0, -20)
         text:SetWidth(380)
         text:SetSpacing(3)
-        text:SetText(NORMAL_FONT_COLOR:WrapTextInColorCode(C_AddOns.GetAddOnMetadata(ADDON_NAME, "Title") or ADDON_NAME)
-            .. "\n\n" .. ns.INTERACT_OFF)
-        notice:SetHeight(text:GetStringHeight() + 73)
         notice.text = text
         notice.enable = DialogButton(notice, ENABLE, function()
             notice:Hide()
@@ -1226,6 +1256,9 @@ local function ShowNotice()
         notice.close:SetPoint("LEFT", notice.enable, "RIGHT", 8, 0)
         notice.never:SetPoint("LEFT", notice.close, "RIGHT", 8, 0)
     end
+    notice.text:SetText(NORMAL_FONT_COLOR:WrapTextInColorCode(C_AddOns.GetAddOnMetadata(ADDON_NAME, "Title") or ADDON_NAME)
+        .. "\n\n" .. message)
+    notice:SetHeight(notice.text:GetStringHeight() + 73)
     notice:Show()
 end
 
@@ -1263,13 +1296,36 @@ function ns.AskReload()
     reloadAsk:Show()
 end
 
+-- A CVar sparkles need that keeps being turned off: said once a session.
+local told = {}
+local function TellRefused()
+    local cvar = ns.RefusedCVar()
+    if not cvar or told[cvar] then return end
+    told[cvar] = true
+    ns.AfterFight("refused", function()
+        if ns.SetupPending() then ns.Setup() end -- (what waited for the fight may set it right)
+        local now = ns.RefusedCVar()
+        if now then ShowNotice(ns.RefusedText(now)) end
+    end)
+end
+
 local interactWatch = CreateFrame("Frame")
 interactWatch:RegisterEvent("CVAR_UPDATE")
-interactWatch:SetScript("OnEvent", function(_, _, name)
-    if issecretvalue(name) or type(name) ~= "string" or name:lower() ~= "softtargetinteract" or not ns.db then return end
+interactWatch:RegisterEvent("PLAYER_ENTERING_WORLD")
+-- What the window's reasons depend on.
+for _, event in ipairs({ "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "ZONE_CHANGED", "ZONE_CHANGED_NEW_AREA",
+    "PLAYER_UPDATE_RESTING", "SKILL_LINES_CHANGED" }) do
+    interactWatch:RegisterEvent(event)
+end
+interactWatch:SetScript("OnEvent", function(_, event, name)
+    if not (ns.db and ns.RefusedCVar and ns.InteractOff) then return end -- (a file missing: the addon stays off)
     if window and window:IsShown() then Refresh() end
+    if event == "PLAYER_ENTERING_WORLD" then return TellRefused() end
+    if event ~= "CVAR_UPDATE" or issecretvalue(name) or type(name) ~= "string" then return end
+    TellRefused()
+    if name:lower() ~= "softtargetinteract" then return end
     if ns.InteractOff() then
-        ns.AfterFight("interact", function() if ns.InteractOff() then ShowNotice() end end)
+        ns.AfterFight("interact", function() if ns.InteractOff() then ShowNotice(ns.INTERACT_OFF) end end)
     end
 end)
 

@@ -145,6 +145,52 @@ local function LoadSaved()
     shared.applied = shared.applied or {}
 end
 
+-- Updated with the game open: says a restart is needed (its own dialog: the file with the
+-- others may be the one missing). Not with Popups off in the settings in use.
+local function NeedsRestart()
+    local char, shared = NodeSightSparklesCharDB, NodeSightSparklesDB
+    local saved = type(char) == "table" and char.own ~= false and char or shared
+    if type(saved) == "table" and saved.popups == false then return end
+    local notice = CreateFrame("Frame")
+    notice:SetParent(UIParent)
+    notice:SetFrameStrata("FULLSCREEN_DIALOG")
+    notice:SetToplevel(true)
+    notice:EnableMouse(true)
+    notice:SetPoint("TOP", UIParent, "TOP", 0, -135)
+    notice:SetWidth(420)
+    local background = notice:CreateTexture(nil, "BACKGROUND", nil, -7)
+    background:SetAtlas("UI-DialogBox-Background-Dark", true)
+    background:SetPoint("TOPLEFT", 7, -7)
+    background:SetPoint("BOTTOMRIGHT", -7, 7)
+    local edge = notice:CreateTexture(nil, "BACKGROUND", nil, -4)
+    edge:SetAtlas("UI-DiamondDialogBox-Border", true)
+    edge:SetAllPoints()
+    local text = notice:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    text:SetPoint("TOP", 0, -20)
+    text:SetWidth(380)
+    text:SetSpacing(3)
+    text:SetText(NORMAL_FONT_COLOR:WrapTextInColorCode("NodeSight Sparkles needs a game restart") .. "\n\n"
+        .. "NodeSight Sparkles was updated while the game was running, and the game only loads its new files "
+        .. "when it starts. It stays off until you exit the game and start it again.")
+    notice:SetHeight(text:GetStringHeight() + 73)
+    local okay = CreateFrame("Button")
+    okay:SetParent(notice)
+    okay:SetSize(128, 21) -- the game's dialog button
+    okay:SetNormalTexture("Interface\\Buttons\\UI-DialogBox-Button-Up")
+    okay:GetNormalTexture():SetTexCoord(0, 1, 0, 0.71875)
+    okay:SetPushedTexture("Interface\\Buttons\\UI-DialogBox-Button-Down")
+    okay:GetPushedTexture():SetTexCoord(0, 1, 0, 0.71875)
+    okay:SetHighlightTexture("Interface\\Buttons\\UI-DialogBox-Button-Highlight", "ADD")
+    okay:GetHighlightTexture():SetTexCoord(0, 1, 0, 0.71875)
+    okay:SetNormalFontObject(GameFontNormal)
+    okay:SetHighlightFontObject(GameFontHighlight)
+    okay:SetText(OKAY)
+    okay:SetPoint("BOTTOM", 0, 16)
+    okay:SetScript("OnClick", function() notice:Hide() end)
+    notice:Hide()
+    ns.AfterFight("restart", function() notice:Show() end)
+end
+
 local events = CreateFrame("Frame")
 events:RegisterEvent("ADDON_LOADED")
 events:RegisterEvent("PLAYER_LOGIN")
@@ -161,6 +207,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
             -- stay off until the game is restarted.
             if not (ns.TooHard and ns.Setup and ns.CanCultivate and ns.ShowSparkleWindow and ns.MinimapButton and ns.RegisterSettings) then
                 events:UnregisterAllEvents()
+                NeedsRestart()
                 return
             end
             LoadSaved()
