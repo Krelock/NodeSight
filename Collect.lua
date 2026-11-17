@@ -508,7 +508,7 @@ local version = 0 -- goes up when the places or the symbols' look change
 local last = {} -- what the symbols were last placed for
 local kinds = {} -- NodeKind by node key
 
-local function Quarters()
+local function ReadQuarters()
     local module = type(EllesmereUI) == "table" and type(EllesmereUI._ModuleNS) == "table" and EllesmereUI._ModuleNS.EllesmereUIMinimap
     if type(module) == "table" and type(module.MinimapShape) == "function" then
         local ok, shape = pcall(module.MinimapShape)
@@ -519,6 +519,14 @@ local function Quarters()
         if ok and QUARTERS[shape] then return QUARTERS[shape] end
     end
     return QUARTERS.ROUND
+end
+
+-- The shape, read again once a second at most.
+local shape, shapeAt
+local function Quarters()
+    local now = GetTime()
+    if not shape or now - shapeAt >= 1 then shape, shapeAt = ReadQuarters(), now end
+    return shape
 end
 
 -- How high a square minimap cut at the top and bottom reaches, as a share of its half
@@ -548,6 +556,41 @@ local function MapPosition(map)
     return x, y, width, height
 end
 
+-- The places within reach plus NEAR_STEP yards of where the list was made, so a frame
+-- goes through those and not every place on the map. Made again after NEAR_STEP yards.
+local NEAR_STEP = 20
+local nearKey, nearKind, nearPlace, nearCount = {}, {}, {}, 0
+local near = {} -- what the list was made for (the map's places, ...)
+
+local function Near(nodes, x, y, width, height, reach)
+    if near.nodes == nodes and near.version == version and near.reach == reach then
+        local east, north = (x - near.x) * width, (y - near.y) * height
+        if east * east + north * north <= NEAR_STEP * NEAR_STEP then return end
+    end
+    local far = (math.sqrt(reach) + NEAR_STEP) ^ 2
+    local n = 0
+    for key, places in pairs(nodes) do
+        local kind = kinds[key]
+        if kind == nil then
+            kind = ns.NodeKind(key) or false
+            kinds[key] = kind
+        end
+        if (kind == "herbs" or kind == "ore") and type(places) == "table" then
+            for _, place in ipairs(places) do
+                local east = (floor(place / PACK) / UNITS - x) * width
+                local north = (y - place % PACK / UNITS) * height
+                if east * east + north * north <= far then
+                    n = n + 1
+                    nearKey[n], nearKind[n], nearPlace[n] = key, kind, place
+                end
+            end
+        end
+    end
+    for i = n + 1, nearCount do nearKey[i], nearKind[i], nearPlace[i] = nil, nil, nil end
+    nearCount = n
+    near.nodes, near.version, near.reach, near.x, near.y = nodes, version, reach, x, y
+end
+
 local function Follow()
     -- Not moved (UnitPosition, plain numbers, no table made), zoom, facing, shape and places the same: nothing to do.
     local wx, wy = UnitPosition("player")
@@ -573,31 +616,24 @@ local function Follow()
         -- A rotating minimap turns everything by your facing.
         local sin, cos = math.sin(facing), math.cos(facing)
         local look
-        for key, places in pairs(nodes) do
-            local kind = kinds[key]
-            if kind == nil then
-                kind = ns.NodeKind(key) or false
-                kinds[key] = kind
-            end
-            if (kind == "herbs" or kind == "ore") and type(places) == "table" then
-                for _, place in ipairs(places) do
-                    local east = (floor(place / PACK) / UNITS - x) * width
-                    local north = (y - place % PACK / UNITS) * height
-                    if east * east + north * north <= reach then
-                        local dx, dy = (east * cos + north * sin) * scale, (north * cos - east * sin) * scale
-                        if InShape(dx, dy, half, quarters, crop) then
-                            miniUsed = miniUsed + 1
-                            local pin = minis[miniUsed] or NewSymbol(mini)
-                            minis[miniUsed] = pin
-                            if pin.key ~= key or pin.version ~= version then
-                                look = look or CurrentLook()
-                                pin.key, pin.version = key, version
-                                if pin.shape ~= look.shape or pin.size ~= look.size then ApplyShape(pin, look) end
-                                ApplyLook(pin, key, kind, look)
-                            end
-                            pin:SetPoint("CENTER", mini, "CENTER", dx, dy)
-                        end
+        Near(nodes, x, y, width, height, reach)
+        for i = 1, nearCount do
+            local key, kind, place = nearKey[i], nearKind[i], nearPlace[i]
+            local east = (floor(place / PACK) / UNITS - x) * width
+            local north = (y - place % PACK / UNITS) * height
+            if east * east + north * north <= reach then
+                local dx, dy = (east * cos + north * sin) * scale, (north * cos - east * sin) * scale
+                if InShape(dx, dy, half, quarters, crop) then
+                    miniUsed = miniUsed + 1
+                    local pin = minis[miniUsed] or NewSymbol(mini)
+                    minis[miniUsed] = pin
+                    if pin.key ~= key or pin.version ~= version then
+                        look = look or CurrentLook()
+                        pin.key, pin.version = key, version
+                        if pin.shape ~= look.shape or pin.size ~= look.size then ApplyShape(pin, look) end
+                        ApplyLook(pin, key, kind, look)
                     end
+                    pin:SetPoint("CENTER", mini, "CENTER", dx, dy)
                 end
             end
         end

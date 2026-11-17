@@ -51,7 +51,7 @@ end
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
-        { version = "3.2.0",
+        { version = "3.2.1",
             { "New", {
                 { "Collecting (Beta).", "Off by default. NodeSight remembers each place you gather a herb or ore and marks it on your world map and minimap with the node's own icon. Pick the symbols' picture, shape, size, minimap opacity and skill colors on the new Collecting (Beta) page, where you turn it on with Remember where I gather and Forget all clears them. Thanks to Urfoks for Collecting" },
                 { "Show when Cultivation is ready.", "Off by default. For Tauren: the Cultivation icon over a herb you can cultivate right now. Works without herb sparkles and without Herbalism. Tick it on Sparkle settings. Thanks to tester617" },
@@ -62,6 +62,7 @@ do
                 { "Interact Key off in towns (Beta).", "Moved from the General page to Sparkle settings, next to the other sparkle settings" },
                 { "Logo.", "The NodeSight logo now sits in the settings window's own bronze ring" },
                 { "Checkboxes.", "Now right of their names, lined up with the sliders and dropdowns" },
+                { "Performance improvements.", "" },
             } },
             { "Fixes", {
                 { "No sparkles with Only for my professions.", "The game has a second skill line for Herbalism, Mining and Skinning, and NodeSight only checked the first, so it could think you didn't have the profession. It checks both now" },

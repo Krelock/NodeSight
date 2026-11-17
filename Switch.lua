@@ -51,6 +51,7 @@ local switch = {
 ns.switch = switch
 
 local TICK = 0.25 -- seconds between ticks
+ns.SWITCH_TICK = TICK
 local MAX_STEP = 1 -- seconds of way a tick counts at most, so a frame stall isn't walked
 local SPEEDS = { walking = 7, mounted = 11.2 } -- yards a second until the game tells
 local STOP = 60 -- seconds without switching after two failed switches in a row

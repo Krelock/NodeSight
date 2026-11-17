@@ -106,22 +106,54 @@ local FINDERS = { [2383] = "herbs", [2580] = "ore" }
 local SWITCH_WAIT = 1 -- seconds from a switch to its verdict (Switch.lua)
 local turns = {} -- shared with Switch.lua
 
+-- Where the finders were in the tracking list when it was last read, and its length then.
+-- Each entry read is a new table from the game, so only those are read again while
+-- the list keeps its length and they're still there.
+local finderAt, finderCount = {}, nil
+
 -- Active finder kind and the other's tracking index; nil unless exactly one is on.
 local function Finders()
     if not (C_Minimap.GetNumTrackingTypes and C_Minimap.GetTrackingInfo) then return nil end
-    local on, off, active = nil, nil, 0
-    for index = 1, C_Minimap.GetNumTrackingTypes() do
-        local info = C_Minimap.GetTrackingInfo(index)
-        if issecretvalue(info) then return nil end
-        local shows = info and not issecretvalue(info.spellID) and FINDERS[info.spellID]
-        if shows then -- (not Find Treasure or creature tracking)
+    local count = C_Minimap.GetNumTrackingTypes()
+    local on, off, active
+    if count == finderCount then
+        active = 0
+        for index, kind in pairs(finderAt) do
+            local info = C_Minimap.GetTrackingInfo(index)
+            if issecretvalue(info) then return nil end
+            if not info or issecretvalue(info.spellID) or FINDERS[info.spellID] ~= kind then
+                active = nil -- the list changed
+                break
+            end
             if issecretvalue(info.active) then return nil end
             if info.active then
-                on, active = shows, active + 1
+                on, active = kind, active + 1
             else
                 off = index
             end
         end
+    end
+    if not active then
+        for index in pairs(finderAt) do finderAt[index] = nil end
+        finderCount = nil
+        on, off, active = nil, nil, 0
+        local unsure = false -- an entry the game kept secret: not remembered
+        for index = 1, count do
+            local info = C_Minimap.GetTrackingInfo(index)
+            if issecretvalue(info) then return nil end
+            unsure = unsure or info and issecretvalue(info.spellID)
+            local shows = info and not issecretvalue(info.spellID) and FINDERS[info.spellID]
+            if shows then -- (not Find Treasure or creature tracking)
+                finderAt[index] = shows
+                if issecretvalue(info.active) then return nil end
+                if info.active then
+                    on, active = shows, active + 1
+                else
+                    off = index
+                end
+            end
+        end
+        if not unsure then finderCount = count end
     end
     if active ~= 1 then return nil end
     return on, off
@@ -144,9 +176,10 @@ end
 -- reported once, and the switch stops until the next reload.
 local ticker
 local function SwitchFrame()
-    if db.switchFinders and not ns.switch.stopped and not xpcall(ns.SwitchUpdate, geterrorhandler()) then
-        ns.switch.stopped = true
-    end
+    local switch = ns.switch
+    if not db.switchFinders or switch.stopped then return end
+    if switch.lastTick and GetTime() - switch.lastTick < ns.SWITCH_TICK then return end -- (SwitchUpdate would wait too)
+    if not xpcall(ns.SwitchUpdate, geterrorhandler()) then switch.stopped = true end
 end
 local function UpdateSwitch()
     ns.SwitchEvents(db.switchFinders == true)
