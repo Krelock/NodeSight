@@ -30,12 +30,10 @@ local function Readable(value)
     return not issecretvalue(value)
 end
 
--- Is Cultivation in your spellbook? IsPlayerSpell only where C_SpellBook is missing (it is
--- a deprecated fallback in Forever).
+-- Is Cultivation in your spellbook?
 local function Known()
     local book, bank = C_SpellBook, Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player
     if book and book.IsSpellKnown and bank then return book.IsSpellKnown(CULTIVATION, bank) end
-    if IsPlayerSpell then return IsPlayerSpell(CULTIVATION) end
     return false
 end
 
@@ -49,14 +47,10 @@ local function CultivationOn()
     return Readable(passive) and not passive
 end
 
--- Cultivation's cooldown as C_Spell.GetSpellCooldown gives it, or from the global
--- GetSpellCooldown (start, duration, enabled) where a client has no C_Spell one.
+-- Cultivation's cooldown as C_Spell.GetSpellCooldown gives it.
 local function Cooldown()
     if C_Spell and C_Spell.GetSpellCooldown then return C_Spell.GetSpellCooldown(CULTIVATION) end
-    if not GetSpellCooldown then return nil end
-    local start, duration, enabled = GetSpellCooldown(CULTIVATION)
-    if not Readable(start) or start == nil then return nil end
-    return { startTime = start, duration = duration, isEnabled = enabled }
+    return nil
 end
 
 -- Is the cooldown over (only the global cooldown counts as over)? If not, also the

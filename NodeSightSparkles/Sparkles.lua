@@ -21,6 +21,7 @@ end
 -- Any sparkles on, or the Cultivation icon (Cultivation.lua) for a player who knows
 -- the racial? Only then does the addon touch interact settings or plates.
 local function SparklesOn()
+    if not ns.CultivationOn then return false end -- Cultivation.lua not loaded (updated without a restart): stay off
     return SparkleSwitchesOn() or ns.CultivationOn()
 end
 
