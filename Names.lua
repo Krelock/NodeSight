@@ -78,6 +78,13 @@ end
 
 -- Skill needed per node (Wowhead). Unlisted nodes are never too hard.
 local SKILL_LINE = { herbs = 182, ore = 186 } -- Herbalism and Mining
+-- Forever lists each gathering skill twice (the second under the first); either may hold it.
+local SECOND_LINE = { [182] = 2944, [186] = 2946, [393] = 2947 }
+local function SkillLineInfo(get, id)
+    local info = get(id)
+    if issecretvalue(info) or info ~= nil or not SECOND_LINE[id] then return info end
+    return get(SECOND_LINE[id])
+end
 local NEEDED = {
     herbs = {
         ["earthroot"] = 15, ["mageroyal"] = 50, ["briarthorn"] = 70, ["stranglekelp"] = 85,
@@ -109,7 +116,8 @@ local RECHECK = 5 -- seconds a "no" is kept (the skill list may still be loading
 
 -- Herbalism or Mining skill including bonuses, or nil. Retail has no such call.
 local function GatherSkill(kind)
-    local info = C_SkillInfo and C_SkillInfo.GetSkillLineInfoByID and C_SkillInfo.GetSkillLineInfoByID(SKILL_LINE[kind])
+    local get = C_SkillInfo and C_SkillInfo.GetSkillLineInfoByID
+    local info = get and SkillLineInfo(get, SKILL_LINE[kind])
     if issecretvalue(info) then
         has[kind] = true
         return nil
@@ -174,7 +182,7 @@ local function HasProfession(kind)
     if SKILL_LINE[kind] then
         skills[kind] = GatherSkill(kind) or false
     else
-        local info = get(SKINNING_LINE)
+        local info = SkillLineInfo(get, SKINNING_LINE)
         if issecretvalue(info) or info ~= nil then has[kind] = true else has[kind], hasAt[kind] = false, GetTime() end
     end
     return has[kind] ~= false

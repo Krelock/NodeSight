@@ -51,6 +51,21 @@ end
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
+        { version = "3.2.0",
+            { "New", {
+                { "Collecting (Beta).", "On by default. NodeSight remembers each place you gather a herb or ore and marks it on your world map and minimap with the node's own icon. Pick the symbols' picture, shape, size, minimap opacity and skill colors on the new Collecting (Beta) page, where Forget all clears them. Thanks to Urfoks for Collecting" },
+                { "Show when Cultivation is ready.", "Off by default. For Tauren: the Cultivation icon over a herb you can cultivate right now. Works without herb sparkles and without Herbalism. Tick it on Sparkle settings. Thanks to tester617" },
+                { "Why sparkles aren't showing.", "The sparkle window now says when something keeps sparkles away: waiting for a fight to end, in a town, Hide in combat or Hide in instances, no Herbalism, Mining or Skinning with Only for my professions on, or a setting that keeps being turned off" },
+            } },
+            { "Changes", {
+                { "Interact settings put back.", "If Options or another addon changes a setting sparkles need, NodeSight sets it back right away instead of at the next loading screen. If it keeps being changed, NodeSight leaves it and tells you" },
+                { "Logo.", "The NodeSight logo now sits in the settings window's own bronze ring" },
+                { "Checkboxes.", "Now right of their names, lined up with the sliders and dropdowns" },
+            } },
+            { "Fixes", {
+                { "No sparkles with Only for my professions.", "The game has a second skill line for Herbalism, Mining and Skinning, and NodeSight only checked the first, so it could think you didn't have the profession. It checks both now" },
+            } },
+        },
         { version = "3.1.0",
             { "New", {
                 { "Settings window.", "All of NodeSight's settings are now in one window with the sparkles: General and Herb/Ore Switch at the top of the list, then each kind of sparkle and Sparkle settings. Left Click the minimap button to open it, or NodeSight settings in Options > AddOns. Drag it by any empty part to move it" },

@@ -217,6 +217,34 @@ local function RegisterSettings()
         Checkbox("switchBattlegrounds", "Switch in battlegrounds", "Switches while you're in a battleground.", UpdateSwitch)
         Header("Thanks to tester617 for the Switch page")
 
+        Page("Collecting (Beta)")
+        Checkbox("collect", "Remember where I gather",
+            "Remembers each place you gather a herb or ore, on this computer only. Off: nothing new is remembered and the world map shows no marks; the places remembered are kept.",
+            function() ns.UpdateCollect() end)
+        Checkbox("collectMap", "Show them on the world map",
+            "A small herb or ore icon on the world map for each place you gathered at. Put your mouse on one to see what it was.",
+            function() ns.RefreshNodePins() end)
+        Checkbox("collectMinimap", "Show them on the minimap",
+            "The same symbols on the minimap for the places near you. They let the mouse through to the game's own dots.",
+            function() ns.RefreshNodePins() end)
+        local function MapChanged() ns.RefreshNodePins() end
+        local size, opacity = ns.COLLECT_RANGES.collectSize, ns.COLLECT_RANGES.collectOpacity
+        Dropdown("collectPicture", "Map symbols' picture", ns.COLLECT_PICTURES,
+            "Each node's own item icon, or one plain icon for herbs and one for ore.", MapChanged)
+        Dropdown("collectShape", "Map symbols' shape", ns.COLLECT_SHAPES, "The symbols' shape, on the world map and the minimap.", MapChanged)
+        Slider("collectSize", "Map symbols' size", size[1], size[2], "How big the symbols are, on the world map and the minimap.", MapChanged, size[3])
+        Slider("collectOpacity", "Minimap symbols' opacity (%)", opacity[1], opacity[2],
+            "How much of a minimap symbol shows. Lower lets the game's dot under it show through. On the world map they're solid.", MapChanged, opacity[3])
+        Dropdown("collectSkill", "Skill colors", ns.COLLECT_SKILL_LOOKS,
+            "How a symbol shows your skill. Red when too low: red if you can't gather it yet. Colored ring and Colored gem: the profession window's skill-up colors, from red to gray. Colored ring needs a gold ring shape.",
+            MapChanged)
+        Checkbox("collectOreRings", "High visibility tin and iron",
+            "Tin gets a green ring and iron a rust one, so they're easy to tell apart. Needs a gold ring shape.", MapChanged)
+        layout:AddInitializer(CreateSettingsButtonInitializer("Remembered places", "Forget all", function() ns.AskForget() end,
+            "Forgets every place NodeSight remembered, for all your characters. It asks first.", false))
+        Header("Collecting is new and will be improved in future updates.")
+        Header("Thanks to Urfoks for Collecting")
+
         -- The sparkles' basics. A controller can't reach the window, and its color picker and
         -- menus would run Blizzard's gamepad code tainted.
         Page("Sparkles")

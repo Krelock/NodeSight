@@ -1,5 +1,5 @@
--- NodeSight's own pages in the sparkle window's list, above the sparkles: General and
--- the Herb/Ore Switch, each in two columns. One window for every setting, and
+-- NodeSight's own pages in the sparkle window's list, above the sparkles: General, the
+-- Herb/Ore Switch and Collecting, each in two columns. One window for every setting, and
 -- nothing written into the game's Options list (rows changed from addon code there break
 -- its dropdowns in combat).
 --
@@ -43,7 +43,12 @@ local AFTER = {
     switchFinders = function() ns.SwitchReset() ns.UpdateSwitch() end,
     minimapButton = function() if ns.MinimapButtonChanged then ns.MinimapButtonChanged() end end,
     townInteractOff = function() ns.Setup() end,
+    collect = function() ns.UpdateCollect() end,
+    collectMap = function() ns.RefreshNodePins() end,
 }
+for _, key in ipairs({ "collectMinimap", "collectPicture", "collectShape", "collectSize", "collectOpacity", "collectSkill", "collectOreRings" }) do
+    AFTER[key] = function() ns.RefreshNodePins() end
+end
 
 local function Set(key, value)
     if key == "own" then
@@ -61,30 +66,6 @@ local COLUMN = 150 -- where a row's control starts, after its label
 -- so the right column starts past the left one's widest ("100 % (233 yd)").
 local LEFT, RIGHT, WIDE = 16, 400, 340
 
--- A checkbox with its words after it; the whole row shows the tooltip.
-local function Checkbox(column, key, text, tip)
-    local box = New("CheckButton", column.page, "MinimalCheckboxTemplate")
-    box:SetSize(26, 26)
-    box:SetScript("OnClick", function(self)
-        PlaySound(self:GetChecked() and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
-        Set(key, self:GetChecked() == true)
-    end)
-    box.label = Label(box, text)
-    box.label:SetPoint("LEFT", box, "RIGHT", 4, 0)
-    box.label:SetWidth(WIDE - 34)
-    box.label:SetJustifyH("LEFT")
-    box.key, box.kind = key, "box"
-    local hover = New("Frame", box)
-    hover:SetPoint("TOPLEFT", box.label, "TOPLEFT", 0, 4)
-    hover:SetPoint("BOTTOMRIGHT", box.label, "BOTTOMRIGHT", 4, -4)
-    hover:EnableMouse(true)
-    hover:SetScript("OnMouseDown", function() box:Click() end)
-    Tooltip(box, text, tip)
-    Tooltip(hover, text, tip)
-    column[#column + 1] = box
-    return box
-end
-
 -- A gold label on the left, a control at COLUMN.
 local function Row(text, control, tip)
     local label = Label(control, text)
@@ -96,8 +77,24 @@ local function Row(text, control, tip)
     hover:SetPoint("BOTTOMRIGHT", label, "BOTTOMRIGHT", 0, -4)
     hover:EnableMouse(true)
     Tooltip(hover, text, tip)
-    control.label, control.inRow = label, true
+    control.label, control.hover, control.inRow = label, hover, true
     return label
+end
+
+-- A checkbox right of its words, as in Blizzard's options; its words click it too.
+local function Checkbox(column, key, text, tip)
+    local box = New("CheckButton", column.page, "MinimalCheckboxTemplate")
+    box:SetSize(26, 26)
+    box:SetScript("OnClick", function(self)
+        PlaySound(self:GetChecked() and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
+        Set(key, self:GetChecked() == true)
+    end)
+    Row(text, box, tip)
+    box.hover:SetScript("OnMouseDown", function() box:Click() end)
+    box.key, box.kind = key, "box"
+    Tooltip(box, text, tip)
+    column[#column + 1] = box
+    return box
 end
 
 -- label(value) is the text right of the slider.
@@ -247,8 +244,11 @@ local function SwitchColumns(column, right, page)
     for i, area in ipairs({ { "switchWorld", "Open world", "the open world" }, { "switchDungeons", "Dungeons", "a dungeon" },
         { "switchRaids", "Raids", "a raid" }, { "switchBattlegrounds", "Battlegrounds", "a battleground" } }) do
         local box = Checkbox(where.parts, area[1], area[2], ("Switches while you're in %s."):format(area[3]))
-        box.label:SetWidth(130)
-        box:SetPoint("TOPLEFT", where, "TOPLEFT", (i - 1) % 2 * 170, -floor((i - 1) / 2) * 32)
+        -- Two to a row: each name with its box right after it.
+        box.label:SetWidth(100)
+        box.label:ClearAllPoints()
+        box.label:SetPoint("LEFT", box, "LEFT", -104, 0)
+        box:SetPoint("TOPLEFT", where, "TOPLEFT", (i - 1) % 2 * 170 + 104, -floor((i - 1) / 2) * 32)
     end
     where.boxes, where.tall = where.parts, true
     column[#column + 1] = where
@@ -276,6 +276,69 @@ local function SwitchColumns(column, right, page)
     end)
 end
 
+-- A dropdown of choices (their words, in order) saved as the choice's number.
+local function Dropdown(column, key, text, choices, tip)
+    local dropdown = New("DropdownButton", column.page, "WowStyle1DropdownTemplate")
+    dropdown:SetWidth(168)
+    dropdown:SetupMenu(function(_, root)
+        for i, name in ipairs(choices) do
+            root:CreateRadio(name, function() return ns.db[key] == i end, function() Set(key, i) end)
+        end
+    end)
+    Row(text, dropdown, tip)
+    dropdown.key, dropdown.kind = key, "dropdown"
+    column[#column + 1] = dropdown
+    return dropdown
+end
+
+local function Percent100(value) return ("%d %%"):format(value) end
+local function Whole(value) return ("%d"):format(value) end
+
+-- Collecting: its boxes and the map symbols' look on the left, the places remembered and
+-- Forget all on the right.
+local function CollectColumns(column, places, page)
+    page.about = Label(page, "Remembers where you gather herbs and ore and marks the places on your world map.", "GameFontDisableSmall")
+    page.about:SetPoint("TOPLEFT", LEFT, -38)
+    page.about:SetWidth(2 * WIDE)
+    page.about:SetJustifyH("LEFT")
+    column.top, places.top = -56, -56
+    Header(column, "Collecting")
+    Checkbox(column, "collect", "Remember where I gather",
+        "Remembers each place you gather a herb or ore. Off: nothing new is remembered and the world map shows no marks; the places remembered are kept.")
+    Checkbox(column, "collectMap", "Show them on the world map",
+        "A small herb or ore symbol on the world map for each place you gathered at. Put your mouse on one to see what it was.")
+    Checkbox(column, "collectMinimap", "Show them on the minimap",
+        "The same symbols on the minimap for the places near you. They let the mouse through to the game's own dots.")
+    Header(column, "Symbols")
+    local size, opacity = ns.COLLECT_RANGES.collectSize, ns.COLLECT_RANGES.collectOpacity
+    Dropdown(column, "collectPicture", "Picture", ns.COLLECT_PICTURES,
+        "Each node's own item icon, or one plain icon for herbs and one for ore.")
+    Dropdown(column, "collectShape", "Shape", ns.COLLECT_SHAPES, "The symbols' shape, on the world map and the minimap.")
+    Slider(column, "collectSize", "Size", size[1], size[2], size[3], "How big the symbols are, on the world map and the minimap.", Whole)
+    Slider(column, "collectOpacity", "Minimap opacity", opacity[1], opacity[2], opacity[3],
+        "How much of a minimap symbol shows. Lower lets the game's dot under it show through. On the world map they're solid.", Percent100)
+    Dropdown(column, "collectSkill", "Skill colors", ns.COLLECT_SKILL_LOOKS,
+        "How a symbol shows your skill. Red when too low: red if you can't gather it yet. Colored ring and Colored gem: the profession window's skill-up colors, from red to gray. Colored ring needs a gold ring shape.")
+    Checkbox(column, "collectOreRings", "High visibility tin and iron",
+        "Tin gets a green ring and iron a rust one, so they're easy to tell apart. Needs a gold ring shape.")
+    local future = Label(page, "Collecting is new and will be improved in future updates.", "GameFontDisableSmall")
+    future.gap, future.height = 4, 20
+    column[#column + 1] = future
+    local thanks = Label(page, "Thanks to Urfoks for Collecting", "GameFontDisableSmall")
+    thanks.gap, thanks.height = 4, 20
+    column[#column + 1] = thanks
+    Header(places, "Remembered places")
+    page.count = Label(page, "", "GameFontHighlight")
+    page.count.height = 28
+    places[#places + 1] = page.count
+    page.forget = New("Button", page, "UIPanelButtonTemplate")
+    page.forget:SetSize(128, 22)
+    page.forget:SetText("Forget all")
+    page.forget:SetScript("OnClick", function() ns.AskForget() end)
+    Tooltip(page.forget, "Forget all", "Forgets every place NodeSight remembered, for all your characters. It asks first.")
+    places[#places + 1] = page.forget
+end
+
 -- A page's title and its two columns, filled by fill(left, right, page).
 local function Page(page, title, fill)
     local left = { page = page, x = LEFT, top = -50 }
@@ -290,6 +353,7 @@ local function Page(page, title, fill)
 end
 
 local function BuildGeneral(page) Page(page, GENERAL, GeneralColumns) end
+local function BuildCollect(page) Page(page, "Collecting (Beta)", CollectColumns) end
 
 local function BuildSwitch(page)
     Page(page, "Herb/Ore Switch", SwitchColumns)
@@ -331,6 +395,11 @@ local function Refresh(page)
         local color, text = SwitchLine()
         page.line:SetText(("|c%s%s|r"):format(color, text))
     end
+    if page.count then
+        local all, herbs, ore = ns.NodeCount()
+        page.count:SetText(("%d herbs, %d ore"):format(herbs, ore))
+        page.forget:SetEnabled(all > 0)
+    end
     for _, column in ipairs(page.columns) do Stack(column) end
     refreshing = false
 end
@@ -338,6 +407,7 @@ end
 ns.WINDOW_PAGES = {
     { key = "nodesight", name = GENERAL, build = BuildGeneral, refresh = Refresh },
     { key = "switch", name = "Herb/Ore Switch", build = BuildSwitch, refresh = Refresh },
+    { key = "collect", name = "Collecting (Beta)", build = BuildCollect, refresh = Refresh },
 }
 ns.WindowSet = Set -- what the page's controls do, by key
 
