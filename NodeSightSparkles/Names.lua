@@ -219,3 +219,4 @@ ns.InTownArea = InTownArea
 ns.HasProfession, ns.hasProfession = HasProfession, has
 ns.Plain, ns.NodeKind, ns.NodeKey = Plain, NodeKind, Key
 ns.skills, ns.professions, ns.TooHard, ns.SkillLevel, ns.NodeSkill = skills, professions, TooHard, SkillLevel, NodeSkill
+ns.HERB_ENDINGS, ns.NODE_NEEDED = HERBS, NEEDED

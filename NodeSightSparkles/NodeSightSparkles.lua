@@ -54,7 +54,7 @@ local defaults = {
     rareGlow = false, -- a gold glow around rare herbs and ore
     harvest = 5, -- how a gathered node finishes (Sparkles.lua's HARVESTS: Fade away)
     minimapButton = true, -- the minimap button (its place: minimapIcon, LibDBIcon's)
-    townInteractOff = false, -- Interact Key off while resting in a town or inn
+    townInteractOff = true, -- Interact Key off while resting in a town or inn
     stoneBackground = true, -- the settings window's stone texture under the logo's brown
 }
 ns.db = defaults -- NodeSightSparklesCharDB from login on
@@ -97,8 +97,9 @@ end
 -- Fills in the defaults and fixes saved values the settings can't produce.
 -- Settings: this character's own (NodeSightSparklesCharDB, the default, started from the
 -- shared ones) or the ones shared by every character that has its own turned off
--- (NodeSightSparklesDB). The CVars to put back are always shared, as the CVars are.
-local SHARED = { questObjects = true, saved = true, applied = true }
+-- (NodeSightSparklesDB). The CVars to put back are always shared, as the CVars are,
+-- and so are the Sparkle Maker's sparkles.
+local SHARED = { questObjects = true, saved = true, applied = true, made = true, makerWarned = true }
 local settings -- the settings in use from login on
 
 local function LoadSaved()
@@ -120,6 +121,11 @@ local function LoadSaved()
         })
     end
     settings = db
+    -- Interact Key off in towns on once for settings saved while it was off by default (townOn: done).
+    if db.townOn == nil then
+        db.townOn = true
+        db.townInteractOff = true
+    end
     for key, value in pairs(defaults) do
         if db[key] == nil then db[key] = value end
     end
@@ -131,6 +137,7 @@ local function LoadSaved()
         local two = db[keys.color2]
         db[keys.color2] = two ~= nil and tostring(two):match("^%x%x%x%x%x%x%x%x$") or nil
         if not ns.StyleFits(db[keys.style], kind) then db[keys.style] = defaults[keys.style] end
+        if db[keys.style2] ~= nil and not ns.StyleFits(db[keys.style2], kind) then db[keys.style2] = nil end
         -- The look in use belongs to its style.
         local looks = db.styleLooks
         if type(looks[kind]) ~= "table" then looks[kind] = {} end
