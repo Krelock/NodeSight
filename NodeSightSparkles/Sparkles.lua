@@ -1647,7 +1647,8 @@ end)
 ---------------------------------------------------------------------------
 -- The plates need Enable Interact Key, Interact Key Icons and a wider pick
 -- range. Blizzard doesn't read these CVars through its cache, so setting them
--- doesn't taint. Changes wait out combat; old values come back when sparkles go off.
+-- doesn't taint. Set at login and loading screens (a change made elsewhere is left
+-- until then); changes wait out combat; old values come back when sparkles go off.
 
 local RANGE = 30 -- yards (default 10)
 
@@ -1655,7 +1656,9 @@ local WANTED = {
     { "softTargetInteract", "3", town = true },
     { "SoftTargetIconGameObject", "1" },
     { "SoftTargetInteractArc", "2" }, -- anywhere around you, not only in front
-    { "SoftTargetInteractRange", tostring(RANGE) },
+    -- Herbs only show within 15 yards whatever this says, so 15 or more is left as it is
+    -- (fishing addons set 15 while you fish).
+    { "SoftTargetInteractRange", tostring(RANGE), least = 15 },
     -- NPC interact icons have no plate to hide, so shrink them to 0 (only with a sparkle
     -- switch on: the Cultivation switch alone leaves them, like Blizzard's object plates).
     { "SoftTargetWorldtextSize", "0", npcIcon = true },
@@ -1665,10 +1668,7 @@ local WANTED = {
 }
 local pendingSetup -- a change is waiting for combat to end
 local corpseShown -- the plates setting is on for the corpse you target
-local applying -- putting them back (our own changes fire CVAR_UPDATE too)
-local refused = {} -- cvar: true while the game or something else keeps it off our value
-local putBackAt = {} -- cvar: when it was last set back after a change made elsewhere
-local AGAIN = 10 -- seconds: changed again sooner, it's left and reported
+local refused = {} -- cvar: true while the game refuses our value
 
 local function CorpseTargeted()
     return (Mine("skinning") or Mine("loot")) and UnitExists("softinteract") and Corpse("softinteract") or false
@@ -1690,6 +1690,11 @@ local function Same(a, b)
     return a == b or (tonumber(a) ~= nil and tonumber(a) == tonumber(b))
 end
 
+-- A value that does as well as ours (a range of at least `least`).
+local function Enough(entry, value)
+    return entry.least ~= nil and (tonumber(value) or 0) >= entry.least
+end
+
 -- Restores one CVar, unless you changed it since.
 local function PutBack(cvar)
     local old, mine = ns.db.saved[cvar], ns.db.applied[cvar]
@@ -1697,20 +1702,18 @@ local function PutBack(cvar)
     ns.db.saved[cvar], ns.db.applied[cvar] = nil, nil
 end
 
--- Sets each needed CVar (or only the entry given), saving the old value.
-local function ApplySetup(only)
-    if not only then -- (one entry alone is never the town's or the corpses')
-        corpseShown = CorpseTargeted()
-        townShown = InTown()
-    end
-    for _, entry in ipairs(only and { only } or WANTED) do
+-- Sets each needed CVar, saving the old value.
+local function ApplySetup()
+    corpseShown = CorpseTargeted()
+    townShown = InTown()
+    for _, entry in ipairs(WANTED) do
         local cvar, value = entry[1], entry[2]
         local old = C_CVar.GetCVar(cvar)
         if entry.town and townShown then value = TownValue(ns.db.saved[cvar] or old) end
         refused[cvar] = nil
         if entry.npcIcon and (ns.db.gameIcons or not SparkleSwitchesOn()) or entry.corpse and not corpseShown then
             PutBack(cvar)
-        elseif old ~= nil and not Same(old, value) then
+        elseif old ~= nil and not Same(old, value) and not Enough(entry, old) then
             C_CVar.SetCVar(cvar, value)
             -- Save only if the game accepted it, and only once.
             if Same(C_CVar.GetCVar(cvar), value) then
@@ -1724,11 +1727,9 @@ local function ApplySetup(only)
 end
 
 local function RestoreSetup()
-    applying = true
     corpseShown = false
     for cvar in pairs(ns.db.saved) do PutBack(cvar) end
     for cvar in pairs(ns.db.applied) do ns.db.applied[cvar] = nil end
-    applying = nil
 end
 
 -- Applies or restores the CVars to match the sparkle settings.
@@ -1742,35 +1743,11 @@ local function Setup()
     if SparklesOn() then ApplySetup() else RestoreSetup() end
 end
 
--- One of the CVars changed elsewhere (Options' Interact Key Icons, another addon): set
--- back, unless it keeps being changed. Enable Interact Key stays yours to turn off (the
--- sparkle window says so), and the corpse one is set as you target corpses.
-local function CVarChanged(name)
-    if applying or pendingSetup or not SparklesOn() or issecretvalue(name) or type(name) ~= "string" then return end
-    for _, entry in ipairs(WANTED) do
-        local cvar = entry[1]
-        if cvar:lower() == name:lower() then
-            if entry.town or entry.corpse or entry.npcIcon and ns.db.gameIcons then return end
-            if Same(C_CVar.GetCVar(cvar), entry[2]) then return end
-            local now = GetTime()
-            if putBackAt[cvar] and now - putBackAt[cvar] < AGAIN then
-                refused[cvar] = true
-                return
-            end
-            putBackAt[cvar] = now
-            if InCombatLockdown() then return Setup() end -- (waits for the fight's end)
-            return ApplySetup(entry) -- (only this one: the Interact Key stays as you left it)
-        end
-    end
-end
-
--- A corpse becoming the interact target, or no longer being it; towns; CVars.
+-- A corpse becoming the interact target, or no longer being it; towns.
 local corpseWatch = CreateFrame("Frame")
 corpseWatch:RegisterEvent("PLAYER_SOFT_INTERACT_CHANGED")
-corpseWatch:RegisterEvent("CVAR_UPDATE")
 for event in pairs(TOWN_EVENTS) do corpseWatch:RegisterEvent(event) end
-corpseWatch:SetScript("OnEvent", function(_, event, name)
-    if event == "CVAR_UPDATE" then return CVarChanged(name) end
+corpseWatch:SetScript("OnEvent", function(_, event)
     if TOWN_EVENTS[event] then
         if InTown() ~= (townShown or false) then Setup() end
         return
@@ -1792,7 +1769,7 @@ ns.KINDS, ns.SPARKLE_KEYS, ns.SPARKLE_STYLES, ns.StyleFits = KINDS, KEYS, STYLES
 ns.CarryOverLooks, ns.SparkleLook, ns.SparkleRGB, ns.SparkleColors, ns.SPARKLE_LOWER = CarryOverLooks, Look, RGB, Colors, LOWER
 -- Is a Setup waiting for the end of combat?
 function ns.SetupPending() return pendingSetup end
--- The first CVar sparkles need that the game refused or something keeps changing, or nil.
+-- The first CVar sparkles need that the game refused, or nil.
 function ns.RefusedCVar()
     for _, entry in ipairs(WANTED) do
         if refused[entry[1]] then return entry[1] end
