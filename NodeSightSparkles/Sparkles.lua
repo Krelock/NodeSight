@@ -1178,7 +1178,7 @@ local EFFECTS = {
     { name = "Wisp", display = 1824, group = "Creatures" },
     { name = "Firefly, purple", display = 19252, group = "Creatures" },
 }
-local MAX, MAX_EFFECTS, MAX_LAYERS = 9, 2, 3 -- (nine as tiles keep the window under the screen's 768 high)
+local MAX, MAX_PARTS = 9, 6 -- (nine as tiles keep the window under the screen's 768 high; six layers, effects and styles in any mix, fill the maker's layer strip)
 local LIMITS = { size = { 30, 300 }, height = { -150, 150 }, x = { -150, 150 }, count = { 1, 20 }, turn = { 0, 359 },
     tilt = { -90, 90 }, alpha = { 10, 100 }, particles = { 25, 300 }, speed = { 0, 300 }, animSpeed = { 25, 300 } }
 local DEFAULT = { size = 100, height = -60, x = 0, count = 9, turn = 0, tilt = 0, alpha = 100, particles = 100, speed = 100,
@@ -1250,11 +1250,11 @@ local function CleanMade(sparkle)
     local effects = type(sparkle.effects) == "table" and sparkle.effects or { sparkle.effect }
     for i = 1, #effects do
         local look = CleanEffect(effects[i])
-        if look and #clean.effects < MAX_EFFECTS then clean.effects[#clean.effects + 1] = look end
+        if look and #clean.effects + #clean.layers < MAX_PARTS then clean.effects[#clean.effects + 1] = look end
     end
     for _, look in ipairs(type(sparkle.layers) == "table" and sparkle.layers or {}) do
         look = CleanLayer(look)
-        if look and #clean.layers < MAX_LAYERS then clean.layers[#clean.layers + 1] = look end
+        if look and #clean.effects + #clean.layers < MAX_PARTS then clean.layers[#clean.layers + 1] = look end
     end
     if not clean.effects[1] and not clean.layers[1] then return nil end
     return clean
@@ -1371,7 +1371,7 @@ local function ShowStyleLayer(frame, i, look, kind, k, base, gray)
     child.kind, child.over = kind, { size = S, count = look.count, height = 0 }
     child.clock = child.clock or 0
     child.look, child.k, child.base = look, k, base
-    child:SetFrameLevel(frame:GetFrameLevel() + MAX_EFFECTS + i)
+    child:SetFrameLevel(frame:GetFrameLevel() + MAX_PARTS + i)
     child:SetSize(S, S)
     PlaceLayer(child, frame.clock or 0)
     local one, two = look.color, look.color2
@@ -1387,7 +1387,7 @@ local function ShowMadeLayers(frame, clean, kind, k, gray)
     local base = MadeBase(clean)
     frame.fxs, frame.layers = frame.fxs or {}, frame.layers or {}
     local moving = false
-    for i = 1, MAX_EFFECTS do
+    for i = 1, MAX_PARTS do
         local look = clean.effects[i]
         if look then
             ShowEffect(frame, i, look, k, base, gray)
@@ -1396,7 +1396,7 @@ local function ShowMadeLayers(frame, clean, kind, k, gray)
             frame.fxs[i]:Hide()
         end
     end
-    for i = 1, MAX_LAYERS do
+    for i = 1, MAX_PARTS do
         local look, child = clean.layers[i], frame.layers[i]
         if look then
             ShowStyleLayer(frame, i, look, kind, k, base, gray)
@@ -1438,7 +1438,7 @@ end
 -- The style a frame with a made sparkle runs: it moves only when a layer does.
 Made.STILL, Made.MOVING = { name = "made" }, { name = "made", Draw = DrawMade }
 Made.EFFECTS, Made.ANIMS, Made.LIMITS, Made.DEFAULT = EFFECTS, ANIMS, LIMITS, DEFAULT
-Made.MAX, Made.MAX_EFFECTS, Made.MAX_LAYERS = MAX, MAX_EFFECTS, MAX_LAYERS
+Made.MAX, Made.MAX_PARTS = MAX, MAX_PARTS
 Made.List, Made.Find, Made.Clean = MadeList, FindMade, CleanMade
 Made.Look, Made.ShowLayers, Made.Hide = MadeLook, ShowMadeLayers, HideMade
 end
@@ -1695,7 +1695,7 @@ local function ShowSecond(frame, kind, show, gray)
         frame.second = second
     end
     second.kind, second.lower, second.clock = kind, frame.lower, second.clock or 0
-    second:SetFrameLevel(frame:GetFrameLevel() + Made.MAX_EFFECTS + Made.MAX_LAYERS + 1) -- (over the first's layers)
+    second:SetFrameLevel(frame:GetFrameLevel() + 2 * Made.MAX_PARTS + 1) -- (over the first's layers)
     if made then
         second.over, second.madeLook = nil, Made.Look(made, 1)
         for key, parts in pairs(second.parts) do
@@ -2340,7 +2340,7 @@ end
 ns.KINDS, ns.SPARKLE_KEYS, ns.SPARKLE_STYLES, ns.StyleFits = KINDS, KEYS, STYLES, StyleFits
 ns.StyleLook, ns.SPARKLE_START_HEIGHT = More.StyleLook, More.START_HEIGHT
 ns.SPARKLE_EFFECTS, ns.MADE_ANIMS, ns.MADE_LIMITS, ns.MADE_DEFAULT = Made.EFFECTS, Made.ANIMS, Made.LIMITS, Made.DEFAULT
-ns.MADE_MAX, ns.MADE_MAX_EFFECTS, ns.MADE_MAX_LAYERS = Made.MAX, Made.MAX_EFFECTS, Made.MAX_LAYERS
+ns.MADE_MAX, ns.MADE_MAX_PARTS = Made.MAX, Made.MAX_PARTS
 ns.MadeList, ns.FindMade, ns.CleanMade = Made.List, Made.Find, Made.Clean
 ns.CarryOverLooks, ns.SparkleLook, ns.SparkleRGB, ns.SparkleColors, ns.SPARKLE_LOWER = CarryOverLooks, Look, RGB, Colors, LOWER
 -- Is a Setup waiting for the end of combat?

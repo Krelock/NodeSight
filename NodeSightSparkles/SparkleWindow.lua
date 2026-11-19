@@ -1040,17 +1040,17 @@ end
 ---------------------------------------------------------------------------
 -- Sparkle Maker
 ---------------------------------------------------------------------------
--- Sparkles built from up to two of Blizzard's 3D effects and three styles, each layer
+-- Sparkles built from up to six layers, Blizzard's 3D effects and styles in any mix, each layer
 -- with its own look and a looping animation (laid out like WeakAuras' model and
 -- animation options). They are saved for every character (ns.MadeList) and show as
 -- tiles on every kind's page. A share code carries one as text:
--- NS2:name:effect:effect:style:style:style, each part "-" when empty (an effect: its
+-- NS3:name:effect:...:style:..., the effects first (an effect: its
 -- file, or d and a creature's display; size, height, sideways, turn, tilt, see-through,
 -- particles, speed, animation, its speed; a style: its name, size, height, sideways,
--- count, two colors, see-through, animation, its speed). NS1 codes (one effect, two
--- styles, no motion) are still read.
+-- count, two colors, see-through, animation, its speed). NS2 codes (two effects and three
+-- styles, "-" for an empty one) and NS1 codes (one effect, two styles, no motion) are still read.
 
-local CODE = "NS2"
+local CODE = "NS3"
 local LABEL = 90 -- the page's labels' column
 -- Settings of a layer, two to a row: an effect's, a style's (after its colors).
 local EFFECT_ROWS = { { "size", "height" }, { "x", "turn" }, { "tilt", "alpha" }, { "particles", "speed" }, { "animSpeed" } }
@@ -1116,20 +1116,20 @@ local function Add(clean)
     if not clean or #list >= ns.MADE_MAX then return false end
     local sparkle = Saved(clean, NextId())
     list[#list + 1] = sparkle
-    window.madeId, window.makerLayer = sparkle.id, clean.effects[1] and 1 or 3
+    window.madeId, window.makerLayer = sparkle.id, clean.effects[1] and 1 or ns.MADE_MAX_PARTS + 1
     return true
 end
 
 local function MadeCode(sparkle)
     local clean = ns.CleanMade(sparkle)
     if not clean then return "" end
-    local parts = { CODE, CleanName(clean.name), "-", "-", "-", "-", "-" }
-    for i, look in ipairs(clean.effects) do
-        parts[2 + i] = ("%s,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d"):format(look.display and "d" .. look.display or look.file, look.size,
+    local parts = { CODE, CleanName(clean.name) }
+    for _, look in ipairs(clean.effects) do
+        parts[#parts + 1] = ("%s,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d"):format(look.display and "d" .. look.display or look.file, look.size,
             look.height, look.x, look.turn, look.tilt, look.alpha, look.particles, look.speed, look.anim, look.animSpeed)
     end
-    for i, look in ipairs(clean.layers) do
-        parts[4 + i] = ("%s,%d,%d,%d,%d,%s,%s,%d,%s,%d"):format(ns.SPARKLE_STYLES[look.style].name, look.size, look.height,
+    for _, look in ipairs(clean.layers) do
+        parts[#parts + 1] = ("%s,%d,%d,%d,%d,%s,%s,%d,%s,%d"):format(ns.SPARKLE_STYLES[look.style].name, look.size, look.height,
             look.x, look.count, look.color, look.color2, look.alpha, look.anim, look.animSpeed)
     end
     return table.concat(parts, ":")
@@ -1158,22 +1158,19 @@ local function FromCode(text)
         end
         return ns.CleanMade(sparkle)
     end
-    if fields[1] ~= CODE or #fields ~= 7 then return nil end
+    if not (fields[1] == "NS2" and #fields == 7 or fields[1] == CODE and #fields >= 3) then return nil end
     local effectPattern = "^(d?%d+)," .. ("%s,"):rep(8):format(NUMBER, NUMBER, NUMBER, NUMBER, NUMBER, NUMBER, NUMBER, NUMBER) .. "(%a+)," .. NUMBER .. "$"
-    for i = 3, 4 do
-        if fields[i] ~= "-" then
-            local v = { fields[i]:match(effectPattern) }
-            if not v[1] then return nil end
+    local stylePattern = "^([^,]+)," .. ("%s,"):rep(4):format(NUMBER, NUMBER, NUMBER, NUMBER) .. "(%x+),(%x+)," .. NUMBER .. ",(%a+)," .. NUMBER .. "$"
+    -- Each part is an effect or a style, told apart by their patterns.
+    for i = 3, #fields do
+        local v = { fields[i]:match(effectPattern) }
+        if v[1] then
             local look = { anim = v[10], animSpeed = tonumber(v[11]) }
             if v[1]:sub(1, 1) == "d" then look.display = tonumber(v[1]:sub(2)) else look.file = tonumber(v[1]) end
             for j, what in ipairs({ "size", "height", "x", "turn", "tilt", "alpha", "particles", "speed" }) do look[what] = tonumber(v[j + 1]) end
             sparkle.effects[#sparkle.effects + 1] = look
-        end
-    end
-    local stylePattern = "^([^,]+)," .. ("%s,"):rep(4):format(NUMBER, NUMBER, NUMBER, NUMBER) .. "(%x+),(%x+)," .. NUMBER .. ",(%a+)," .. NUMBER .. "$"
-    for i = 5, 7 do
-        if fields[i] ~= "-" then
-            local v = { fields[i]:match(stylePattern) }
+        elseif fields[i] ~= "-" then
+            v = { fields[i]:match(stylePattern) }
             if not v[1] then return nil end
             sparkle.layers[#sparkle.layers + 1] = { style = v[1], size = tonumber(v[2]), height = tonumber(v[3]), x = tonumber(v[4]),
                 count = tonumber(v[5]), color = v[6], color2 = v[7], alpha = tonumber(v[8]), anim = v[9], animSpeed = tonumber(v[10]) }
@@ -1182,10 +1179,10 @@ local function FromCode(text)
     return ns.CleanMade(sparkle)
 end
 
--- A layer of a saved sparkle: 1 and 2 its effects, 3 to 5 its styles; nil when empty.
+-- A layer of a saved sparkle: 1 to MADE_MAX_PARTS its effects, the numbers after it its styles; nil when empty.
 local function LayerLook(sparkle, layer)
-    if layer <= 2 then return (type(sparkle.effects) == "table" and sparkle.effects or { sparkle.effect })[layer] end
-    return type(sparkle.layers) == "table" and sparkle.layers[layer - 2] or nil
+    if layer <= ns.MADE_MAX_PARTS then return (type(sparkle.effects) == "table" and sparkle.effects or { sparkle.effect })[layer] end
+    return type(sparkle.layers) == "table" and sparkle.layers[layer - ns.MADE_MAX_PARTS] or nil
 end
 
 -- Changes a saved sparkle (the one shown unless id says), keeps it within its limits,
@@ -1307,7 +1304,7 @@ end
 local function PickLayerColor(what)
     local sparkle = Current()
     local layer = window.makerLayer
-    local look = sparkle and layer > 2 and LayerLook(sparkle, layer)
+    local look = sparkle and layer > ns.MADE_MAX_PARTS and LayerLook(sparkle, layer)
     if not look then return end
     local id, before = sparkle.id, { look.color, look.color2 }
     local r, g, b = ns.SparkleRGB(look[what] or look.color)
@@ -1338,18 +1335,18 @@ local function PickLayer(choice)
     Edit(function(sparkle)
         local look = LayerLook(sparkle, layer)
         if not look then return end
-        if (layer > 2) == isStyle then
+        if (layer > ns.MADE_MAX_PARTS) == isStyle then
             if isStyle then look.style = ns.SPARKLE_STYLES[choice].name else look.file, look.display = choice.file, choice.display end
             return
         end
         local new = { size = look.size, height = look.height, x = look.x, alpha = look.alpha, anim = look.anim, animSpeed = look.animSpeed }
-        if layer <= 2 then table.remove(sparkle.effects, layer) else table.remove(sparkle.layers, layer - 2) end
+        if layer <= ns.MADE_MAX_PARTS then table.remove(sparkle.effects, layer) else table.remove(sparkle.layers, layer - ns.MADE_MAX_PARTS) end
         if window.hidden then window.hidden[sparkle.id] = nil end
         if isStyle then
             local start = ns.SPARKLE_STYLES[choice].start
             new.style, new.count, new.color, new.color2 = ns.SPARKLE_STYLES[choice].name, start.count, start.color, start.color2 or start.color
             sparkle.layers[#sparkle.layers + 1] = new
-            window.makerLayer = #sparkle.layers + 2
+            window.makerLayer = #sparkle.layers + ns.MADE_MAX_PARTS
         else
             new.file, new.display = choice.file, choice.display
             sparkle.effects[#sparkle.effects + 1] = new
@@ -1358,22 +1355,15 @@ local function PickLayer(choice)
     end)
 end
 
--- A new layer: twinkles with their own look while there's room for a style, else the first
--- effect; the gallery then changes it to anything.
+-- A new layer: twinkles with their own look, while there's room; the gallery then changes
+-- it to anything.
 local function AddLayer()
     Edit(function(sparkle)
-        local effect = #sparkle.layers >= ns.MADE_MAX_LAYERS
-        if effect and #sparkle.effects >= ns.MADE_MAX_EFFECTS then return end
-        if effect then
-            local first = ns.SPARKLE_EFFECTS[1]
-            sparkle.effects[#sparkle.effects + 1] = { file = first.file, display = first.display }
-            window.makerLayer = #sparkle.effects
-        else
-            local style = ns.SPARKLE_STYLES[1]
-            sparkle.layers[#sparkle.layers + 1] = { style = style.name, size = style.start.size, height = style.start.height,
-                count = style.start.count, color = style.start.color, color2 = style.start.color2 or style.start.color }
-            window.makerLayer = #sparkle.layers + 2
-        end
+        if #sparkle.effects + #sparkle.layers >= ns.MADE_MAX_PARTS then return end
+        local style = ns.SPARKLE_STYLES[1]
+        sparkle.layers[#sparkle.layers + 1] = { style = style.name, size = style.start.size, height = style.start.height,
+            count = style.start.count, color = style.start.color, color2 = style.start.color2 or style.start.color }
+        window.makerLayer = #sparkle.layers + ns.MADE_MAX_PARTS
     end)
 end
 
@@ -1382,22 +1372,22 @@ end
 local function RemoveLayer(layer)
     Edit(function(sparkle)
         if not LayerLook(sparkle, layer) then return end
-        if layer <= 2 then table.remove(sparkle.effects, layer) else table.remove(sparkle.layers, layer - 2) end
+        if layer <= ns.MADE_MAX_PARTS then table.remove(sparkle.effects, layer) else table.remove(sparkle.layers, layer - ns.MADE_MAX_PARTS) end
         if window.hidden then window.hidden[sparkle.id] = nil end
         window.makerLayer = nil
     end)
 end
 
--- The layers in use, in their drawing order: { layer = 1 to 5, look }.
+-- The layers in use, in their drawing order: { layer (as LayerLook takes it), look }.
 local function UsedLayers(sparkle)
     local used = {}
     local effects = type(sparkle.effects) == "table" and sparkle.effects or { sparkle.effect }
-    for i = 1, 2 do
+    for i = 1, ns.MADE_MAX_PARTS do
         if type(effects[i]) == "table" then used[#used + 1] = { layer = i, look = effects[i] } end
     end
-    for i = 1, 3 do
+    for i = 1, ns.MADE_MAX_PARTS do
         local look = type(sparkle.layers) == "table" and sparkle.layers[i]
-        if type(look) == "table" then used[#used + 1] = { layer = 2 + i, look = look } end
+        if type(look) == "table" then used[#used + 1] = { layer = ns.MADE_MAX_PARTS + i, look = look } end
     end
     return used
 end
@@ -1473,7 +1463,7 @@ end
 -- sparkles as tiles over the page.
 local PREVIEW_MAKER = 640 -- the preview's width on this page
 local MAKER_HEIGHT = 700 -- the window at least this high on this page
-local CHIP_WIDTH = 100 -- a layer's chip in the strip
+local CHIP_WIDTH = 96 -- a layer's chip in the strip (six fill it)
 local TILE_STEP = 108 -- the gallery's tiles, four across
 local STEP = 32 -- between Fine-tune's rows of sliders
 local GALLERY_ROWS, TILE_HEIGHT = 3, 64
@@ -1587,7 +1577,7 @@ local function ShowMadePreview()
         local shown = { effects = {}, layers = {} }
         for _, entry in ipairs(UsedLayers(sparkle)) do
             if not hidden[entry.layer] then
-                local list = entry.layer <= 2 and shown.effects or shown.layers
+                local list = entry.layer <= ns.MADE_MAX_PARTS and shown.effects or shown.layers
                 list[#list + 1] = entry.look
             end
         end
@@ -1778,7 +1768,7 @@ local function HandleLook()
     local sparkle = Current()
     local layer = window.makerLayer
     local look = sparkle and layer and LayerLook(sparkle, layer)
-    return look, layer and layer <= 2
+    return look, layer and layer <= ns.MADE_MAX_PARTS
 end
 
 local function Limit(what, value)
@@ -1951,7 +1941,7 @@ local function BuildHandle()
     handle:SetScript("OnHide", StopDrag)
     handle:SetScript("OnMouseWheel", function(_, delta)
         local layer = window.makerLayer
-        local what = layer and layer <= 2 and "speed" or "count"
+        local what = layer and layer <= ns.MADE_MAX_PARTS and "speed" or "count"
         Edit(function(sparkle)
             local look = LayerLook(sparkle, layer)
             if look then look[what] = Limit(what, (tonumber(look[what]) or ns.MADE_DEFAULT[what]) + delta * WHEEL[what]) end
@@ -2102,9 +2092,9 @@ function BuildMaker(grid)
     local strip = window.layerStrip
     page.add = SmallButton(strip, "+ Add layer", 100, AddLayer)
     page.add:SetPoint("RIGHT", strip, "RIGHT", -8, 0)
-    Tooltip(page.add, "Add a layer", ("Then pick what it is in the gallery. A sparkle can have %d of Blizzard's 3D effects (the first four sections) and %d of the others."):format(ns.MADE_MAX_EFFECTS, ns.MADE_MAX_LAYERS))
+    Tooltip(page.add, "Add a layer", ("Then pick what it is in the gallery. A sparkle can have %d layers, Blizzard's 3D effects (the first four sections) and the others in any mix."):format(ns.MADE_MAX_PARTS))
     page.rows = {}
-    for i = 1, ns.MADE_MAX_EFFECTS + ns.MADE_MAX_LAYERS do
+    for i = 1, ns.MADE_MAX_PARTS do
         page.rows[i] = LayerRow(strip)
         page.rows[i]:SetPoint("BOTTOMLEFT", strip, "BOTTOMLEFT", 6 + (i - 1) * (CHIP_WIDTH + 4), 4)
     end
@@ -2267,9 +2257,8 @@ end
 
 -- The gallery for the shown layer: every section, the effects' and the styles', as tabs in
 -- one row, a page of the open one's tiles at a time. A tile of the other kind turns the layer
--- into it, grayed while the sparkle has all of that kind it can (fullEffects, fullStyles).
--- Returns the y under it.
-local function PlaceGallery(page, look, isStyle, y, fullEffects, fullStyles)
+-- into it. Returns the y under it.
+local function PlaceGallery(page, look, isStyle, y)
     local perPage = 4 * GALLERY_ROWS
     local items, picked = {}, nil
     local now = not isStyle and EffectEntry(look)
@@ -2286,7 +2275,6 @@ local function PlaceGallery(page, look, isStyle, y, fullEffects, fullStyles)
         end
     end
     local styles = IsStyleGroup(window.galleryGroup)
-    local full = styles ~= isStyle and (styles and fullStyles or not styles and fullEffects)
     if styles then
         for _, i in ipairs(LayerStyles()) do
             if ns.SPARKLE_STYLES[i].group == window.galleryGroup then
@@ -2331,8 +2319,6 @@ local function PlaceGallery(page, look, isStyle, y, fullEffects, fullStyles)
             local on = first + i == picked
             tile.border:SetAtlas(on and "PetList-ButtonSelect" or "PetList-ButtonBackground")
             tile.name:SetFontObject(on and GameFontHighlightSmall or GameFontNormalSmall)
-            tile:SetEnabled(not full)
-            tile:SetAlpha(full and 0.45 or 1)
             if styles then
                 local each = ns.SPARKLE_STYLES[item]
                 tile.title, tile.tip = each.name, each.tip
@@ -2341,9 +2327,6 @@ local function PlaceGallery(page, look, isStyle, y, fullEffects, fullStyles)
             else
                 tile.title, tile.tip = item.name, item.group
                 ns.ShowSparkles(tile.anchor, kind, nil, { made = { effects = { { file = item.file, display = item.display } } }, fit = 50, height = 0 })
-            end
-            if full then
-                tile.tip = ("A sparkle can have %d of these. Take one out first."):format(styles and ns.MADE_MAX_LAYERS or ns.MADE_MAX_EFFECTS)
             end
             tile.name:SetText(tile.title)
         end
@@ -2383,7 +2366,7 @@ function RefreshMaker()
         local entry = used[i]
         row:SetShown(entry ~= nil)
         if entry then
-            local isEffect = entry.layer <= 2
+            local isEffect = entry.layer <= ns.MADE_MAX_PARTS
             local effect = isEffect and EffectEntry(entry.look)
             row.layer = entry.layer
             row.text:SetText(isEffect and (effect and effect.name or "?") or tostring(entry.look.style))
@@ -2406,12 +2389,12 @@ function RefreshMaker()
             row.eye.art:SetAtlas(off and "GM-icon-visibleDis" or "GM-icon-visible")
         end
     end
-    page.add:SetEnabled(effects < ns.MADE_MAX_EFFECTS or styles < ns.MADE_MAX_LAYERS)
+    page.add:SetShown(effects + styles < ns.MADE_MAX_PARTS) -- (hidden when full: the sixth chip takes its place)
     page.noLayers:SetShown(sparkle ~= nil and not shown)
     At(page.noLayers, 0, y)
     -- The shown layer: its name, then its gallery (and a style's colors), its animation, Fine-tune.
     local look = shown and shown.look
-    local isStyle = shown and shown.layer > 2 or false
+    local isStyle = shown and shown.layer > ns.MADE_MAX_PARTS or false
     local fine = look and window.fineTune or false
     ShowRow(look ~= nil, page.layerTitle, page.layerLine, page.layerKind, page.animLabel, page.fine, page.hint)
     ShowRow(look ~= nil and isStyle, page.swatch, page.swatch2, page.sets, page.colorLabel, page.colorHover)
@@ -2458,7 +2441,7 @@ function RefreshMaker()
     if fine then
         y = PlaceSliders(page, isStyle and STYLE_ROWS or EFFECT_ROWS, y, look) - STEP
     else
-        y = PlaceGallery(page, look, isStyle, y + 8, effects >= ns.MADE_MAX_EFFECTS, styles >= ns.MADE_MAX_LAYERS) - 8
+        y = PlaceGallery(page, look, isStyle, y + 8) - 8
     end
     At(page.animLabel, 0, y)
     local x = LABEL
