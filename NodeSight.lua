@@ -30,12 +30,12 @@ local ADDON_NAME, ns = ...
 local ipairs, pairs = ipairs, pairs
 
 local defaults = {
-    herbs = false, -- sparkles on herbs
-    ore = false, -- sparkles on ore
-    chests = false, -- sparkles on chests
+    herbs = true, -- sparkles on herbs
+    ore = true, -- sparkles on ore
+    chests = true, -- sparkles on chests
     quests = false, -- sparkles on quest objects
     others = false, -- sparkles on other objects
-    bobber = false, -- sparkles on your fishing bobber
+    bobber = true, -- sparkles on your fishing bobber
     skinning = false, -- sparkles on corpses you can skin
     loot = false, -- sparkles on corpses that still have loot
     gameIcons = false, -- keep the game's interact icons while sparkles are on

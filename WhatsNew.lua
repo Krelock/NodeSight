@@ -51,6 +51,12 @@ end
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
+        { version = "3.2.3",
+            { "Fixes", {
+                { "Fighting with Angleur and other addons.", "NodeSight no longer sets interact settings back right away when another addon or Options changes them, so it stops fighting fishing addons like Angleur and the \"Something keeps turning off SoftTargetInteractRange\" popup is gone. It sets them again at the next loading screen, as before 3.2.1" },
+                { "Interact range.", "A range of 15 or more set by another addon is now left as it is. Sparkles only show within 15 yards anyway" },
+            } },
+        },
         { version = "3.2.1",
             { "New", {
                 { "Collecting (Beta).", "Off by default. NodeSight remembers each place you gather a herb or ore and marks it on your world map and minimap with the node's own icon. Pick the symbols' picture, shape, size, minimap opacity and skill colors on the new Collecting (Beta) page, where you turn it on with Remember where I gather and Forget all clears them. Thanks to Urfoks for Collecting" },
