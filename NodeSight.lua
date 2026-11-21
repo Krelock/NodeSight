@@ -14,7 +14,9 @@
 --   NodeSight.lua    defaults, the tooltip line, loading and events
 --   Switch.lua       the finder switch: when to switch, whether it worked, and the mute of its click
 --   Sparkles.lua     sparkles on the herb or ore in front of you
---   Collect.lua      where you gathered, marked on the world map
+--   Collect.lua      where you gathered (and GatherMate2's places), marked on the maps
+--   Compass.lua      the compass bar: those places by their direction
+--   Arrow.lua        the next node arrow: to the nearest of them you can gather
 --   SparkleWindow.lua the sparkle window: on/off and the look for each kind, with a 3D preview
 --   WhatsNew.lua     the patch notes dialog
 --   MinimapButton.lua the minimap button
@@ -81,11 +83,44 @@ local defaults = {
     collectMinimap = true, -- and on the minimap
     collectPicture = 1, -- the map symbols' picture (Collect.lua's PICTURES): each node's own icon
     collectShape = 3, -- their shape (SHAPES): round with a gold ring
-    collectSize = 11, -- their size
-    collectOpacity = 75, -- how much of the minimap symbols shows (%): the node under one shows through
-    collectSkill = 1, -- how they show your skill (SKILL_LOOKS): red when too low
+    collectSize = 14, -- their size on the world map
+    collectMiniSize = 30, -- and on the minimap
+    collectMiniLook = 2, -- the minimap's symbols (COLLECT_MINI_LOOKS): a hole in the middle
+    collectMiniShared = 3, -- a shared spot on the minimap (COLLECT_MINI_SHARED): the other node as a small badge
+    collectOpacity = 100, -- how much of a minimap symbol's picture shows (%): all (the hole shows the node)
+    collectSkill = 3, -- how they show your skill (SKILL_LOOKS): a colored gem
     collectOreRings = false, -- green and rust rings for tin and iron
-    townInteractOff = false, -- Interact Key off while resting in a town or inn
+    collectDots = false, -- dots in the node's color on the world map at its widest zoom
+    collectMerge = true, -- a node's symbols that overlap on the world map shown as one, with their count
+    collectSpawns = false, -- every known spawn marked too (Spawns.lua)
+    collectGatherMate = false, -- GatherMate2's herbs and ore marked too
+    collectHideGatherMate = true, -- and GatherMate2's own herb and ore icons off meanwhile
+    collectOnlyProfession = false, -- herbs only with Herbalism, ore only with Mining
+    collectOnlyTracking = false, -- herbs only while Find Herbs is on, ore with Find Minerals
+    collectHideGray = false, -- not the ones that no longer give a skill-up
+    collectRareOnly = false, -- only the rare herbs and ore marked
+    collectRarePercent = 10, -- and any under this share (%) of a zone's herbs or ore
+    collectAreas = true, -- spawns of one node close together drawn as one area
+    collectAreaYards = 35, -- how close (yards, spawn to spawn)
+    collectAreaHerbs = false, -- herbs too, not only ore
+    collectAreaStripes = false, -- stripes over the areas' glow
+    collectAreasRows = true, -- spread-out spawns along a row as an area too
+    collectRowLook = 1, -- how a row shows (COLLECT_ROW_LOOKS): a soft band
+    collectRegions = false, -- the world map zoomed out: outlined regions with a count, no symbol each
+    collectZoomLook = 4, -- the world map at its widest zoom (COLLECT_ZOOM_LOOKS): hex tiles
+    collectAreasMap = true, -- areas on the world map
+    collectAreasMinimap = true, -- areas on the minimap
+    collectAreasZoom = true, -- only zoomed out (the minimap's two widest zooms)
+    collectSetupDone = false, -- Collecting's setup steps shown once
+    compass = false, -- the compass bar (Compass.lua)
+    compassWidth = 400, -- its width
+    compassRange = 200, -- yards: places this close show on it
+    compassX = 0, compassY = -12, -- its top, from the screen's top middle
+    nodeArrow = false, -- the next node arrow (Arrow.lua)
+    nodeArrowRange = 250, -- yards: the farthest place it points to
+    nodeArrowSize = 100, -- its size (%)
+    nodeArrowX = 0, nodeArrowY = -60, -- its top, from the screen's top middle
+    townInteractOff = true, -- Interact Key off while resting in a town or inn
     stoneBackground = true, -- the settings window's stone texture under the logo's brown
 }
 local db = defaults -- NodeSightDB once it's loaded
@@ -345,7 +380,7 @@ NodeSightAPI = {
 -- (NodeSightDB). Quest objects, gathered places and the CVars to put back are always shared.
 local function LoadSettings()
     NodeSightDB = NodeSightDB or {}
-    local SHARED = { learned = true, questObjects = true, saved = true, applied = true, rareNames = true, report = true, nodes = true }
+    local SHARED = { learned = true, questObjects = true, saved = true, applied = true, rareNames = true, report = true, nodes = true, made = true, makerWarned = true, gatherMateShow = true } -- (made: the Sparkle Maker's sparkles)
     if type(NodeSightCharDB) ~= "table" then
         NodeSightCharDB = { own = true }
         for key, value in pairs(NodeSightDB) do
@@ -388,18 +423,27 @@ local function OnAddonLoaded()
         settings.stoneOn = true
         if settings.stoneBackground == false then settings.stoneBackground = true end
     end
+    -- Interact Key off in towns on once for settings saved while it was off by default (townOn: done).
+    if settings.townOn == nil then
+        settings.townOn = true
+        settings.townInteractOff = true
+    end
+    -- One size for both maps before the minimap had its own: the minimap keeps it.
+    if settings.collectMiniSize == nil then settings.collectMiniSize = settings.collectSize end
     for key, value in pairs(defaults) do
         if settings[key] == nil then settings[key] = value end
     end
     -- Fix saved values the settings can't produce.
     if type(settings.styleLooks) ~= "table" then settings.styleLooks = {} end -- each style's look, per kind (the sparkle window)
     if type(settings.minimapIcon) ~= "table" then settings.minimapIcon = {} end -- the minimap button's place
+    if type(settings.collectHidden) ~= "table" then settings.collectHidden = {} end -- herbs and ore not marked, by NODE_LIST entry
     for _, kind in ipairs(ns.KINDS) do
         local keys = ns.SPARKLE_KEYS[kind]
         settings[keys.color] = tostring(settings[keys.color]):match("^%x%x%x%x%x%x%x%x$") or defaults[keys.color]
         local two = settings[keys.color2]
         settings[keys.color2] = two ~= nil and tostring(two):match("^%x%x%x%x%x%x%x%x$") or nil
         if not ns.StyleFits(settings[keys.style], kind) then settings[keys.style] = defaults[keys.style] end
+        if settings[keys.style2] ~= nil and not ns.StyleFits(settings[keys.style2], kind) then settings[keys.style2] = nil end
         -- The look in use belongs to its style (one from before the window has no entry yet).
         local looks = settings.styleLooks
         if type(looks[kind]) ~= "table" then looks[kind] = {} end
@@ -413,11 +457,16 @@ local function OnAddonLoaded()
     if not ns.COLLECT_PICTURES[settings.collectPicture] then settings.collectPicture = defaults.collectPicture end
     if not ns.COLLECT_SHAPES[settings.collectShape] then settings.collectShape = defaults.collectShape end
     if not ns.COLLECT_SKILL_LOOKS[settings.collectSkill] then settings.collectSkill = defaults.collectSkill end
+    if not ns.COLLECT_ROW_LOOKS[settings.collectRowLook] then settings.collectRowLook = defaults.collectRowLook end
+    if not ns.COLLECT_ZOOM_LOOKS[settings.collectZoomLook] then settings.collectZoomLook = defaults.collectZoomLook end
+    if not ns.COLLECT_MINI_LOOKS[settings.collectMiniLook] then settings.collectMiniLook = defaults.collectMiniLook end
+    if not ns.COLLECT_MINI_SHARED[settings.collectMiniShared] then settings.collectMiniShared = defaults.collectMiniShared end
     -- A hand-edited number: one in its slider's range, else the default.
     for key, range in pairs(ns.COLLECT_RANGES) do
         local value = tonumber(settings[key]) or defaults[key]
         settings[key] = math.max(range[1], math.min(range[2], value))
     end
+    for _, key in ipairs({ "compassX", "compassY", "nodeArrowX", "nodeArrowY" }) do settings[key] = tonumber(settings[key]) or defaults[key] end
     for key, range in pairs(ns.SWITCH_RANGES) do
         local value = tonumber(settings[key]) or defaults[key]
         settings[key] = math.max(range[1], math.min(range[2], value))
@@ -432,6 +481,8 @@ local function OnAddonLoaded()
     ns.RegisterSettings()
     ns.MinimapButton()
     ns.Collect()
+    ns.Compass()
+    ns.Arrow()
     if OBJECT_TOOLTIP then TooltipDataProcessor.AddTooltipPostCall(OBJECT_TOOLTIP, OnObjectTooltip) end
     if ITEM_TOOLTIP then TooltipDataProcessor.AddTooltipPostCall(ITEM_TOOLTIP, OnItemTooltip) end
 end
@@ -450,7 +501,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
             events:UnregisterEvent("ADDON_LOADED")
             -- After an update, a /reload only loads the files the old .toc listed:
             -- stay off until the game is restarted.
-            if not (ns.Plain and ns.Mute and ns.Setup and ns.CanCultivate and ns.ShowSparkleWindow and ns.ShowWhatsNew and ns.ShowSettingsWindow and ns.MinimapButton and ns.RegisterSettings and ns.Collect) then
+            if not (ns.Plain and ns.Mute and ns.Setup and ns.CanCultivate and ns.ShowSparkleWindow and ns.ShowWhatsNew and ns.ShowSettingsWindow and ns.MinimapButton and ns.RegisterSettings and ns.Collect and ns.Compass and ns.Arrow) then
                 events:UnregisterAllEvents()
                 if ns.ShowNotice then
                     pcall(ns.ShowNotice, "NodeSight needs a game restart", "NodeSight was updated while the game was running, "

@@ -4,8 +4,8 @@
 -- the game's icons are kept).
 --
 -- Sections: Each kind's look, Telling herbs and ore apart, Sparkles, Styles,
--- In reach and fading, Camera zoom, Showing sparkles, Gathering, Nameplates,
--- Interact detection.
+-- Made sparkles, In reach and fading, Camera zoom, Showing sparkles, Gathering,
+-- Nameplates, Interact detection.
 
 local _, ns = ...
 
@@ -86,11 +86,14 @@ local looted = {} -- plate: a corpse whose loot window opened (its sparkles gone
 
 local KINDS = { "herbs", "ore", "chests", "quests", "others", "bobber", "skinning", "loot" }
 local KEYS = {
-    herbs = { style = "herbStyle", color = "sparkleColor", color2 = "sparkleColor2", size = "size", height = "height", count = "count" },
+    herbs = { style = "herbStyle", color = "sparkleColor", color2 = "sparkleColor2", size = "size", height = "height", count = "count",
+        made = "herbMade", style2 = "herbStyle2", made2 = "herbMade2" },
 }
+-- made: the id of a Sparkle Maker sparkle used instead of the style; style2 or made2: a
+-- second style or sparkle shown with it.
 for _, kind in ipairs({ "ore", "chests", "quests", "others", "bobber", "skinning", "loot" }) do
     KEYS[kind] = { style = kind .. "Style", color = kind .. "Color", color2 = kind .. "Color2", size = kind .. "Size", height = kind .. "Height",
-        count = kind .. "Count" }
+        count = kind .. "Count", made = kind .. "Made", style2 = kind .. "Style2", made2 = kind .. "Made2" }
 end
 
 local function Look(kind, what) return ns.db[KEYS[kind or "herbs"][what]] end
@@ -101,10 +104,12 @@ local function Colors(kind)
     return one, Look(kind, "color2") or one
 end
 
--- A frame's look: its kind's, or what frame.over gives (the sparkle window's previews).
+-- A frame's look: what frame.over gives (the sparkle window's previews), a made
+-- sparkle's (its size and height), or its kind's.
 local function FrameLook(frame, what)
     local over = frame.over
     if over and over[what] ~= nil then return over[what] end
+    if frame.madeLook then return frame.madeLook[what] end
     return Look(frame.kind, what)
 end
 
@@ -622,14 +627,51 @@ local function PutFly(frame, f, S, c)
     Put(frame, f.body, x, y, sitting and f.s * 0.9 or f.s, nil, up and 0 or 1)
 end
 
+-- The Sparkle Maker's own styles' helpers, in one table (the main chunk is near Lua's 200 locals).
+local More = {
+    LEAVES = { "housing-celebrationtoast-leaf-bottom01", "housing-celebrationtoast-leaf-bottom02",
+        "housing-celebrationtoast-leaf-bottom03", "housing-celebrationtoast-leaf-bottom04" },
+}
+
+function More.EmberSpawn(m, S)
+    m.life = 1.6 + 1.2 * random()
+    m.x, m.y = (random() - 0.5) * 0.6 * S, -S * (0.15 + 0.15 * random())
+    m.rise, m.drift = S * (0.6 + 0.4 * random()), (random() - 0.5) * 0.3 * S
+    m.s, m.ph, m.flicker = S * (0.05 + 0.04 * random()), random() * 2 * pi, 9 + 6 * random()
+end
+
+function More.SnowSpawn(m, S)
+    m.life = 4 + 3 * random()
+    m.x, m.y, m.fall = (random() - 0.5) * S, S * (0.7 + 0.25 * random()), S * (0.9 + 0.2 * random())
+    m.sway, m.ph, m.f = S * (0.03 + 0.05 * random()), random() * 2 * pi, 0.8 + 0.6 * random()
+    m.s = S * (0.05 + 0.06 * random())
+end
+
+function More.LeafSpawn(m, S)
+    m.life = 4 + 2 * random()
+    m.x, m.y, m.fall = (random() - 0.5) * 0.9 * S, S * (0.6 + 0.3 * random()), S * (0.9 + 0.2 * random())
+    m.sway, m.ph, m.f, m.flip = S * (0.12 + 0.08 * random()), random() * 2 * pi, 0.6 + 0.5 * random(), 2 + 2 * random()
+    m.s = S * (0.12 + 0.05 * random())
+end
+
+-- In for its first share of its life, out over its last.
+function More.InOut(u, first, last)
+    if u <= 0 then return 0 end
+    if u < first then return u / first end
+    if u > 1 - last then return max(0, (1 - u) / last) end
+    return 1
+end
+
 -- Each style: its name, how it is built (Build: its parts for count n), and
 -- Draw (moves them; c is the frame's clock, A its alpha). Twinkle is the
 -- animations above. start: the look a style comes with when it is picked;
--- only: the one kind it is made for (the rest fit every kind).
+-- only: the one kind it is made for (the rest fit every kind); group: its section
+-- on the Sparkle Maker's page; maker: only there (the kinds' pages have no room
+-- for more tiles).
 local STYLES = {
-    { name = "Twinkle", twinkle = true, start = { size = 100, height = -60, count = 9, color = "ffffffff" },
+    { name = "Twinkle", group = "Sparkles", twinkle = true, start = { size = 100, height = -60, count = 9, color = "ffffffff" },
         tip = "Sparkles grow, drift up and fade." },
-    { name = "Glints", start = { size = 100, height = -60, count = 6, color = "ffffffff", color2 = "ff9fd8ff" }, tip = "Quick sharp flashes like light on a vein. Shows half the count.",
+    { name = "Glints", group = "Sparkles", start = { size = 100, height = -60, count = 6, color = "ffffffff", color2 = "ff9fd8ff" }, tip = "Quick sharp flashes like light on a vein. Shows half the count.",
         Build = function(frame, n, S) return { motes = Motes(frame, max(2, floor(n / 2 + 0.5)), STAR4, true, GlintSpawn, S) } end,
         Draw = function(frame, p, S, elapsed)
             Age(p.motes, elapsed, GlintSpawn, S)
@@ -642,7 +684,7 @@ local STYLES = {
                 PutSpark(frame, m, m.x, m.y, m.s * (0.3 + 0.7 * k), k)
             end
         end },
-    { name = "Pollen", start = { size = 100, height = -60, count = 9, color = "ffffffff" }, tip = "Soft specks float up and sway. Shows twice the count.",
+    { name = "Pollen", group = "Drifting", start = { size = 100, height = -60, count = 9, color = "ffffffff" }, tip = "Soft specks float up and sway. Shows twice the count.",
         Build = function(frame, n, S) return { motes = Motes(frame, n * 2, GLOW, false, PollenSpawn, S) } end,
         Draw = function(frame, p, S, elapsed)
             Age(p.motes, elapsed, PollenSpawn, S)
@@ -652,7 +694,7 @@ local STYLES = {
                 PutSpark(frame, m, m.x + sin(u * 2 * pi * 1.3 + m.phase) * m.sway, m.y + u * 0.65 * S, m.s, k * 0.85)
             end
         end },
-    { name = "Star crown", start = { size = 110, height = -60, count = 7, color = "ffffd100", color2 = "ffffffff" }, tip = "A ring of stars turns over the node. Count is how many stars.",
+    { name = "Star crown", group = "Sparkles", start = { size = 110, height = -60, count = 7, color = "ffffd100", color2 = "ffffffff" }, tip = "A ring of stars turns over the node. Count is how many stars.",
         Build = function(frame, n)
             local stars = {}
             for i = 1, min(12, max(5, n)) do stars[i] = { body = Layer(frame, SOFT_STAR, 2), core = Layer(frame, STAR4, 3, true) } end
@@ -668,7 +710,7 @@ local STYLES = {
                 PutSpark(frame, m, x, 0.38 * S + y, S * (0.45 + 0.2 * lit) * near, (0.4 + 0.6 * lit) * near * Seen(x, depth, S))
             end
         end },
-    { name = "Wisp", start = { size = 110, height = -60, count = 9, color = "ff8fd8ff", color2 = "ffffffff" }, tip = "A wisp circles the node and leaves a trail. Doesn't use Count.",
+    { name = "Wisp", group = "Circling", start = { size = 110, height = -60, count = 9, color = "ff8fd8ff", color2 = "ffffffff" }, tip = "A wisp circles the node and leaves a trail. Doesn't use Count.",
         Build = NewWisp,
         Draw = function(frame, p, S, elapsed, c)
             local x, y, depth = Ring(c * 2 * pi / 3.2, 0.55 * S, 0.16 * S)
@@ -705,7 +747,7 @@ local STYLES = {
                 end
             end
         end },
-    { name = "Light beam", start = { size = 100, height = -60, count = 9, color = "ffffd100", color2 = "ffffffff" }, tip = "A beam of light goes up from the node. Easy to spot from far away. Doesn't use Count.",
+    { name = "Light beam", group = "Light", start = { size = 100, height = -60, count = 9, color = "ffffd100", color2 = "ffffffff" }, tip = "A beam of light goes up from the node. Easy to spot from far away. Doesn't use Count.",
         Build = function(frame, _, S)
             return { outer = Layer(frame, "half", 2), inner = Layer(frame, "half", 3, true),
                 pool = Layer(frame, GLOW, 2), poolCore = Layer(frame, GLOW, 3, true), ring = Layer(frame, RING, 2),
@@ -796,7 +838,7 @@ local STYLES = {
                 end
             end
         end },
-    { name = "Settling dust", start = { size = 110, height = -60, count = 8, color = "ffffe9bf" }, tip = "Dust floats down and settles on the node. Shows three times the count.",
+    { name = "Settling dust", group = "Drifting", start = { size = 110, height = -60, count = 8, color = "ffffe9bf" }, tip = "Dust floats down and settles on the node. Shows three times the count.",
         Build = function(frame, n, S) return { motes = Motes(frame, n * 3, PICTURE, true, DustSpawn, S) } end,
         Draw = function(frame, p, S, elapsed)
             Age(p.motes, elapsed, DustSpawn, S)
@@ -856,7 +898,7 @@ local STYLES = {
         Draw = function(frame, p, S, _, c)
             Put(frame, p.mark, 0, S * 0.4 + sin(c * 1.6) * S * 0.025, S * 0.42, nil, 0.55 + 0.4 * sin(c * 2.2) ^ 2)
         end },
-    { name = "Fireflies", start = { size = 100, height = -60, count = 9, color = "ffffffff" }, tip = "Fireflies float around and blink on and off. Count is how many, 2 to 8.",
+    { name = "Fireflies", group = "Circling", start = { size = 100, height = -60, count = 9, color = "ffffffff" }, tip = "Fireflies float around and blink on and off. Count is how many, 2 to 8.",
         Build = function(frame, n, S)
             local flies = {}
             for i = 1, min(8, max(2, floor(n * 0.6 + 0.5))) do flies[i] = NewFirefly(frame, S) end
@@ -878,12 +920,143 @@ local STYLES = {
         Draw = function(frame, p, S, _, c)
             for _, f in ipairs(p.flies) do PutFly(frame, f, S, c) end
         end },
+    { name = "Shooting stars", group = "Sparkles", maker = true, start = { size = 110, height = -60, count = 9, color = "ffffffff", color2 = "ffffe08a" },
+        tip = "Stars streak over the node now and then. Higher count, more often.",
+        Build = function(frame, n)
+            local stars = {}
+            for i = 1, 3 do
+                local star = { head = Layer(frame, STAR4, 3, true), glow = Layer(frame, GLOW, 2), trail = {} }
+                for j = 1, 6 do star.trail[j] = Layer(frame, PICTURE, 2) end
+                stars[i] = star
+            end
+            return { stars = stars, gap = 1 + 8 / max(1, n), next = 0.3 }
+        end,
+        Draw = function(frame, p, S, elapsed)
+            p.next = p.next - elapsed
+            if p.next <= 0 then
+                p.next = p.gap * (0.6 + 0.8 * random())
+                for _, star in ipairs(p.stars) do
+                    if not star.on then
+                        local side = random() < 0.5 and -1 or 1
+                        star.on, star.t, star.life = true, 0, 0.7 + 0.3 * random()
+                        star.x, star.y = -side * S * (0.6 + 0.2 * random()), S * (0.5 + 0.3 * random())
+                        star.vx, star.vy = side * S * (1.4 + 0.6 * random()), -S * (0.5 + 0.3 * random())
+                        break
+                    end
+                end
+            end
+            for _, star in ipairs(p.stars) do
+                if star.on then
+                    star.t = star.t + elapsed
+                    local u = star.t / star.life
+                    if u >= 1 then
+                        star.on = false
+                        star.head:Hide()
+                        star.glow:Hide()
+                        for _, dot in ipairs(star.trail) do dot:Hide() end
+                    else
+                        local k = More.InOut(u, 0.2, 0.8)
+                        local x, y = star.x + star.vx * star.t, star.y + star.vy * star.t
+                        Put(frame, star.head, x, y, S * 0.22 * (0.8 + 0.2 * k), nil, k)
+                        Put(frame, star.glow, x, y, S * 0.3, nil, 0.4 * k)
+                        for j, dot in ipairs(star.trail) do -- where it was, a little earlier each
+                            local t = max(0, star.t - j * 0.035)
+                            Put(frame, dot, star.x + star.vx * t, star.y + star.vy * t, S * 0.08 * (1 - j / 7), nil, k * (0.7 - 0.1 * j))
+                        end
+                    end
+                end
+            end
+        end },
+    { name = "Embers", group = "Drifting", maker = true, start = { size = 100, height = -60, count = 9, color = "ffff8a3d", color2 = "ffffd100" },
+        tip = "Warm sparks rise from the node and flicker out. Shows twice the count.",
+        Build = function(frame, n, S) return { motes = Motes(frame, n * 2, PICTURE, true, More.EmberSpawn, S) } end,
+        Draw = function(frame, p, S, elapsed)
+            Age(p.motes, elapsed, More.EmberSpawn, S)
+            for _, m in ipairs(p.motes) do
+                local u = m.t / m.life
+                local k = More.InOut(u, 0.15, 0.85) * (0.7 + 0.3 * sin(m.t * m.flicker + m.ph))
+                PutSpark(frame, m, m.x + m.drift * u + sin(m.t * 3 + m.ph) * 0.03 * S, m.y + m.rise * EaseOut(u), m.s * (1 - 0.5 * u), k)
+            end
+        end },
+    { name = "Snow", group = "Drifting", maker = true, start = { size = 110, height = -60, count = 9, color = "ffeaf6ff", color2 = "ffffffff" },
+        tip = "Snowflakes drift down past the node. Shows twice the count.",
+        Build = function(frame, n, S) return { motes = Motes(frame, n * 2, GLOW, false, More.SnowSpawn, S) } end,
+        Draw = function(frame, p, S, elapsed)
+            Age(p.motes, elapsed, More.SnowSpawn, S)
+            for _, m in ipairs(p.motes) do
+                local u = m.t / m.life
+                PutSpark(frame, m, m.x + sin(m.t * m.f + m.ph) * m.sway, m.y - u * m.fall, m.s, 0.9 * More.InOut(u, 0.15, 0.2))
+            end
+        end },
+    { name = "Falling leaves", group = "Drifting", maker = true, start = { size = 110, height = -60, count = 5, color = "ffffffff", color2 = "ffffd9a6" },
+        tip = "Leaves drift down and turn as they fall. Count is how many, 2 to 8.",
+        Build = function(frame, n, S)
+            local leaves = {}
+            for i = 1, min(8, max(2, n)) do
+                local leaf = More.LEAVES[(i - 1) % #More.LEAVES + 1]
+                local info = C_Texture.GetAtlasInfo(leaf)
+                local m = { body = Layer(frame, leaf, 4, false, "painted"), wide = info and info.width / info.height or 1 }
+                More.LeafSpawn(m, S)
+                m.t = -random() * m.life
+                leaves[i] = m
+            end
+            return { motes = leaves }
+        end,
+        Draw = function(frame, p, S, elapsed)
+            Age(p.motes, elapsed, More.LeafSpawn, S)
+            for _, m in ipairs(p.motes) do
+                local u = m.t / m.life
+                local turn = 0.35 + 0.65 * abs(cos(m.t * m.flip + m.ph)) -- seen edge on as it turns
+                Put(frame, m.body, m.x + sin(m.t * m.f + m.ph) * m.sway, m.y - u * m.fall, m.s * m.wide * turn, m.s, More.InOut(u, 0.15, 0.2))
+            end
+        end },
+    { name = "Ripple", group = "Light", maker = true, start = { size = 100, height = -60, count = 9, color = "ffffd100", color2 = "ffffffff" },
+        tip = "Rings spread over the ground from the node, like a ping on the map. Doesn't use Count.",
+        Build = function(frame)
+            local rings = {}
+            for i = 1, 3 do rings[i] = { body = Layer(frame, RING, 2) } end
+            return { pool = Layer(frame, GLOW, 2), rings = rings }
+        end,
+        Draw = function(frame, p, S, _, c)
+            local base = -0.3 * S
+            Put(frame, p.pool, 0, base, S * 0.8, S * 0.25, 0.3 + 0.1 * sin(c * 2))
+            for i, ring in ipairs(p.rings) do
+                local u = ((c + (i - 1) * 0.9) % 2.7) / 2.7 -- one every 0.9 s
+                local wide = EaseOut(u)
+                Put(frame, ring.body, 0, base, S * (0.25 + 1.2 * wide), S * (0.08 + 0.35 * wide), (1 - u) * 0.6 * min(1, u * 8))
+            end
+        end },
+    { name = "Halo", group = "Light", maker = true, start = { size = 110, height = -60, count = 9, color = "ffffd100", color2 = "ffffffff" },
+        tip = "A soft glow round the node that slowly breathes. Doesn't use Count.",
+        Build = function(frame)
+            return { glows = { { body = Layer(frame, GLOW, 2) }, { body = Layer(frame, GLOW, 3, true) } } }
+        end,
+        Draw = function(frame, p, S, _, c)
+            local b = 0.5 + 0.5 * sin(c * 1.4)
+            Put(frame, p.glows[1].body, 0, -0.1 * S, S * (1.2 + 0.1 * b), nil, 0.3 + 0.25 * b)
+            Put(frame, p.glows[2].body, 0, -0.1 * S, S * (0.55 + 0.05 * b), nil, 0.25 + 0.2 * b)
+        end },
 }
 
 -- Can kind have style i?
 local function StyleFits(i, kind)
     local style = STYLES[i]
-    return style ~= nil and (not style.only or style.only == kind)
+    return style ~= nil and not style.maker and (not style.only or style.only == kind)
+end
+
+-- Kinds whose every style starts at one height: the bobber floats on the water, and a
+-- corpse lies well under its plate (it stays where the living creature's head was).
+More.START_HEIGHT = { bobber = 0, skinning = -115, loot = -115 }
+
+-- Style i's look for a kind: as it was left (the settings' styleLooks), or the one it comes with.
+function More.StyleLook(kind, i)
+    local look = ns.db.styleLooks[kind] and ns.db.styleLooks[kind][i]
+    if type(look) == "table" and type(look.size) == "number" and type(look.height) == "number" and type(look.count) == "number"
+        and tostring(look.color):match("^%x%x%x%x%x%x%x%x$") and (look.color2 == nil or tostring(look.color2):match("^%x%x%x%x%x%x%x%x$")) then
+        return look
+    end
+    local start = STYLES[i].start
+    return { size = start.size, height = More.START_HEIGHT[kind] or start.height, count = start.count, color = start.color, color2 = start.color2 }
 end
 
 local function Shade(texture, r, g, b)
@@ -921,6 +1094,353 @@ local function HideAll(list)
             if v.layerKey then v:Hide() else HideAll(v) end
         end
     end
+end
+
+-- Shows a style in a frame: other styles' parts hidden, this one's made again when
+-- the count or size changed, then tinted.
+local function ShowStyle(frame, style, count, S, color, color2)
+    for name, parts in pairs(frame.parts) do
+        if type(name) == "string" and name ~= style.name then HideAll(parts) end
+    end
+    if style.twinkle then return ShowTwinkles(frame, count, color, color2) end
+    ShowTwinkles(frame, 0)
+    local parts = frame.parts[style.name]
+    if not parts or parts.count ~= count or parts.S ~= S then
+        if parts then Free(frame, parts) end
+        parts = style.Build(frame, count, S)
+        parts.count, parts.S = count, S
+        frame.parts[style.name] = parts
+    end
+    if parts.color ~= color .. color2 then
+        parts.color = color .. color2
+        TintAll(parts, color, color2)
+    end
+end
+
+---------------------------------------------------------------------------
+-- Made sparkles
+---------------------------------------------------------------------------
+-- The Sparkle Maker's sparkles, saved for every character in db.made: a list of
+-- { id, name, effects = { look, look }, layers = { look, look, look } }. An effect is
+-- one of Blizzard's 3D models (by file ID, or a creature's display ID) in a ModelScene
+-- under the styles: it can be turned, tilted, sped up and made see-through, not
+-- recolored (an actor can only be grayed). A style layer is one of the styles above
+-- with its own look. Any layer can loop an animation, as WeakAuras' main animations
+-- do. A kind uses a made sparkle in place of its style while its made key holds that id.
+
+local Made = {} -- (in a block: the file's main chunk is near Lua's 200 locals)
+do
+local rad = math.rad
+
+local EFFECTS = {
+    { name = "Holy glow", file = 981525, group = "Glows" }, -- spells/holy_precast_low_base.m2
+    { name = "Holy light", file = 166338, group = "Glows" }, -- spells/holy_precast_uber_base.m2
+    { name = "Holy rays", file = 166334, group = "Glows" }, -- spells/holy_precast_high_base.m2
+    { name = "Frost glow", file = 166383, group = "Glows" }, -- spells/ice_precast_uber_base.m2
+    { name = "Shadow glow", file = 166810, group = "Glows" }, -- spells/shadow_precast_uber_base.m2
+    { name = "Nature motes", file = 166604, group = "Glows" }, -- spells/nature_precast_chest.m2
+    { name = "Sparkler", file = 426041, group = "Glows" }, -- spells/sparkler_white.m2
+    { name = "Fireflies", file = 190731, group = "Nature" }, -- world/critter/fireflies/fireflies01.m2
+    { name = "Arcane form", file = 165568, group = "Glows" }, -- arcane_form_precast
+    { name = "Fire form", file = 166112, group = "Glows" }, -- fire_form_precast
+    { name = "Frost form", file = 166209, group = "Glows" }, -- frost_form_precast
+    { name = "Holy form", file = 166322, group = "Glows" }, -- holy_form_precast
+    { name = "Nature form", file = 166603, group = "Glows" }, -- nature_form_precast
+    { name = "Shadow form", file = 166792, group = "Glows" }, -- shadow_form_precast
+    { name = "Frost glow, high", file = 166378, group = "Glows" }, -- ice_precast_high_base
+    { name = "Frost glow 2", file = 344549, group = "Glows" }, -- ice_precast_uber_base_var2
+    { name = "Shadow glow, high", file = 166805, group = "Glows" }, -- shadow_precast_high_base
+    { name = "Shadow glow, medium", file = 166808, group = "Glows" }, -- shadow_precast_med_base
+    { name = "Arcane ritual", file = 166734, group = "Glows" }, -- ritual_arcane_precast_base
+    { name = "Fire ritual", file = 166735, group = "Glows" }, -- ritual_fire_precast_base
+    { name = "Frost ritual", file = 166736, group = "Glows" }, -- ritual_frost_precast_base
+    { name = "Summoning ritual", file = 166737, group = "Glows" }, -- ritualsummoning_precast_base
+    { name = "Dark ritual", file = 165879, group = "Glows" }, -- darkritual_precast_base
+    { name = "Dark ritual, blue", file = 252133, group = "Glows" }, -- darkritual_precast_baseblue
+    { name = "Water glow", file = 469404, group = "Glows" }, -- water_precast
+    { name = "Blessing of Freedom", file = 165693, group = "Auras" }, -- blessingoffreedom_state
+    { name = "Green ghost", file = 166278, group = "Auras" }, -- greenghost_state
+    { name = "Flare", file = 166196, group = "Auras" }, -- flare_state_base
+    { name = "Cyan aura, short", file = 1310444, group = "Auras" }, -- auracyanshort
+    { name = "Purple aura, tall", file = 612472, group = "Auras" }, -- aurapurpleverytall_v2
+    { name = "Yellow aura, tall", file = 612474, group = "Auras" }, -- aurayellowverytall_v2
+    { name = "Blackfathom wisp", file = 201436, group = "Nature" }, -- bfd_wisp01
+    { name = "Blackfathom wisp, small", file = 201439, group = "Nature" }, -- bfd_wispsmall
+    { name = "Blackfathom wisp, green", file = 201440, group = "Nature" }, -- bfd_wispsmallgreen
+    { name = "Blackfathom wisp, purple", file = 201441, group = "Nature" }, -- bfd_wispsmallpurple
+    { name = "Single firefly", file = 892364, group = "Nature" }, -- spells/single_firefly
+    { name = "Motes of possibility", file = 5202080, group = "Nature" }, -- cfx_evoker_motesofpossibility
+    { name = "Bubbles", file = 165411, group = "Nature" }, -- particles/bubbles
+    { name = "Rising bubbles", file = 199932, group = "Nature" }, -- particleemitters/bubbles01
+    { name = "Scourge spirits", file = 243608, group = "Nature" }, -- sc_spirits_01
+    { name = "Lightwell", file = 917914, group = "Nature" }, -- spells/priest_lightwell_v2
+    -- Creatures, by display ID (CreatureDisplayInfo): their model files draw nothing without their skin.
+    { name = "Wisp", display = 1824, group = "Creatures" },
+    { name = "Firefly, purple", display = 19252, group = "Creatures" },
+}
+local MAX, MAX_PARTS = 9, 6 -- (nine as tiles keep the window under the screen's 768 high; six layers, effects and styles in any mix, fill the maker's layer strip)
+local LIMITS = { size = { 30, 300 }, height = { -150, 150 }, x = { -150, 150 }, count = { 1, 20 }, turn = { 0, 359 },
+    tilt = { -90, 90 }, alpha = { 10, 100 }, particles = { 25, 300 }, speed = { 0, 300 }, animSpeed = { 25, 300 } }
+local DEFAULT = { size = 100, height = -60, x = 0, count = 9, turn = 0, tilt = 0, alpha = 100, particles = 100, speed = 100,
+    animSpeed = 100 }
+local EFFECT_PARTS = { "size", "height", "x", "turn", "tilt", "alpha", "particles", "speed", "animSpeed" }
+local STYLE_PARTS = { "size", "height", "x", "count", "alpha", "animSpeed" }
+-- Looping animations: a loop takes LOOP seconds at speed 100. Spin turns an effect.
+local ANIMS = { "None", "Pulse", "Breathe", "Bob", "Orbit", "Spin" }
+local LOOP = 2
+-- The effect's camera: as the sparkle window's node preview looks, from this far back.
+local FX_PITCH, FX_FOV, FX_DISTANCE = 0.35, 0.6, 8
+
+local function EffectOf(look)
+    local file, display = tonumber(look.file), tonumber(look.display)
+    for _, effect in ipairs(EFFECTS) do
+        if file and effect.file == file or display and effect.display == display then return effect end
+    end
+end
+
+local function StyleNamed(name)
+    for i, style in ipairs(STYLES) do
+        if style.name == name and not style.only then return i end
+    end
+end
+
+local function Whole(value, what)
+    value = tonumber(value)
+    if not value or value ~= value then return DEFAULT[what] end -- (nil or NaN)
+    local limits = LIMITS[what]
+    return min(limits[2], max(limits[1], floor(value + 0.5)))
+end
+
+local function HexColor(color, default)
+    return type(color) == "string" and color:match("^%x%x%x%x%x%x%x%x$") and color or default
+end
+
+-- An animation's name, or None (Spin only for an effect).
+local function AnimOf(name, effect)
+    for _, anim in ipairs(ANIMS) do
+        if anim == name and (effect or anim ~= "Spin") then return anim end
+    end
+    return "None"
+end
+
+local function CleanEffect(look)
+    local effect = type(look) == "table" and EffectOf(look)
+    if not effect then return nil end
+    local clean = { file = effect.file, display = effect.display, anim = AnimOf(look.anim, true) }
+    for _, what in ipairs(EFFECT_PARTS) do clean[what] = Whole(look[what], what) end
+    return clean
+end
+
+local function CleanLayer(look)
+    local i = type(look) == "table" and StyleNamed(look.style)
+    if not i then return nil end
+    local color = HexColor(look.color, "ffffffff")
+    local clean = { style = i, color = color, color2 = HexColor(look.color2, color), anim = AnimOf(look.anim, false) }
+    for _, what in ipairs(STYLE_PARTS) do clean[what] = Whole(look[what], what) end
+    return clean
+end
+
+-- A saved or pasted sparkle as it can be drawn: unknown effects and styles left out,
+-- numbers inside their limits, bad colors white. Nil if nothing is left to draw.
+local function CleanMade(sparkle)
+    if type(sparkle) ~= "table" then return nil end
+    local clean = { id = sparkle.id, effects = {}, layers = {} }
+    clean.name = type(sparkle.name) == "string" and sparkle.name ~= "" and sparkle.name or "Sparkle"
+    -- (Saves from the first version have one effect, not a list.)
+    local effects = type(sparkle.effects) == "table" and sparkle.effects or { sparkle.effect }
+    for i = 1, #effects do
+        local look = CleanEffect(effects[i])
+        if look and #clean.effects + #clean.layers < MAX_PARTS then clean.effects[#clean.effects + 1] = look end
+    end
+    for _, look in ipairs(type(sparkle.layers) == "table" and sparkle.layers or {}) do
+        look = CleanLayer(look)
+        if look and #clean.effects + #clean.layers < MAX_PARTS then clean.layers[#clean.layers + 1] = look end
+    end
+    if not clean.effects[1] and not clean.layers[1] then return nil end
+    return clean
+end
+
+local function MadeList()
+    if type(ns.db.made) ~= "table" then ns.db.made = {} end
+    return ns.db.made
+end
+
+local function FindMade(id)
+    if id == nil then return nil end
+    for _, sparkle in ipairs(MadeList()) do
+        if type(sparkle) == "table" and sparkle.id == id then return sparkle end
+    end
+end
+
+-- The first layer's height is the frame's; the others sit that much higher or lower.
+local function MadeBase(clean)
+    return (clean.effects[1] or clean.layers[1]).height
+end
+
+-- The size and height a frame showing it takes (k: how much it is shrunk to fit a tile).
+local function MadeLook(clean, k)
+    local size = 0
+    for _, look in ipairs(clean.effects) do size = max(size, look.size) end
+    for _, look in ipairs(clean.layers) do size = max(size, look.size) end
+    return { size = size * k, height = MadeBase(clean) }
+end
+
+-- A layer's place, size and alpha now, with its animation (clock: the frame's).
+local function PlaceLayer(layer, clock)
+    local look, k = layer.look, layer.k
+    local x, y = look.x * k, (look.height - layer.base) * k
+    local scale, alpha = 1, look.alpha / 100
+    local anim = look.anim
+    if anim ~= "None" then
+        local w = clock * look.animSpeed / 100 * 2 * pi / LOOP + layer.phase
+        local S = look.size * k
+        if anim == "Pulse" then
+            scale = 1 + 0.15 * sin(w)
+        elseif anim == "Breathe" then
+            alpha = alpha * (0.6 + 0.4 * sin(w))
+        elseif anim == "Bob" then
+            y = y + 0.1 * S * sin(w)
+        elseif anim == "Orbit" then
+            x, y = x + 0.15 * S * cos(w), y + 0.06 * S * sin(w)
+        elseif anim == "Spin" then
+            layer.actor:SetYaw(rad(look.turn) + w)
+        end
+    end
+    layer:SetScale(scale)
+    layer:ClearAllPoints()
+    layer:SetPoint("CENTER", layer:GetParent(), "CENTER", x / scale, y / scale) -- (offsets are in the layer's own scale)
+    -- An effect's see-through is its actor's (whether models follow a frame's alpha isn't known).
+    if layer.actor then
+        if layer.alpha ~= alpha then
+            layer.alpha = alpha
+            layer.actor:SetAlpha(alpha)
+        end
+    else
+        layer:SetAlpha(alpha)
+    end
+end
+
+-- Effect i, made the first time a frame shows one (no parent in CreateFrame, as NewSparkles).
+local function ShowEffect(frame, i, look, k, base, gray)
+    local fx = frame.fxs[i]
+    if not fx then
+        fx = CreateFrame("ModelScene")
+        fx:SetParent(frame)
+        fx:SetCameraFieldOfView(FX_FOV)
+        fx:SetCameraOrientationByYawPitchRoll(pi, FX_PITCH, 0)
+        local x, y, z = fx:GetCameraForward()
+        fx:SetCameraPosition(-x * FX_DISTANCE, -y * FX_DISTANCE, -z * FX_DISTANCE)
+        fx.actor = fx:CreateActor()
+        fx.actor:SetUseCenterForOrigin(true, true, true)
+        fx.phase = random() * 2 * pi
+        frame.fxs[i] = fx
+    end
+    local actor, key = fx.actor, look.display and "d" .. look.display or look.file
+    if fx.key ~= key then
+        fx.key, fx.speed = key, nil
+        if look.display then actor:SetModelByCreatureDisplayID(look.display) else actor:SetModelByFileID(look.file) end
+    end
+    if fx.speed ~= look.speed then
+        fx.speed = look.speed
+        actor:SetAnimation(0, nil, look.speed / 100)
+    end
+    actor:SetPitch(rad(look.tilt))
+    actor:SetYaw(rad(look.turn))
+    actor:SetParticleOverrideScale(look.particles / 100)
+    if fx.gray ~= gray then
+        fx.gray = gray
+        actor:SetDesaturation(gray and 1 or 0)
+    end
+    fx.look, fx.k, fx.base = look, k, base
+    fx:SetFrameLevel(frame:GetFrameLevel() + i)
+    fx:SetSize(look.size * k, look.size * k)
+    PlaceLayer(fx, frame.clock or 0)
+    fx:Show()
+end
+
+-- Style layer i, above the effects.
+local function ShowStyleLayer(frame, i, look, kind, k, base, gray)
+    local child = frame.layers[i]
+    if not child then
+        child = NewSparkles()
+        child:SetParent(frame)
+        child.phase = random() * 2 * pi
+        frame.layers[i] = child
+    end
+    local style, S = STYLES[look.style], look.size * k
+    child.kind, child.over = kind, { size = S, count = look.count, height = 0 }
+    child.clock = child.clock or 0
+    child.look, child.k, child.base = look, k, base
+    child:SetFrameLevel(frame:GetFrameLevel() + MAX_PARTS + i)
+    child:SetSize(S, S)
+    PlaceLayer(child, frame.clock or 0)
+    local one, two = look.color, look.color2
+    if gray then one, two = TOO_HARD_GRAY, TOO_HARD_GRAY end
+    ShowStyle(child, style, look.count, S, one, two)
+    child.style = style
+    child:Show()
+end
+
+-- Shows a made sparkle's layers in a frame. gray: herbs or ore above your skill.
+-- Returns whether something moves each frame (an animation, or a style with Draw).
+local function ShowMadeLayers(frame, clean, kind, k, gray)
+    local base = MadeBase(clean)
+    frame.fxs, frame.layers = frame.fxs or {}, frame.layers or {}
+    local moving = false
+    for i = 1, MAX_PARTS do
+        local look = clean.effects[i]
+        if look then
+            ShowEffect(frame, i, look, k, base, gray)
+            moving = moving or look.anim ~= "None"
+        elseif frame.fxs[i] then
+            frame.fxs[i]:Hide()
+        end
+    end
+    for i = 1, MAX_PARTS do
+        local look, child = clean.layers[i], frame.layers[i]
+        if look then
+            ShowStyleLayer(frame, i, look, kind, k, base, gray)
+            moving = moving or look.anim ~= "None" or STYLES[look.style].Draw ~= nil
+        elseif child then
+            ShowTwinkles(child, 0)
+            child:Hide()
+        end
+    end
+    return moving
+end
+
+-- The parts of a frame's made sparkle hidden (it shows a style again).
+local function HideMade(frame)
+    for _, child in ipairs(frame.layers or {}) do
+        ShowTwinkles(child, 0)
+        child:Hide()
+    end
+    for _, fx in ipairs(frame.fxs or {}) do fx:Hide() end
+end
+
+-- Moves the layers: the styles that move, as Animate does a style's, and the animations.
+local function DrawMade(frame, _, _, elapsed)
+    local clock = frame.clock
+    for _, fx in ipairs(frame.fxs) do
+        if fx:IsShown() and fx.look.anim ~= "None" then PlaceLayer(fx, clock) end
+    end
+    for _, child in ipairs(frame.layers) do
+        if child:IsShown() then
+            local style = child.style
+            if style.Draw then
+                child.clock = child.clock + elapsed
+                style.Draw(child, child.parts[style.name], FrameLook(child, "size"), elapsed, child.clock)
+            end
+            if child.look.anim ~= "None" then PlaceLayer(child, clock) end
+        end
+    end
+end
+-- The style a frame with a made sparkle runs: it moves only when a layer does.
+Made.STILL, Made.MOVING = { name = "made" }, { name = "made", Draw = DrawMade }
+Made.EFFECTS, Made.ANIMS, Made.LIMITS, Made.DEFAULT = EFFECTS, ANIMS, LIMITS, DEFAULT
+Made.MAX, Made.MAX_PARTS = MAX, MAX_PARTS
+Made.List, Made.Find, Made.Clean = MadeList, FindMade, CleanMade
+Made.Look, Made.ShowLayers, Made.Hide = MadeLook, ShowMadeLayers, HideMade
 end
 
 ---------------------------------------------------------------------------
@@ -1072,6 +1592,12 @@ local function Animate(frame, elapsed)
     local style = frame.style
     local S = FrameLook(frame, "size")
     if style.Draw then style.Draw(frame, frame.parts[style.name], S, elapsed, frame.clock) end
+    local second = frame.second
+    local secondDraw = second and second:IsShown() and second.style.Draw
+    if secondDraw then
+        second.clock = second.clock + elapsed
+        secondDraw(second, second.parts[second.style.name], FrameLook(second, "size"), elapsed, second.clock)
+    end
     if ns.db.reachLook then UpdateReach(frame, elapsed) end
     local gatherGoal = frame.gathering and ns.db.gatherDim and 1 or 0
     frame.fade = Toward(frame.fade, frame.leaving and 0 or 1, elapsed / (frame.leaving and FADE_TIME or APPEAR_TIME))
@@ -1101,7 +1627,7 @@ local function Animate(frame, elapsed)
     end
     frame:SetAlpha(FrameAlpha(frame))
     if frame.leaving and frame.fade == 0 then return Recycle(frame) end
-    if not (style.Draw or ns.db.reachLook or frame.glowing or frame.burstAge or frame.leaving
+    if not (style.Draw or secondDraw or ns.db.reachLook or frame.glowing or frame.burstAge or frame.leaving
         or frame.harvestAge or (frame.castDone and not frame.harvested) or frame.backAt or frame.fade < 1 or frame.gather ~= gatherGoal) then
         frame:SetScript("OnUpdate", nil)
     end
@@ -1142,6 +1668,57 @@ end)
 ---------------------------------------------------------------------------
 -- Showing sparkles
 ---------------------------------------------------------------------------
+
+-- A kind's second style or sparkle (shift-click in the sparkle window), on a frame of its
+-- own over the first; hidden when show is false, or when it is the first one again.
+-- Returns whether it moves each frame.
+local function ShowSecond(frame, kind, show, gray)
+    local i, made = show and Look(kind, "style2"), show and Made.Find(Look(kind, "made2"))
+    local first = Made.Find(Look(kind, "made"))
+    made = made ~= first and made and Made.Clean(made) or nil
+    if made or not StyleFits(i, kind) or not first and i == Look(kind, "style") then i = nil end
+    local second = frame.second
+    if not (made or i) then
+        if second and second:IsShown() then
+            for key, parts in pairs(second.parts) do
+                if type(key) == "string" then HideAll(parts) end
+            end
+            ShowTwinkles(second, 0)
+            Made.Hide(second)
+            second:Hide()
+        end
+        return false
+    end
+    if not second then
+        second = NewSparkles()
+        second:SetParent(frame)
+        frame.second = second
+    end
+    second.kind, second.lower, second.clock = kind, frame.lower, second.clock or 0
+    second:SetFrameLevel(frame:GetFrameLevel() + 2 * Made.MAX_PARTS + 1) -- (over the first's layers)
+    if made then
+        second.over, second.madeLook = nil, Made.Look(made, 1)
+        for key, parts in pairs(second.parts) do
+            if type(key) == "string" then HideAll(parts) end
+        end
+        ShowTwinkles(second, 0)
+        second.style = Made.ShowLayers(second, made, kind, 1, gray) and Made.MOVING or Made.STILL
+    else
+        local look = More.StyleLook(kind, i)
+        second.over, second.madeLook = { style = i, size = look.size, height = look.height, count = look.count }, nil
+        Made.Hide(second)
+        local one, two = look.color, look.color2 or look.color
+        if gray then one, two = TOO_HARD_GRAY, TOO_HARD_GRAY end
+        second.style = STYLES[i]
+        ShowStyle(second, STYLES[i], look.count, look.size, one, two)
+    end
+    local S = FrameLook(second, "size")
+    second:SetSize(S, S)
+    second:ClearAllPoints()
+    second:SetPoint("CENTER", frame, "CENTER", 0, Height(second) - Height(frame))
+    second:Show()
+    return second.style.Draw ~= nil
+end
 
 -- Puts the sparkle area on a plate and shows the kind's style. over: a preview
 -- (on any frame), with a look to show instead of the saved one (style, size, height, count),
@@ -1184,6 +1761,11 @@ local function ShowSparkles(namePlate, kind, unit, over)
         frame:SetScale(zoomWatch.scale * frame.harvestScale)
         zoomWatch:Show()
     end
+    -- A made sparkle: the preview's, or the kind's (not on a style's tile, which gives a style).
+    local made = over and over.made or not (over and over.style) and Made.Find(Look(kind, "made"))
+    made = made and Made.Clean(made)
+    local k = made and over and over.fit and over.fit / max(1, Made.Look(made, 1).size) or 1
+    frame.madeLook = made and Made.Look(made, k) or nil
     local S = FrameLook(frame, "size")
     frame:SetSize(S, S)
     frame:ClearAllPoints()
@@ -1191,29 +1773,17 @@ local function ShowSparkles(namePlate, kind, unit, over)
     local style = STYLES[FrameLook(frame, "style")] or STYLES[1]
     local color, color2 = Colors(kind)
     if over and over.color then color, color2 = over.color, over.color2 or over.color end
-    if over and over.tooHard or name and ns.db.grayTooHard and (kind == "herbs" or kind == "ore") and ns.TooHard(name, kind) then
-        color, color2 = TOO_HARD_GRAY, TOO_HARD_GRAY
-    end
-    local count = FrameLook(frame, "count")
-    -- Other styles' parts hidden; this one's made again when the count or size changed.
-    for name, parts in pairs(frame.parts) do
-        if type(name) == "string" and name ~= style.name then HideAll(parts) end
-    end
-    if style.twinkle then
-        ShowTwinkles(frame, count, color, color2)
-    else
+    local gray = over and over.tooHard or name and ns.db.grayTooHard and (kind == "herbs" or kind == "ore") and ns.TooHard(name, kind)
+    if gray then color, color2 = TOO_HARD_GRAY, TOO_HARD_GRAY end
+    if made then
+        for key, parts in pairs(frame.parts) do
+            if type(key) == "string" then HideAll(parts) end
+        end
         ShowTwinkles(frame, 0)
-        local parts = frame.parts[style.name]
-        if not parts or parts.count ~= count or parts.S ~= S then
-            if parts then Free(frame, parts) end
-            parts = style.Build(frame, count, S)
-            parts.count, parts.S = count, S
-            frame.parts[style.name] = parts
-        end
-        if parts.color ~= color .. color2 then
-            parts.color = color .. color2
-            TintAll(parts, color, color2)
-        end
+        style = Made.ShowLayers(frame, made, kind, k, gray == true) and Made.MOVING or Made.STILL
+    else
+        Made.Hide(frame)
+        ShowStyle(frame, style, FrameLook(frame, "count"), S, color, color2)
     end
     -- A rare node's gold glow.
     frame.glowing = frame.rare
@@ -1227,6 +1797,7 @@ local function ShowSparkles(namePlate, kind, unit, over)
         frame.under:Hide()
     end
     if frame.burst and not frame.burstAge then frame.burst:Hide() end
+    ShowSecond(frame, kind, not (over and (over.style or over.made)), gray == true) -- (not on a tile, which shows one)
     frame.style = style
     frame:SetScript("OnUpdate", Animate) -- it stops itself when there is nothing to move
     frame:SetAlpha(FrameAlpha(frame))
@@ -1236,6 +1807,7 @@ end
 -- Stops a frame's sparkles and keeps it as a spare.
 function Recycle(frame)
     frame:Hide()
+    ShowSecond(frame, frame.kind, false)
     for _, part in ipairs(frame.parts) do
         part.group:Stop()
         part.coreGroup:Stop()
@@ -1766,6 +2338,10 @@ function ns.SetupOut()
     if not InCombatLockdown() then RestoreSetup() end
 end
 ns.KINDS, ns.SPARKLE_KEYS, ns.SPARKLE_STYLES, ns.StyleFits = KINDS, KEYS, STYLES, StyleFits
+ns.StyleLook, ns.SPARKLE_START_HEIGHT = More.StyleLook, More.START_HEIGHT
+ns.SPARKLE_EFFECTS, ns.MADE_ANIMS, ns.MADE_LIMITS, ns.MADE_DEFAULT = Made.EFFECTS, Made.ANIMS, Made.LIMITS, Made.DEFAULT
+ns.MADE_MAX, ns.MADE_MAX_PARTS = Made.MAX, Made.MAX_PARTS
+ns.MadeList, ns.FindMade, ns.CleanMade = Made.List, Made.Find, Made.Clean
 ns.CarryOverLooks, ns.SparkleLook, ns.SparkleRGB, ns.SparkleColors, ns.SPARKLE_LOWER = CarryOverLooks, Look, RGB, Colors, LOWER
 -- Is a Setup waiting for the end of combat?
 function ns.SetupPending() return pendingSetup end

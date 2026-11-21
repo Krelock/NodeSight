@@ -51,6 +51,18 @@ end
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
+        { version = "4.0.0",
+            { "New", {
+                { "Collecting (Beta), much bigger.", "Every herb and ore spawn is now built in, with a quick setup, cleaner map and minimap symbols, areas for mines, and filters. Open Collecting (Beta) to set it up" },
+                { "Compass bar and next node arrow.", "Off by default. Find the herbs and ore around you from the top of the screen. On Collecting (Beta) > Compass and arrow" },
+                { "Where to farm.", "The best zones for skill-ups, on Collecting (Beta) > Where to farm" },
+                { "GatherMate2 support.", "Off by default. Shows GatherMate2's herbs and ore with NodeSight's symbols" },
+                { "Sparkle Maker (Beta).", "Make your own sparkles from Blizzard's effects, in the sparkle window" },
+            } },
+            { "Changes", {
+                { "Interact Key off in towns.", "Now on for everyone. You can turn it off in Sparkle settings" },
+            } },
+        },
         { version = "3.2.3",
             { "Fixes", {
                 { "Fighting with Angleur and other addons.", "NodeSight no longer sets interact settings back right away when another addon or Options changes them, so it stops fighting fishing addons like Angleur and the \"Something keeps turning off SoftTargetInteractRange\" popup is gone. It sets them again at the next loading screen, as before 3.2.1" },

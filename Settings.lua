@@ -220,6 +220,9 @@ local function RegisterSettings()
         Checkbox("collect", "Remember where I gather",
             "Remembers each place you gather a herb or ore, on this computer only. Off: nothing new is remembered and the world map shows no marks; the places remembered are kept.",
             function() ns.UpdateCollect() end)
+        Checkbox("collectSpawns", "Every known spawn",
+            "Marks every herb and ore spawn Wowhead knows for Forever, whether or not you've been there. A known spawn is where one can grow, not one that's up now.",
+            function() ns.RereadNodePins() end)
         Checkbox("collectMap", "World map marks",
             "A small herb or ore icon on the world map for each place you gathered at. Put your mouse on one to see what it was.",
             function() ns.RefreshNodePins() end)
@@ -231,14 +234,68 @@ local function RegisterSettings()
         Dropdown("collectPicture", "Map symbols' picture", ns.COLLECT_PICTURES,
             "Each node's own item icon, or one plain icon for herbs and one for ore.", MapChanged)
         Dropdown("collectShape", "Map symbols' shape", ns.COLLECT_SHAPES, "The symbols' shape, on the world map and the minimap.", MapChanged)
-        Slider("collectSize", "Map symbols' size", size[1], size[2], "How big the symbols are, on the world map and the minimap.", MapChanged, size[3])
+        Slider("collectSize", "World map symbols' size", size[1], size[2], "How big the symbols are on the world map.", MapChanged, size[3])
+        local mini = ns.COLLECT_RANGES.collectMiniSize
+        Slider("collectMiniSize", "Minimap symbols' size", mini[1], mini[2], "How big the symbols are on the minimap.", MapChanged, mini[3])
         Slider("collectOpacity", "Minimap symbols' opacity (%)", opacity[1], opacity[2],
-            "How much of a minimap symbol shows. Lower lets the game's dot under it show through. On the world map they're solid.", MapChanged, opacity[3])
+            "How much of a minimap symbol's picture shows; its ring stays solid. Lower lets the game's dot under it show through.", MapChanged, opacity[3])
+        Dropdown("collectMiniLook", "Minimap look", ns.COLLECT_MINI_LOOKS, "How a minimap symbol leaves room for the game's own dot under it, for example a hole in the middle (best with Minimap size 30).", MapChanged)
+        Dropdown("collectMiniShared", "Minimap shared spots", ns.COLLECT_MINI_SHARED, "Where two herbs or ores can spawn at one spot, how a minimap symbol shows both, for example copper and tin split down the middle.", MapChanged)
         Dropdown("collectSkill", "Skill colors", ns.COLLECT_SKILL_LOOKS,
             "How a symbol shows your skill. Red when too low: red if you can't gather it yet. Colored ring and Colored gem: the profession window's skill-up colors, from red to gray. Colored ring needs a gold ring shape.",
             MapChanged)
         Checkbox("collectOreRings", "High visibility tin and iron",
             "Tin gets a green ring and iron a rust one, so they're easy to tell apart. Needs a gold ring shape.", MapChanged)
+        Checkbox("collectDots", "Dots when zoomed out", "On the world map at its widest zoom, each spawn is a small dot in its herb's or ore's color. Zoom in for the full symbols.", MapChanged)
+        Checkbox("collectMerge", "Merge overlapping symbols", "Symbols of one herb or ore that would cover each other on the world map show as one, with how many there are. Zoom in to see each one.", MapChanged)
+        Checkbox("collectGatherMate", "GatherMate2's places",
+            "Marks the herbs and ore GatherMate2 knows too, on the world map, the minimap and the compass bar. Needs GatherMate2. "
+            .. "Wowhead's places from GatherMate2_Data (Retail & Forever) are read too, without an import.", function() ns.RereadNodePins() end)
+        Checkbox("collectHideGatherMate", "Hide GatherMate2's own herb and ore icons",
+            "While GatherMate2's places are marked here, sets its Herbs and Mining to never show in its own settings, so the icons don't sit on top of each other. Its other icons stay. Untick to put its settings back.",
+            function() ns.RereadNodePins() end)
+        Checkbox("collectOnlyProfession", "Only with the profession", "Herbs are marked only on characters with Herbalism, ore only with Mining.", MapChanged)
+        Checkbox("collectOnlyTracking", "Only while tracking",
+            "Herbs are marked only while Find Herbs is on, ore only while Find Minerals is on. With the Herb/Ore Switch on, both are.", MapChanged)
+        Checkbox("collectHideGray", "Hide gray ones", "Leaves out herbs and ore that no longer give you a skill-up (gray in your profession window).", MapChanged)
+        local rare = ns.COLLECT_RANGES.collectRarePercent
+        Checkbox("collectRareOnly", "Rare ones only",
+            "Marks only the rare herbs and ore on the world map and the minimap: silver, gold, truesilver, rich thorium and Black Lotus everywhere, and any that make up less of a zone's herbs or ore than the share below.",
+            function() ns.RereadNodePins() end)
+        Slider("collectRarePercent", "Rare ones: or under (%)", rare[1], rare[2],
+            "Herbs or ore that make up less than this share of a zone's count as rare there too. 0: only the list. The default is " .. defaults.collectRarePercent .. ".",
+            function() ns.RereadNodePins() end, rare[3])
+        local areaYards = ns.COLLECT_RANGES.collectAreaYards
+        local function AreasChanged() ns.RereadNodePins() end
+        Checkbox("collectAreas", "Areas for close spawns",
+            "Where five or more spawns of one ore are close together, like a mine, the map shows one soft area with the ore's symbol and a count in place of a symbol each. Other nodes there keep their symbols.",
+            AreasChanged)
+        Slider("collectAreaYards", "Areas: how close (yards)", areaYards[1], areaYards[2],
+            "How near spawns must be to each other to share an area. The default is " .. defaults.collectAreaYards .. ".", AreasChanged, areaYards[3])
+        Checkbox("collectAreaHerbs", "Areas for herbs too", "Herbs that grow close together get areas as well, not only ore.", AreasChanged)
+        Checkbox("collectAreaStripes", "Striped areas", "Stripes over the areas' glow, so they stand out more.", MapChanged)
+        Checkbox("collectAreasRows", "Areas along rows", "Spawns spread out along a row (a ridge, a road) get a glow along the row too, not only ones packed together like a mine.", AreasChanged)
+        Checkbox("collectRegions", "Regions when zoomed out", "At the world map's widest zoom, spawns show as outlined regions with a count. Zoom in to see each one.", MapChanged)
+        Dropdown("collectZoomLook", "Zoomed-out look", ns.COLLECT_ZOOM_LOOKS, "How spawns show on the world map at its widest zoom. Anything but Symbols takes the place of dots, areas and regions there.", MapChanged)
+        Dropdown("collectRowLook", "Row look", ns.COLLECT_ROW_LOOKS, "How a row of spawns shows. Soft band: a faint glow along the row. Dotted line: like the map's flight paths. Thin line: a quiet line.", MapChanged)
+        Checkbox("collectAreasMap", "Areas on the world map", "Shows the areas on the world map. Off: a symbol for each spawn there.", MapChanged)
+        Checkbox("collectAreasMinimap", "Areas on the minimap", "Shows the areas on the minimap. Off: a symbol for each spawn there.", MapChanged)
+        Checkbox("collectAreasZoom", "Areas only when zoomed out", "Areas show only while the world map is zoomed all the way out, and at the minimap's two widest zooms. Zoom in to see each spawn. Off: areas at every zoom.", MapChanged)
+        local function CompassChanged() ns.CompassChanged() end
+        local width, range = ns.COLLECT_RANGES.compassWidth, ns.COLLECT_RANGES.compassRange
+        Checkbox("compass", "Compass bar",
+            "A strip at the top of the screen with the compass points and a symbol for each herb and ore marked near you, in its direction. Nearer ones are brighter.",
+            CompassChanged)
+        Slider("compassWidth", "Compass bar's width", width[1], width[2], "How wide the compass bar is.", CompassChanged, width[3])
+        Slider("compassRange", "Compass bar's range (yards)", range[1], range[2], "How far away a place can be to show on the compass bar.", CompassChanged, range[3])
+        Checkbox("nodeArrow", "Next node arrow",
+            "Points to the nearest marked herb or ore you can gather, with the yards to it. Within 15 yards of one, it points to the next for 2 minutes.",
+            function() ns.ArrowChanged() end)
+        local arrowRange = ns.COLLECT_RANGES.nodeArrowRange
+        Slider("nodeArrowRange", "Next node arrow's range (yards)", arrowRange[1], arrowRange[2], "How far away a place can be for the arrow to point to it.",
+            function() ns.ArrowChanged() end, arrowRange[3])
+        local arrowSize = ns.COLLECT_RANGES.nodeArrowSize
+        Slider("nodeArrowSize", "Next node arrow's size (%)", arrowSize[1], arrowSize[2], "How big the arrow is.", function() ns.ArrowChanged() end, arrowSize[3])
         layout:AddInitializer(CreateSettingsButtonInitializer("Remembered places", "Forget all", function() ns.AskForget() end,
             "Forgets every place NodeSight remembered, for all your characters. It asks first.", false))
         Header("Collecting is new and will be improved in future updates.")

@@ -1,5 +1,6 @@
 -- NodeSight's own pages in the sparkle window's list, above the sparkles: General, the
--- Herb/Ore Switch and Collecting, each in two columns. One window for every setting, and
+-- Herb/Ore Switch, and Collecting's under its own header (General, Symbols, Areas,
+-- Compass and arrow, Where to farm), each in two columns. One window for every setting, and
 -- nothing written into the game's Options list (rows changed from addon code there break
 -- its dropdowns in combat).
 --
@@ -45,7 +46,20 @@ local AFTER = {
     collect = function() ns.UpdateCollect() end,
     collectMap = function() ns.RefreshNodePins() end,
 }
-for _, key in ipairs({ "collectMinimap", "collectPicture", "collectShape", "collectSize", "collectOpacity", "collectSkill", "collectOreRings" }) do
+for _, key in ipairs({ "compass", "compassWidth", "compassRange" }) do
+    AFTER[key] = function() ns.CompassChanged() end
+end
+AFTER.nodeArrow = function() ns.ArrowChanged() end
+AFTER.nodeArrowSize = AFTER.nodeArrow
+AFTER.collectGatherMate = function() ns.RereadNodePins() end
+AFTER.collectSpawns = AFTER.collectGatherMate
+AFTER.collectHideGatherMate = AFTER.collectGatherMate
+for _, key in ipairs({ "collectAreas", "collectAreaYards", "collectAreaHerbs", "collectRareOnly", "collectRarePercent", "collectAreasRows" }) do
+    AFTER[key] = AFTER.collectGatherMate
+end
+for _, key in ipairs({ "collectMinimap", "collectPicture", "collectShape", "collectSize", "collectMiniSize", "collectMiniLook", "collectMiniShared", "collectOpacity", "collectSkill", "collectOreRings",
+    "collectMerge", "collectDots", "collectOnlyProfession", "collectOnlyTracking", "collectHideGray", "collectAreaStripes", "collectRowLook", "collectRegions", "collectZoomLook", "collectAreasMap", "collectAreasMinimap",
+    "collectAreasZoom" }) do
     AFTER[key] = function() ns.RefreshNodePins() end
 end
 
@@ -203,6 +217,23 @@ local function GeneralColumns(column, _, page)
     Checkbox(column, "stoneBackground", "Stone background", "Blizzard's stone texture behind this window, warmed to the logo's brown. Off: plain brown.")
 end
 
+-- A dropdown's menu of choices (their words, in order), saved as the choice's number. Its
+-- two functions are made once: the menu hands them the choice's number. Blizzard's template
+-- builds the whole menu each time the dropdown shows, and SetupMenu builds it at once if
+-- shown, only to show the chosen option's name: here it's built when the menu opens, and
+-- RefreshPart writes the name.
+local function ChoiceMenu(dropdown, key, choices)
+    local function IsPicked(i) return ns.db[key] == i end
+    local function Pick(i) Set(key, i) end
+    dropdown:SetScript("OnShow", nil)
+    dropdown:Hide()
+    dropdown:SetupMenu(function(_, root)
+        for i, name in ipairs(choices) do root:CreateRadio(name, IsPicked, Pick, i) end
+    end)
+    dropdown:Show()
+    dropdown.choices = choices
+end
+
 -- The Herb/Ore Switch: its line and box over both columns, then When, Switch in and the
 -- thanks on the left, Pauses on the right (its header level with When's).
 local function SwitchColumns(column, right, page)
@@ -216,11 +247,7 @@ local function SwitchColumns(column, right, page)
     Header(column, "When")
     local measure = New("DropdownButton", page, "WowStyle1DropdownTemplate")
     measure:SetWidth(168)
-    measure:SetupMenu(function(_, root)
-        for i, name in ipairs(ns.SWITCH_MEASURES) do
-            root:CreateRadio(name, function() return ns.db.switchMeasure == i end, function() Set("switchMeasure", i) end)
-        end
-    end)
+    ChoiceMenu(measure, "switchMeasure", ns.SWITCH_MEASURES)
     Row("Measure distance in", measure,
         "How the distance between switches is measured: percent of what your minimap shows (it changes with the zoom), yards, or seconds on the move.")
     measure.key, measure.kind = "switchMeasure", "dropdown"
@@ -276,53 +303,96 @@ end
 local function Dropdown(column, key, text, choices, tip)
     local dropdown = New("DropdownButton", column.page, "WowStyle1DropdownTemplate")
     dropdown:SetWidth(168)
-    dropdown:SetupMenu(function(_, root)
-        for i, name in ipairs(choices) do
-            root:CreateRadio(name, function() return ns.db[key] == i end, function() Set(key, i) end)
-        end
-    end)
+    ChoiceMenu(dropdown, key, choices)
     Row(text, dropdown, tip)
     dropdown.key, dropdown.kind = key, "dropdown"
     column[#column + 1] = dropdown
     return dropdown
 end
 
+-- A row of choice tiles, the setup cards' art in small: the picked one lit. `short`: the words on
+-- the tiles; the full names show in their tooltips, with a tile's own line from `notes`.
+local function Choices(column, key, text, choices, short, tip, notes)
+    local row = New("Frame", column.page)
+    row:SetSize(1, 22)
+    row.tiles = {}
+    local x = 0
+    for i, name in ipairs(short) do
+        local tile = New("Button", row)
+        local back = tile:CreateTexture(nil, "BACKGROUND")
+        back:SetAtlas("collections-background-tile")
+        back:SetAllPoints()
+        tile.border = tile:CreateTexture(nil, "BORDER")
+        tile.border:SetAllPoints()
+        tile.border:SetTextureSliceMargins(8, 8, 8, 8)
+        local hover = tile:CreateTexture(nil, "HIGHLIGHT")
+        hover:SetAtlas("PetList-ButtonHighlight")
+        hover:SetAllPoints()
+        hover:SetTextureSliceMargins(8, 8, 8, 8)
+        tile.text = Label(tile, name, "GameFontNormalSmall")
+        tile.text:SetPoint("CENTER")
+        local width = math.ceil(tile.text:GetStringWidth()) + 18
+        tile:SetSize(width, 22)
+        tile:SetPoint("LEFT", row, "LEFT", x, 0)
+        x = x + width + 4
+        tile:SetScript("OnClick", function()
+            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+            Set(key, i)
+        end)
+        Tooltip(tile, choices[i], notes and notes[i] and tip .. " " .. notes[i] or tip)
+        row.tiles[i] = tile
+    end
+    row:SetWidth(math.max(1, x - 4))
+    Row(text, row, tip)
+    row.key, row.kind = key, "choices"
+    column[#column + 1] = row
+    return row
+end
+
 local function Percent100(value) return ("%d %%"):format(value) end
 local function Whole(value) return ("%d"):format(value) end
 
--- Collecting: its boxes and the map symbols' look on the left, the places remembered and
--- Forget all on the right.
-local function CollectColumns(column, places, page)
-    page.about = Label(page, "Remembers where you gather herbs and ore and marks the places on your world map.", "GameFontDisableSmall")
+-- Collecting's pages. A gray line under a page's title says what it is for.
+local function About(page, text, column, other)
+    page.about = Label(page, text, "GameFontDisableSmall")
     page.about:SetPoint("TOPLEFT", LEFT, -38)
     page.about:SetWidth(2 * WIDE)
     page.about:SetJustifyH("LEFT")
-    column.top, places.top = -56, -56
-    Header(column, "Collecting")
+    column.top, other.top = -56, -56
+end
+
+-- Collecting's General: the sources and GatherMate2 on the left; what shows and the places
+-- remembered on the right.
+local function CollectColumns(column, places, page)
+    About(page, "Remembers where you gather herbs and ore and marks the places on your world map and minimap.", column, places)
+    Header(column, "Sources")
     Checkbox(column, "collect", "Remember where I gather",
         "Remembers each place you gather a herb or ore. Off: nothing new is remembered and the world map shows no marks; the places remembered are kept.")
-    Checkbox(column, "collectMap", "World map marks",
+    Checkbox(column, "collectSpawns", "Every known spawn",
+        "Marks every herb and ore spawn Wowhead knows for Forever, whether or not you've been there. A known spawn is where one can grow, not one that's up now.")
+    Header(column, "GatherMate2")
+    page.gatherMate = Checkbox(column, "collectGatherMate", "GatherMate2's places",
+        "Marks the herbs and ore GatherMate2 knows too, on the world map, the minimap and the compass bar. Needs GatherMate2. "
+        .. "Wowhead's places from GatherMate2_Data (Retail & Forever) are read too, without an import.")
+    Checkbox(column, "collectHideGatherMate", "Hide its own herb and ore icons",
+        "While GatherMate2's places are marked here, sets its Herbs and Mining to never show in its own settings, so the icons don't sit on top of each other. Its other icons stay. Untick to put its settings back.")
+    page.noGatherMate = Label(page, "GatherMate2 isn't loaded.", "GameFontDisableSmall")
+    page.noGatherMate.gap, page.noGatherMate.height = 0, 20
+    column[#column + 1] = page.noGatherMate
+    -- At the page's bottom: the thanks, and that Collecting is new right above it.
+    page.thanks = Label(page, "Thanks to Urfoks for helping with Collecting", "GameFontDisableSmall")
+    page.thanks:SetPoint("BOTTOMLEFT", page, "BOTTOMLEFT", LEFT, 16)
+    page.future = Label(page, "Collecting is new and will be improved in future updates.", "GameFontDisableSmall")
+    page.future:SetPoint("BOTTOMLEFT", page.thanks, "TOPLEFT", 0, 4)
+    Header(places, "Show")
+    Checkbox(places, "collectMap", "World map marks",
         "A small herb or ore symbol on the world map for each place you gathered at. Put your mouse on one to see what it was.")
-    Checkbox(column, "collectMinimap", "Minimap marks",
+    Checkbox(places, "collectMinimap", "Minimap marks",
         "The same symbols on the minimap for the places near you. They let the mouse through to the game's own dots.")
-    Header(column, "Symbols")
-    local size, opacity = ns.COLLECT_RANGES.collectSize, ns.COLLECT_RANGES.collectOpacity
-    Dropdown(column, "collectPicture", "Picture", ns.COLLECT_PICTURES,
-        "Each node's own item icon, or one plain icon for herbs and one for ore.")
-    Dropdown(column, "collectShape", "Shape", ns.COLLECT_SHAPES, "The symbols' shape, on the world map and the minimap.")
-    Slider(column, "collectSize", "Size", size[1], size[2], size[3], "How big the symbols are, on the world map and the minimap.", Whole)
-    Slider(column, "collectOpacity", "Minimap opacity", opacity[1], opacity[2], opacity[3],
-        "How much of a minimap symbol shows. Lower lets the game's dot under it show through. On the world map they're solid.", Percent100)
-    Dropdown(column, "collectSkill", "Skill colors", ns.COLLECT_SKILL_LOOKS,
-        "How a symbol shows your skill. Red when too low: red if you can't gather it yet. Colored ring and Colored gem: the profession window's skill-up colors, from red to gray. Colored ring needs a gold ring shape.")
-    Checkbox(column, "collectOreRings", "High visibility tin and iron",
-        "Tin gets a green ring and iron a rust one, so they're easy to tell apart. Needs a gold ring shape.")
-    local future = Label(page, "Collecting is new and will be improved in future updates.", "GameFontDisableSmall")
-    future.gap, future.height = 4, 20
-    column[#column + 1] = future
-    local thanks = Label(page, "Thanks to Urfoks for Collecting", "GameFontDisableSmall")
-    thanks.gap, thanks.height = 4, 20
-    column[#column + 1] = thanks
+    Checkbox(places, "collectOnlyProfession", "Only with the profession", "Herbs are marked only on characters with Herbalism, ore only with Mining.")
+    Checkbox(places, "collectOnlyTracking", "Only while tracking",
+        "Herbs are marked only while Find Herbs is on, ore only while Find Minerals is on. With the Herb/Ore Switch on, both are.")
+    Checkbox(places, "collectHideGray", "Hide gray ones", "Leaves out herbs and ore that no longer give you a skill-up (gray in your profession window).")
     Header(places, "Remembered places")
     page.count = Label(page, "", "GameFontHighlight")
     page.count.height = 28
@@ -333,6 +403,104 @@ local function CollectColumns(column, places, page)
     page.forget:SetScript("OnClick", function() ns.AskForget() end)
     Tooltip(page.forget, "Forget all", "Forgets every place NodeSight remembered, for all your characters. It asks first.")
     places[#places + 1] = page.forget
+end
+
+-- The areas' own rows.
+local function AreaRows(column)
+    local areaYards = ns.COLLECT_RANGES.collectAreaYards
+    Checkbox(column, "collectAreas", "Areas for close spawns",
+        "Where five or more spawns of one ore are close together, like a mine, the map shows one soft area with the ore's symbol and a count in place of a symbol each. Other nodes there keep their symbols.")
+    Slider(column, "collectAreaYards", "How close", areaYards[1], areaYards[2], areaYards[3],
+        "How near spawns must be to each other to share an area.", Yards)
+    Checkbox(column, "collectAreaHerbs", "Herbs too", "Herbs that grow close together get areas as well, not only ore.")
+    Checkbox(column, "collectAreasRows", "Along rows too",
+        "Spawns spread out along a row (a ridge, a road) get a glow along the row too, not only ones packed together like a mine.")
+    Dropdown(column, "collectRowLook", "Row look", ns.COLLECT_ROW_LOOKS, "How a row of spawns shows. Soft band: a faint glow along the row. Dotted line: like the map's flight paths. Thin line: a quiet line.")
+    Checkbox(column, "collectAreaStripes", "Stripes", "Stripes over the round areas' glow, so they stand out more.")
+    Checkbox(column, "collectRegions", "Regions when zoomed out", "At the world map's widest zoom, spawns show as outlined regions with a count. Zoom in to see each one.")
+    Dropdown(column, "collectZoomLook", "Zoomed-out look", ns.COLLECT_ZOOM_LOOKS, "How spawns show on the world map at its widest zoom. Anything but Symbols takes the place of dots, areas and regions there.")
+end
+-- The settings that change the maps most, each one a click: setup's maps step and the Symbols page.
+local function MapRows(column)
+    local mini, size = ns.COLLECT_RANGES.collectMiniSize, ns.COLLECT_RANGES.collectSize
+    Slider(column, "collectMiniSize", "Minimap size", mini[1], mini[2], mini[3], "How big the symbols are on the minimap.", Whole)
+    Slider(column, "collectSize", "World map size", size[1], size[2], size[3], "How big the symbols are on the world map.", Whole)
+    local opacity = ns.COLLECT_RANGES.collectOpacity
+    Slider(column, "collectOpacity", "Minimap opacity", opacity[1], opacity[2], opacity[3],
+        "How much of a minimap symbol's picture shows; its ring stays solid. Lower lets the game's dot under it show through.", Percent100)
+    Choices(column, "collectShape", "Shape", ns.COLLECT_SHAPES, { "Square", "Round", "Gold ring", "Slim ring" },
+        "The symbols' shape, on the world map and the minimap.")
+    Choices(column, "collectMiniLook", "Minimap look", ns.COLLECT_MINI_LOOKS, { "Whole", "Hole", "See-through", "Pin" },
+        "How a minimap symbol leaves room for the game's own dot under it.", { [2] = "Best with Minimap size 30." })
+    Choices(column, "collectMiniShared", "Shared spots", ns.COLLECT_MINI_SHARED, { "Common one", "Split", "Badge" },
+        "Where two herbs or ores can spawn at one spot, how a minimap symbol shows both, for example copper and tin split down the middle.")
+    Choices(column, "collectZoomLook", "Zoomed out", ns.COLLECT_ZOOM_LOOKS, { "Symbols", "Tiny", "Glow", "Hex tiles", "Rings" },
+        "How spawns show on the world map at its widest zoom. Anything but Symbols takes the place of dots, areas and regions there.")
+    Choices(column, "collectSkill", "Skill colors", ns.COLLECT_SKILL_LOOKS, { "Red if too low", "Ring", "Gem", "Off" },
+        "How a symbol shows your skill. Red when too low: red if you can't gather it yet. Colored ring and Colored gem: the profession window's skill-up colors, from red to gray. Colored ring needs a gold ring shape.")
+    Checkbox(column, "collectAreas", "Areas for close spawns",
+        "Where five or more spawns of one ore are close together, like a mine, the map shows one soft area with the ore's symbol and a count in place of a symbol each. Other nodes there keep their symbols.")
+    Checkbox(column, "collectMerge", "Merge overlaps", "Symbols of one herb or ore that would cover each other on the world map show as one, with how many there are. Zoom in to see each one.")
+end
+
+-- Symbols: the maps step's rows, then the rest under More; the previews on the right.
+local function SymbolColumns(column, other, page)
+    About(page, "How the herb and ore symbols look on the world map and the minimap.", column, other)
+    MapRows(column)
+    Header(column, "More")
+    Dropdown(column, "collectPicture", "Picture", ns.COLLECT_PICTURES,
+        "Each node's own item icon, or one plain icon for herbs and one for ore.")
+    Checkbox(column, "collectOreRings", "High visibility tin and iron",
+        "Tin gets a green ring and iron a rust one, so they're easy to tell apart. Needs a gold ring shape.")
+    Checkbox(column, "collectDots", "Dots when zoomed out", "On the world map at its widest zoom, each spawn is a small dot in its herb's or ore's color. Zoom in for the full symbols.")
+end
+
+-- Areas: what makes one and how it looks on the left; where they show and the rare ones on the right.
+local function AreaColumns(column, other, page)
+    About(page, "Spawns of one herb or ore close together shown as one soft area with a count, in place of a symbol each.", column, other)
+    Header(column, "Areas")
+    AreaRows(column)
+    Header(other, "Where")
+    Checkbox(other, "collectAreasMap", "On the world map", "Shows the areas on the world map. Off: a symbol for each spawn there.")
+    Checkbox(other, "collectAreasMinimap", "On the minimap", "Shows the areas on the minimap. Off: a symbol for each spawn there.")
+    Checkbox(other, "collectAreasZoom", "Only when zoomed out",
+        "Areas show only while the world map is zoomed all the way out, and at the minimap's two widest zooms. Zoom in to see each spawn. Off: areas at every zoom.")
+    Header(other, "Rare ones")
+    local rare = ns.COLLECT_RANGES.collectRarePercent
+    Checkbox(other, "collectRareOnly", "Rare ones only",
+        "Marks only the rare herbs and ore on the world map and the minimap: silver, gold, truesilver, rich thorium and Black Lotus everywhere, and any that make up less of a zone's herbs or ore than the share below.")
+    Slider(other, "collectRarePercent", "Or under", rare[1], rare[2], rare[3],
+        "Herbs or ore that make up less than this share of a zone's count as rare there too. 0: only the list.", Percent100)
+end
+
+-- Compass and arrow: the compass bar on the left, the next node arrow on the right. Both can be
+-- dragged while this page shows.
+local function CompassColumns(column, other, page)
+    About(page, "A compass strip and an arrow at the top of the screen for the herbs and ore marked near you. Drag them to move them while this page is open.",
+        column, other)
+    Header(column, "Compass bar")
+    Checkbox(column, "compass", "Compass bar",
+        "A strip at the top of the screen with the compass points and a symbol for each herb and ore marked near you, in its direction. "
+        .. "Nearer ones are brighter. Drag it to move it while this page is open.")
+    local width, range = ns.COLLECT_RANGES.compassWidth, ns.COLLECT_RANGES.compassRange
+    Slider(column, "compassWidth", "Width", width[1], width[2], width[3], "How wide the compass bar is.", Whole)
+    Slider(column, "compassRange", "Range", range[1], range[2], range[3], "How far away a place can be to show on the compass bar.", Yards)
+    Header(other, "Next node arrow")
+    Checkbox(other, "nodeArrow", "Next node arrow",
+        "Points to the nearest marked herb or ore you can gather, with the yards to it. Within 15 yards of one, it points to the next for 2 minutes. "
+        .. "Drag it to move it while this page is open.")
+    local arrowRange = ns.COLLECT_RANGES.nodeArrowRange
+    Slider(other, "nodeArrowRange", "Range", arrowRange[1], arrowRange[2], arrowRange[3], "How far away a place can be for the arrow to point to it.", Yards)
+    local arrowSize = ns.COLLECT_RANGES.nodeArrowSize
+    Slider(other, "nodeArrowSize", "Size", arrowSize[1], arrowSize[2], arrowSize[3], "How big the arrow is.", Percent100)
+    page:HookScript("OnShow", function()
+        ns.CompassMovable(true)
+        ns.ArrowMovable(true)
+    end)
+    page:HookScript("OnHide", function()
+        ns.CompassMovable(false)
+        ns.ArrowMovable(false)
+    end)
 end
 
 -- A page's title and its two columns, filled by fill(left, right, page).
@@ -348,8 +516,743 @@ local function Page(page, title, fill)
     end
 end
 
+-- Where to farm: the zones with the most marked places that still give a skill-up,
+-- herbs on the left and ore on the right. Worked out when the page shows.
+local FARM_ROWS = 12
+local KIND_WORDS = { herbs = { "Herbs", "Herbalism" }, ore = { "Ore", "Mining" } }
+
+local function FarmColumn(column, page, kind)
+    Header(column, KIND_WORDS[kind][1])
+    local rows = {}
+    for i = 1, FARM_ROWS do
+        local row = New("Frame", page)
+        row:SetSize(WIDE, 18)
+        row.height = 22
+        row.name = Label(row, "", "GameFontHighlight")
+        row.name:SetPoint("LEFT")
+        row.name:SetWidth(WIDE - 110)
+        row.name:SetJustifyH("LEFT")
+        row.name:SetWordWrap(false)
+        row.count = Label(row, "", "GameFontHighlight")
+        row.count:SetPoint("RIGHT", row, "RIGHT", -10, 0)
+        row.count:SetJustifyH("RIGHT")
+        rows[i] = row
+        column[#column + 1] = row
+    end
+    local none = Label(page, "", "GameFontDisableSmall")
+    none:SetWidth(WIDE)
+    none:SetJustifyH("LEFT")
+    none.height = 22
+    column[#column + 1] = none
+    page.farm[kind] = { rows = rows, none = none }
+end
+
+local function FarmColumns(left, right, page)
+    page.about = Label(page, "Zones with the most marked herbs and ore that still give you skill-ups: orange, yellow and green, as in your profession window. "
+        .. "From your own places, the known spawns and GatherMate2's.", "GameFontDisableSmall")
+    page.about:SetPoint("TOPLEFT", LEFT, -38)
+    page.about:SetWidth(2 * WIDE)
+    page.about:SetJustifyH("LEFT")
+    left.top, right.top = -66, -66
+    page.farm = {}
+    FarmColumn(left, page, "herbs")
+    FarmColumn(right, page, "ore")
+    page.future = Label(page, "This page will be improved greatly in new updates.", "GameFontDisableSmall")
+    page.future:SetPoint("BOTTOMLEFT", page, "BOTTOMLEFT", LEFT, 16)
+end
+
+-- One kind's column: its zones, or why there are none.
+local function FillFarm(column, list, kind)
+    local C = ns.Collecting
+    local why
+    if not ns.HasProfession(kind) then
+        why = ("No %s on this character."):format(KIND_WORDS[kind][2])
+    elseif not (ns.db.collect or ns.db.collectSpawns or ns.db.collectGatherMate) then
+        why = "Turn on Remember where I gather, Every known spawn or GatherMate2's places on the Collecting page."
+    elseif #list == 0 then
+        why = "No marked places give you a skill-up yet."
+    end
+    for i, row in ipairs(column.rows) do
+        local zone = not why and list[i]
+        row:SetShown(zone ~= nil and zone ~= false)
+        if zone then
+            row.name:SetText(zone.name)
+            local parts = {}
+            for _, level in ipairs(C.FARM_LEVELS) do
+                if zone[level] > 0 then parts[#parts + 1] = C.SkillColor(level):WrapTextInColorCode(zone[level]) end
+            end
+            row.count:SetText(table.concat(parts, "  "))
+        end
+    end
+    column.none:SetText(why or "")
+    column.none:SetShown(why ~= nil)
+end
+
+---------------------------------------------------------------------------
+-- Collecting's setup
+---------------------------------------------------------------------------
+-- Steps over the Collecting page the first time it opens, and from its Set up button,
+-- each one question: where the marks come from and when (picture cards), which herbs
+-- and ore, and the look with a minimap preview. Refresh fills the step shown.
+
+local SETUP_STEPS = {
+    { "Sources", "Where should your marks come from?" },
+    { "Show", "When should herbs and ore be marked?" },
+    { "Herbs", "Which herbs should be marked?" },
+    { "Ore", "Which ore should be marked?" },
+    { "Maps", "How should the maps look?" },
+}
+local CONTENT = -126 -- where a step's own parts start
+local CARD_W, CARD_H, CARD_GAP = 214, 128, 24
+local DOTS_WIDE, DOT = 520, 24
+local LIST_ROWS, LIST_STEP, LIST_COLUMN = 14, 19, 250 -- a herbs or ore step's rows per column, row and column width
+local HERB, ORE, NOTE = "Interface\\Icons\\INV_Misc_Herb_01", "Interface\\Icons\\INV_Ore_Copper_01", "Interface\\Icons\\INV_Misc_Note_01"
+local PREVIEW = 200
+-- The preview's ground: one of the game's own minimap pictures (Elwynn Forest by Goldshire,
+-- a tile of 1600/3 yards), the 300 yards a minimap at its usual zoom shows, as much darker as
+-- the game draws its minimap's pictures.
+local GROUND, GROUND_YARDS = 204454, 1600 / 3
+-- The minimap's zooms, widest first: yards across at each (the original game's outdoor sizes,
+-- 466 2/3 down to 133 1/3).
+local function ZoomYards(zoom) return 200 * (7 - zoom) / 3 end
+local MINIMAP_TINT = { 0.87, 0.84, 0.80 }
+-- The game's yellow node dot under each sample, which the minimap's see-through shows: the
+-- gold blip from the minimap's own icon sheet (its dot and dark edge, 22 of 256 pixels), as
+-- many pixels across as the minimap draws it.
+local NODE_DOT = { file = "Interface\\Minimap\\ObjectIcons", 198 / 256, 220 / 256, 3.5 / 256, 25.5 / 256, across = 11 }
+
+local function Button(parent, text, width, onClick)
+    local button = New("Button", parent, "UIPanelButtonTemplate")
+    button:SetSize(width, 22)
+    button:SetText(text)
+    button:SetScript("OnClick", onClick)
+    return button
+end
+
+local function Step(setup)
+    local step = New("Frame", setup)
+    step:SetAllPoints()
+    step.column = { page = step, x = LEFT, top = CONTENT }
+    step.cards = {}
+    setup.steps[#setup.steps + 1] = step
+    return step
+end
+
+-- A picture card, as the sparkle gallery's tiles: a gold border while it's picked.
+local function Card(step, title, about, icons, tip, onClick)
+    local card = New("Button", step)
+    card:SetSize(CARD_W, CARD_H)
+    card:SetPoint("TOP", step, "TOP", (#step.cards - 1) * (CARD_W + CARD_GAP), CONTENT)
+    local back = card:CreateTexture(nil, "BACKGROUND")
+    back:SetAtlas("collections-background-tile")
+    back:SetAllPoints()
+    card.border = card:CreateTexture(nil, "BORDER")
+    card.border:SetAllPoints()
+    card.border:SetTextureSliceMargins(10, 10, 10, 10) -- (the art's corners kept at any size)
+    local hover = card:CreateTexture(nil, "HIGHLIGHT")
+    hover:SetAtlas("PetList-ButtonHighlight")
+    hover:SetAllPoints()
+    hover:SetTextureSliceMargins(10, 10, 10, 10)
+    card.icons = {}
+    for i, icon in ipairs(icons) do
+        local texture = card:CreateTexture(nil, "ARTWORK")
+        texture:SetSize(36, 36)
+        texture:SetPoint("TOP", card, "TOP", (i - (#icons + 1) / 2) * 42, -14)
+        texture:SetTexture(icon[1])
+        texture:SetTexCoord(0.08, 0.92, 0.08, 0.92) -- (without the icon's border)
+        texture:SetDesaturated(icon.gray == true)
+        card.icons[i] = texture
+    end
+    card.title = Label(card, title, "GameFontNormal")
+    card.title:SetPoint("TOP", 0, -62)
+    card.about = Label(card, about, "GameFontDisableSmall")
+    card.about:SetPoint("TOP", card.title, "BOTTOM", 0, -6)
+    card.about:SetWidth(CARD_W - 24)
+    card.tick = card:CreateTexture(nil, "OVERLAY")
+    card.tick:SetAtlas("common-icon-checkmark-yellow")
+    card.tick:SetSize(18, 18)
+    card.tick:SetPoint("TOPRIGHT", -8, -8)
+    card:SetScript("OnClick", function()
+        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        onClick()
+    end)
+    Tooltip(card, title, tip)
+    step.cards[#step.cards + 1] = card
+    return card
+end
+
+local function LightCard(card, on)
+    card.border:SetAtlas(on and "PetList-ButtonSelect" or "PetList-ButtonBackground")
+    card.title:SetFontObject(on and "GameFontHighlight" or "GameFontNormal")
+    card.tick:SetShown(on)
+end
+
+-- A checkbox with its words right of it.
+local function SmallBox(step, key, text, tip)
+    local box = New("CheckButton", step, "MinimalCheckboxTemplate")
+    box:SetSize(26, 26)
+    box.text = Label(box, text, "GameFontHighlight")
+    box.text:SetPoint("LEFT", box, "RIGHT", 4, 0)
+    box:SetScript("OnClick", function(self)
+        PlaySound(self:GetChecked() and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
+        Set(key, self:GetChecked() == true)
+    end)
+    box.key, box.kind = key, "box"
+    Tooltip(box, text, tip)
+    step.small = step.small or {}
+    step.small[#step.small + 1] = box
+    return box
+end
+
+-- The numbered dots along the top: the step shown gold, the ones before it ticked.
+local function Dots(setup)
+    setup.dots = {}
+    local gap = DOTS_WIDE / (#SETUP_STEPS - 1)
+    for i, info in ipairs(SETUP_STEPS) do
+        local x = -DOTS_WIDE / 2 + (i - 1) * gap
+        if i > 1 then
+            local line = setup:CreateTexture(nil, "BORDER")
+            line:SetSize(gap - DOT, 2)
+            line:SetPoint("CENTER", setup, "TOP", x - gap / 2, -44)
+            setup.dots[i - 1].line = line
+        end
+        local dot = New("Button", setup)
+        dot:SetSize(DOT, DOT)
+        dot:SetPoint("CENTER", setup, "TOP", x, -44)
+        for _, part in ipairs({ { "ring", DOT, "ARTWORK" }, { "fill", DOT - 4, "ARTWORK", 1 } }) do
+            local texture = dot:CreateTexture(nil, part[3], nil, part[4])
+            texture:SetSize(part[2], part[2])
+            texture:SetPoint("CENTER")
+            local mask = dot:CreateMaskTexture()
+            mask:SetAtlas("CircleMask")
+            mask:SetAllPoints(texture)
+            texture:AddMaskTexture(mask)
+            dot[part[1]] = texture
+        end
+        dot.number = Label(dot, tostring(i), "GameFontNormalSmall")
+        dot.number:SetPoint("CENTER", 0, 1)
+        dot.tick = dot:CreateTexture(nil, "OVERLAY")
+        dot.tick:SetAtlas("common-icon-checkmark-yellow")
+        dot.tick:SetSize(14, 14)
+        dot.tick:SetPoint("CENTER")
+        dot.label = Label(dot, info[1], "GameFontDisableSmall")
+        dot.label:SetPoint("TOP", dot, "BOTTOM", 0, -3)
+        dot:SetScript("OnClick", function()
+            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+            setup.step = i
+            ns.RefreshSparkleWindow()
+        end)
+        setup.dots[i] = dot
+    end
+end
+
+local function LightDots(setup)
+    for i, dot in ipairs(setup.dots) do
+        local done, now = i < setup.step, i == setup.step
+        if done or now then dot.ring:SetColorTexture(1, 0.82, 0, 1) else dot.ring:SetColorTexture(0.43, 0.41, 0.37, 1) end
+        if done then
+            dot.fill:SetColorTexture(0.59, 0.45, 0.08, 1)
+        elseif now then
+            dot.fill:SetColorTexture(0.27, 0.22, 0.08, 1)
+        else
+            dot.fill:SetColorTexture(0.1, 0.09, 0.08, 1)
+        end
+        dot.number:SetShown(not done)
+        dot.number:SetFontObject(now and "GameFontNormalSmall" or "GameFontDisableSmall")
+        dot.tick:SetShown(done)
+        dot.label:SetFontObject(now and "GameFontNormalSmall" or "GameFontDisableSmall")
+        if dot.line then
+            if done then dot.line:SetColorTexture(0.78, 0.63, 0.12, 1) else dot.line:SetColorTexture(0.35, 0.31, 0.22, 1) end
+        end
+    end
+end
+
+-- A step with a box for each herb or ore: ticked ones are marked.
+local function NodeStep(setup, kind)
+    local step = Step(setup)
+    step.boxes = {}
+    for i, entry in ipairs(ns.NODE_LIST[kind]) do
+        local box = New("CheckButton", step, "MinimalCheckboxTemplate")
+        box:SetSize(22, 22)
+        box:SetPoint("TOPLEFT", step, "TOPLEFT", LEFT + floor((i - 1) / LIST_ROWS) * LIST_COLUMN, CONTENT - (i - 1) % LIST_ROWS * LIST_STEP)
+        local need = ns.NODE_NEEDS[kind][entry]
+        box.label = Label(box, ns.Collecting.DisplayName(entry) .. (need and need > 1 and ("  |cff9d9d9d%d|r"):format(need) or ""),
+            "GameFontHighlightSmall")
+        box.label:SetPoint("LEFT", box, "RIGHT", 2, 0)
+        box.entry = entry
+        box:SetScript("OnClick", function(self)
+            PlaySound(self:GetChecked() and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
+            ns.db.collectHidden[entry] = not self:GetChecked() or nil
+            ns.RefreshNodePins()
+        end)
+        step.boxes[i] = box
+    end
+    local function All(on)
+        for _, entry in ipairs(ns.NODE_LIST[kind]) do ns.db.collectHidden[entry] = not on or nil end
+        ns.RefreshNodePins()
+        ns.RefreshSparkleWindow()
+    end
+    step.all = Button(step, "All", 70, function() All(true) end)
+    step.all:SetPoint("TOPLEFT", step, "TOPLEFT", LEFT, CONTENT - LIST_ROWS * LIST_STEP - 10)
+    step.none = Button(step, "None", 70, function() All(false) end)
+    step.none:SetPoint("LEFT", step.all, "RIGHT", 6, 0)
+    return step
+end
+
+-- A preview round like the minimap, on one of the game's own minimap pictures, its top left
+-- at x, y on parent.
+local function PreviewGround(parent, x, y)
+    local preview = New("Frame", parent)
+    preview:SetSize(PREVIEW, PREVIEW)
+    preview:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+    preview.x, preview.y, preview.fit = x, y, 1
+    preview.mask = preview:CreateMaskTexture()
+    preview.mask:SetAtlas("CircleMask", false, nil, nil, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    preview.mask:SetAllPoints()
+    preview.back = preview:CreateTexture(nil, "BACKGROUND")
+    preview.back:SetAllPoints()
+    preview.back:SetColorTexture(0.12, 0.1, 0.07, 1)
+    preview.back:AddMaskTexture(preview.mask)
+    preview.ground = preview:CreateTexture(nil, "BORDER")
+    preview.ground:SetAllPoints()
+    preview.ground:SetTexture(GROUND, nil, nil, "TRILINEAR")
+    preview.ground:SetVertexColor(MINIMAP_TINT[1], MINIMAP_TINT[2], MINIMAP_TINT[3])
+    preview.ground:AddMaskTexture(preview.mask)
+    preview.border = preview:CreateTexture(nil, "OVERLAY")
+    preview.arrow = preview:CreateTexture(nil, "OVERLAY", nil, 1)
+    preview.arrow:SetAtlas("MinimapArrow")
+    preview.arrow:SetSize(24, 24)
+    preview.arrow:SetPoint("CENTER")
+    preview.symbols, preview.dots = {}, {}
+    -- Zoomed all the way out at first; the minimap's own zoom buttons and the mouse wheel.
+    preview.zoom = 0
+    local function Zoom(step)
+        local levels = preview.levels or 1
+        local zoom = math.min(math.max(preview.zoom + step, 0), levels - 1)
+        if zoom == preview.zoom then return end
+        preview.zoom = zoom
+        PlaySound(step > 0 and SOUNDKIT.IG_MINIMAP_ZOOM_IN or SOUNDKIT.IG_MINIMAP_ZOOM_OUT)
+        if preview.refresh then preview.refresh(preview) end
+    end
+    for _, button in ipairs({ { "In", 1, 17, -2, 30 }, { "Out", -1, 9, -2, 14 } }) do
+        local zoom = New("Button", preview)
+        zoom:SetSize(17, button[3])
+        zoom:SetPoint("BOTTOMRIGHT", preview, "BOTTOMRIGHT", button[4], button[5])
+        zoom:SetNormalAtlas("UI-HUD-Minimap-Zoom-" .. button[1])
+        zoom:SetPushedAtlas("UI-HUD-Minimap-Zoom-" .. button[1] .. "-Down")
+        zoom:SetHighlightAtlas("UI-HUD-Minimap-Zoom-" .. button[1] .. "-Mouseover")
+        zoom:SetDisabledAtlas("UI-HUD-Minimap-Zoom-" .. button[1])
+        zoom:GetDisabledTexture():SetDesaturated(true)
+        zoom:SetScript("OnClick", function() Zoom(button[2]) end)
+        preview["zoom" .. button[1]] = zoom
+    end
+    preview:EnableMouseWheel(true)
+    preview:SetScript("OnMouseWheel", function(_, delta) Zoom(delta > 0 and 1 or -1) end)
+    return preview
+end
+
+-- The minimap's own dot for a found herb or ore, in the preview's dots (or the list given).
+local function Coin(preview, list)
+    local dot = preview:CreateTexture(nil, "ARTWORK")
+    dot:SetTexture(NODE_DOT.file)
+    dot:SetTexCoord(NODE_DOT[1], NODE_DOT[2], NODE_DOT[3], NODE_DOT[4])
+    dot:SetSize(NODE_DOT.across, NODE_DOT.across)
+    dot.across = NODE_DOT.across
+    list = list or preview.dots
+    list[#list + 1] = dot
+    return dot
+end
+
+-- The minimap's own ring, at the preview's size, where the game has one.
+local function PreviewBorder(preview)
+    local ring = _G.MinimapCompassTexture
+    local atlas = ring and ring.GetAtlas and ring:GetAtlas()
+    local across = Minimap and Minimap:GetWidth()
+    if type(atlas) ~= "string" or issecretvalue(atlas) or issecretvalue(across) or not (across and across > 0) then
+        preview.border:Hide()
+        return
+    end
+    local scale = PREVIEW / across
+    preview.border:SetAtlas(atlas)
+    preview.border:SetSize(ring:GetWidth() * scale, ring:GetHeight() * scale)
+    preview.border:SetPoint("CENTER")
+    preview.border:Show()
+end
+
+-- The preview as big on screen as the real minimap, and its symbols as big as the minimap
+-- draws them at its zoom now (smaller zoomed out). Kept within reason for the page.
+local FIT = { 0.6, 1.4 }
+local function FitPreview(preview)
+    local across, scale = Minimap and Minimap:GetWidth(), Minimap and Minimap:GetEffectiveScale()
+    local here = preview:GetParent():GetEffectiveScale()
+    local fit, unit = 1, 1 -- (the preview's scale; minimap pixels a preview pixel)
+    if type(across) == "number" and type(scale) == "number" and not (issecretvalue(across) or issecretvalue(scale)) and across > 0 and here > 0 then
+        fit = math.min(math.max(across * scale / (PREVIEW * here), FIT[1]), FIT[2])
+        unit = PREVIEW / across
+    end
+    if preview.fit ~= fit then
+        preview.fit = fit
+        preview:SetScale(fit)
+        preview:ClearAllPoints()
+        preview:SetPoint("TOPLEFT", preview:GetParent(), "TOPLEFT", preview.x / fit, preview.y / fit) -- (offsets are in its own scale)
+    end
+    preview.unit = unit
+    for _, dot in ipairs(preview.dots) do dot:SetSize(dot.across * unit, dot.across * unit) end
+    -- The zoom: the ground's yards, the samples spread by it, the symbols smaller zoomed out.
+    local levels = Minimap and Minimap:GetZoomLevels()
+    levels = type(levels) == "number" and not issecretvalue(levels) and levels > 1 and math.min(levels, 6) or 6
+    preview.levels = levels
+    preview.zoom = math.min(preview.zoom, levels - 1)
+    preview.zoomIn:SetEnabled(preview.zoom < levels - 1)
+    preview.zoomOut:SetEnabled(preview.zoom > 0)
+    local yards = ZoomYards(preview.zoom)
+    local part = yards / GROUND_YARDS
+    preview.ground:SetTexCoord(0.5 - part / 2, 0.5 + part / 2, 0.5 - part / 2, 0.5 + part / 2)
+    return ns.Collecting.Shrink(preview.zoom / (levels - 1)) * unit, PREVIEW / yards
+end
+
+-- The Areas page's preview: a few spawns on a made-up map, grouped into areas by the area
+-- settings as a map's are. Node, kind, yards east and south of the middle, skill color.
+local AREA_SAMPLES = {
+    -- A copper mine.
+    { "copper vein", "ore", -60, -50, 4 }, { "copper vein", "ore", -48, -44, 4 }, { "copper vein", "ore", -70, -42, 4 },
+    { "copper vein", "ore", -54, -62, 4 }, { "copper vein", "ore", -68, -60, 4 }, { "copper vein", "ore", -44, -54, 4 },
+    { "copper vein", "ore", -62, -34, 4 },
+    -- Tin along a ridge, about 30 yards apart.
+    { "tin vein", "ore", -110, 60, 3 }, { "tin vein", "ore", -80, 65, 3 }, { "tin vein", "ore", -50, 70, 3 }, { "tin vein", "ore", -20, 75, 3 },
+    { "tin vein", "ore", 10, 80, 3 }, { "tin vein", "ore", 40, 85, 3 }, { "tin vein", "ore", 70, 90, 3 }, { "tin vein", "ore", 100, 96, 3 },
+    -- A patch of peacebloom.
+    { "peacebloom", "herbs", 70, -60, 5 }, { "peacebloom", "herbs", 80, -52, 5 }, { "peacebloom", "herbs", 61, -54, 5 },
+    { "peacebloom", "herbs", 75, -71, 5 }, { "peacebloom", "herbs", 64, -68, 5 },
+    -- And some alone.
+    { "mageroyal", "herbs", -20, -110, 4, empty = true }, { "silverleaf", "herbs", 115, -5, 5 }, { "earthroot", "herbs", -125, 0, 5, empty = true },
+}
+-- On the setup's maps step also: a spot copper and tin share, and the game's own node dot under
+-- every symbol but the empty spawns', for the minimap looks and shared spots to show on.
+local MAP_EXTRAS = { shared = { "copper vein", "ore", 120, 60, 4, "tin vein" } }
+local AREA_MAP, AREA_MIDDLE = 1000, 500 -- the made-up map's yards across (a unit a yard), and its middle
+local areaPlaces, areaLevels -- [key] = { place, ... } and [key] = skill color, made once
+
+local function AreaSymbol(preview, n, key, kind, dx, dy, count, look, size, second)
+    local C = ns.Collecting
+    local symbol = preview.symbols[n]
+    if not symbol then
+        symbol = C.NewSymbol(preview)
+        symbol:SetFrameLevel(preview:GetFrameLevel() + 2)
+        preview.symbols[n] = symbol
+    end
+    symbol.key, symbol.sampleLevel = key, areaLevels[key]
+    C.ApplyShape(symbol, look)
+    C.ApplyLook(symbol, key, kind, look)
+    C.MiniShared(symbol, second, kind, look)
+    C.ShowCount(symbol, count)
+    symbol:SetScale(size)
+    symbol:SetPoint("CENTER", preview, "CENTER", dx / size, dy / size)
+    symbol:Show()
+end
+
+local function RefreshAreaPreview(preview)
+    preview.refresh = RefreshAreaPreview
+    PreviewBorder(preview)
+    local size, perYard = FitPreview(preview)
+    local C = ns.Collecting
+    if not areaPlaces then
+        areaPlaces, areaLevels = {}, {}
+        for _, sample in ipairs(AREA_SAMPLES) do
+            local key = sample[1]
+            areaPlaces[key] = areaPlaces[key] or {}
+            table.insert(areaPlaces[key], (AREA_MIDDLE + sample[3]) * C.PACK + AREA_MIDDLE + sample[4])
+            areaLevels[key] = sample[5]
+        end
+    end
+    local look = C.CurrentLook(true) -- (the minimap's look)
+    local areas, inAreas
+    if not ns.db.collectAreasZoom or preview.zoom <= 1 then -- (as the minimap: closer in, a symbol each)
+        areas, inAreas = C.AreasIn(AREA_MAP, AREA_MAP, areaPlaces, nil)
+    end
+    local n, glows = 0, 0
+    for _, sample in ipairs(AREA_SAMPLES) do
+        local key = sample[1]
+        local place = (AREA_MIDDLE + sample[3]) * C.PACK + AREA_MIDDLE + sample[4]
+        if not (inAreas and inAreas[key] and inAreas[key][place]) then
+            n = n + 1
+            AreaSymbol(preview, n, key, sample[2], sample[3] * perYard, -sample[4] * perYard, nil, look, size)
+        end
+    end
+    for _, area in ipairs(areas or {}) do
+        glows = glows + 1
+        if not preview.extras then -- (the maps preview: the area's symbol and count, no glow)
+            if not preview.glows[glows] then
+                preview.glows[glows] = C.NewEdgeGlow(preview)
+                preview.glows[glows]:SetFrameLevel(preview:GetFrameLevel() + 1) -- (over the ground, under the symbols)
+            end
+            C.DrawArea(preview.glows[glows], preview, area, perYard, 0.5, 0.5, AREA_MAP, AREA_MAP)
+            preview.glows[glows]:Show()
+        end
+        n = n + 1
+        AreaSymbol(preview, n, area.key, area.kind, (area.x - AREA_MIDDLE) * perYard, (AREA_MIDDLE - area.y) * perYard, area.count, look, size)
+        local dot = preview.areaDots and (preview.areaDots[glows] or Coin(preview, preview.areaDots))
+        if dot then
+            dot:SetSize(dot.across * preview.unit, dot.across * preview.unit)
+            dot:SetPoint("CENTER", preview, "CENTER", (area.x - AREA_MIDDLE) * perYard, (AREA_MIDDLE - area.y) * perYard)
+            dot:Show()
+        end
+    end
+    for i = glows + 1, preview.areaDots and #preview.areaDots or 0 do preview.areaDots[i]:Hide() end
+    if preview.extras then
+        local shared = MAP_EXTRAS.shared
+        n = n + 1
+        AreaSymbol(preview, n, shared[1], shared[2], shared[3] * perYard, -shared[4] * perYard, nil, look, size, shared[6])
+        for _, dot in ipairs(preview.dots) do
+            local sample = dot.sample
+            local place = (AREA_MIDDLE + sample[3]) * C.PACK + AREA_MIDDLE + sample[4]
+            dot:SetShown(not (inAreas and inAreas[sample[1]] and inAreas[sample[1]][place])) -- (the shared spot is in none)
+            dot:SetPoint("CENTER", preview, "CENTER", sample[3] * perYard, -sample[4] * perYard)
+        end
+    end
+    for i = n + 1, #preview.symbols do preview.symbols[i]:Hide() end
+    for i = glows + 1, #preview.glows do preview.glows[i]:Hide() end
+end
+
+-- The maps step's world map preview: a piece of Elwynn Forest's own map art with made-up spawns,
+-- drawn by the world map's own code as it draws them zoomed all the way out, in the zoomed-out
+-- look set. Node, kind, pixels from the top left, skill color.
+local WORLD_W, WORLD_H, WORLD_MAP, WORLD_TILE = 210, 140, 1429, 6 -- (a tile of 256: about 900 yards)
+-- Elwynn's explored parts over that tile, so it looks explored whoever opens it: the game's map
+-- draws each part from tiles of 256 art pixels (the last row and column cut from a smaller
+-- file), as its exploration pins do. Width, height, x, y, files row by row (Forever's map art
+-- 2153: WorldMapOverlay and WorldMapOverlayTile). The tile is art pixels 256 to 512 each way.
+local WORLD_OVERLAYS = { { 256, 256, 422, 332, { 8061956 } }, { 256, 341, 124, 327, { 8061971, 8061972 } },
+    { 256, 256, 250, 270, { 8061973 } }, { 256, 256, 381, 147, { 8061975 } }, { 512, 512, 0, 0, { 8061980, 8061981, 8061982, 8061983 } } }
+local WORLD_ART = 256 -- (the tile's top left, and a tile's size, in art pixels)
+local WORLD_SAMPLES = {
+    { "copper vein", "ore", 36, 30, 4 }, { "copper vein", "ore", 42, 33, 4 }, { "copper vein", "ore", 39, 38, 4 },
+    { "copper vein", "ore", 46, 36, 4 }, { "copper vein", "ore", 34, 37, 4 }, { "copper vein", "ore", 44, 29, 4 },
+    { "tin vein", "ore", 70, 100, 3 }, { "tin vein", "ore", 86, 104, 3 }, { "tin vein", "ore", 102, 102, 3 },
+    { "tin vein", "ore", 118, 108, 3 }, { "tin vein", "ore", 134, 104, 3 }, { "tin vein", "ore", 150, 110, 3 },
+    { "iron deposit", "ore", 160, 35, 2 }, { "iron deposit", "ore", 168, 42, 2 }, { "iron deposit", "ore", 172, 34, 2 },
+    { "iron deposit", "ore", 163, 46, 2 }, { "gold vein", "ore", 120, 60, 1 }, { "silver vein", "ore", 185, 90, 2 },
+    { "peacebloom", "herbs", 20, 80, 5 }, { "peacebloom", "herbs", 30, 110, 5 }, { "peacebloom", "herbs", 55, 70, 5 },
+    { "peacebloom", "herbs", 95, 30, 5 }, { "peacebloom", "herbs", 140, 25, 5 }, { "peacebloom", "herbs", 190, 125, 5 },
+    { "peacebloom", "herbs", 25, 125, 5 }, { "silverleaf", "herbs", 60, 120, 5 }, { "silverleaf", "herbs", 110, 80, 5 },
+    { "silverleaf", "herbs", 130, 50, 5 }, { "silverleaf", "herbs", 80, 55, 5 }, { "earthroot", "herbs", 200, 60, 4 },
+    { "earthroot", "herbs", 15, 60, 4 },
+}
+local function WorldPreview(step, above)
+    local C = ns.Collecting
+    local frame = New("Frame", step)
+    frame:SetSize(WORLD_W, WORLD_H)
+    frame:SetPoint("TOP", above, "BOTTOM", 0, -26)
+    frame.back = frame:CreateTexture(nil, "BACKGROUND")
+    frame.back:SetAllPoints()
+    frame.back:SetColorTexture(0.24, 0.2, 0.13, 1)
+    frame.ground = frame:CreateTexture(nil, "BORDER")
+    frame.ground:SetAllPoints()
+    local files = C_Map.GetMapArtLayerTextures(WORLD_MAP, 1)
+    if type(files) == "table" and files[WORLD_TILE] then
+        frame.ground:SetTexture(files[WORLD_TILE])
+        frame.ground:SetTexCoord(0, 1, 0, WORLD_H / WORLD_W)
+    end
+    -- The explored parts, each tile cut to the part of it in view.
+    local k = WORLD_W / WORLD_ART -- (preview pixels an art pixel)
+    local x1, y1 = 2 * WORLD_ART, WORLD_ART + WORLD_H / k
+    frame.overlays = {}
+    for _, part in ipairs(WORLD_OVERLAYS) do
+        local wide, tall = math.ceil(part[1] / WORLD_ART), math.ceil(part[2] / WORLD_ART)
+        for row = 1, tall do
+            local high = row < tall and WORLD_ART or (part[2] - (tall - 1) * WORLD_ART)
+            local fileHigh = WORLD_ART
+            if row == tall then
+                fileHigh = 16
+                while fileHigh < high do fileHigh = fileHigh * 2 end
+            end
+            for col = 1, wide do
+                local across = col < wide and WORLD_ART or (part[1] - (wide - 1) * WORLD_ART)
+                local fileWide = WORLD_ART
+                if col == wide then
+                    fileWide = 16
+                    while fileWide < across do fileWide = fileWide * 2 end
+                end
+                local left, top = part[3] + (col - 1) * WORLD_ART, part[4] + (row - 1) * WORLD_ART
+                local l, t = math.max(left, WORLD_ART), math.max(top, WORLD_ART)
+                local r, b = math.min(left + across, x1), math.min(top + high, y1)
+                if r > l and b > t then
+                    local tile = frame:CreateTexture(nil, "BORDER", nil, 1)
+                    tile:SetTexture(part[5][(row - 1) * wide + col], nil, nil, "TRILINEAR")
+                    tile:SetTexCoord((l - left) / fileWide, (r - left) / fileWide, (t - top) / fileHigh, (b - top) / fileHigh)
+                    tile:SetSize((r - l) * k, (b - t) * k)
+                    tile:SetPoint("TOPLEFT", frame, "TOPLEFT", (l - WORLD_ART) * k, -(t - WORLD_ART) * k)
+                    frame.overlays[#frame.overlays + 1] = tile
+                end
+            end
+        end
+    end
+    frame.edges = {}
+    for i, side in ipairs({ { "TOPLEFT", "TOPRIGHT", 0, 2 }, { "BOTTOMLEFT", "BOTTOMRIGHT", 0, 2 }, { "TOPLEFT", "BOTTOMLEFT", 2, 0 }, { "TOPRIGHT", "BOTTOMRIGHT", 2, 0 } }) do
+        local edge = frame:CreateTexture(nil, "OVERLAY")
+        edge:SetColorTexture(0.55, 0.45, 0.22, 1)
+        edge:SetPoint(side[1])
+        edge:SetPoint(side[2])
+        if side[3] > 0 then edge:SetWidth(side[3]) else edge:SetHeight(side[4]) end
+        frame.edges[i] = edge
+    end
+    frame.title = Label(step, "World map, zoomed out", "GameFontNormalSmall")
+    frame.title:SetPoint("BOTTOM", frame, "TOP", 0, 5)
+    frame.symbols = {}
+    for i, sample in ipairs(WORLD_SAMPLES) do
+        local symbol = C.NewSymbol(frame)
+        symbol:SetFrameLevel(frame:GetFrameLevel() + 3)
+        symbol.key, symbol.kind, symbol.sampleLevel = sample[1], sample[2], sample[5]
+        symbol.x, symbol.y = sample[3] / WORLD_W * C.UNITS, sample[4] / WORLD_H * C.UNITS
+        frame.symbols[i] = symbol
+    end
+    return frame
+end
+-- The minimap preview with the extras and the world map one under it, right of the widest row of
+-- tiles (setup's maps step, the Symbols page).
+local function MapPreviews(parent, y)
+    local preview = PreviewGround(parent, RIGHT + 100, y)
+    preview.glows, preview.extras, preview.areaDots = {}, true, {}
+    for _, sample in ipairs(AREA_SAMPLES) do
+        if not sample.empty then Coin(preview).sample = sample end
+    end
+    Coin(preview).sample = MAP_EXTRAS.shared
+    parent.areaPreview, parent.worldPreview = preview, WorldPreview(parent, preview)
+end
+local function RefreshWorldPreview(frame)
+    local C = ns.Collecting
+    local look = C.CurrentLook()
+    look.alpha = 1 -- (solid on the world map)
+    for _, symbol in ipairs(frame.symbols) do
+        if symbol.shape ~= look.shape or symbol.size ~= look.size then C.ApplyShape(symbol, look) end
+        C.ApplyLook(symbol, symbol.key, symbol.kind, look)
+    end
+    C.Regions.Preview(frame, frame.symbols, #frame.symbols, frame:GetFrameLevel() + 3)
+end
+
+local function ShowSetup(setup, step)
+    setup.step = step
+    setup:Show()
+    ns.RefreshSparkleWindow()
+end
+
+local function CloseSetup(setup)
+    ns.db.collectSetupDone = true
+    setup:Hide()
+    ns.RefreshSparkleWindow()
+end
+
+-- Where the marks come from: Collecting's own, every known spawn, or both.
+local SOURCES = { { true, false }, { false, true }, { true, true } }
+-- When: the second step's cards, in order.
+local FILTERS = { "collectOnlyProfession", "collectOnlyTracking", "collectHideGray" }
+local function PickSources(i)
+    Set("collect", SOURCES[i][1])
+    Set("collectSpawns", SOURCES[i][2])
+end
+
+local function BuildSetup(page)
+    local setup = New("Frame", page)
+    setup:SetAllPoints()
+    setup:Hide()
+    setup.steps, setup.step = {}, 1
+    page.setup = setup
+    Dots(setup)
+    setup.heading = Label(setup, "", "GameFontNormalHuge")
+    setup.heading:SetPoint("TOP", 0, -78)
+
+    local step = Step(setup)
+    Card(step, "Places I gather", "NodeSight remembers each herb and ore you pick.", { { HERB }, { ORE } },
+        "Remembers each place you gather a herb or ore and marks it, from now on.", function() PickSources(1) end)
+    Card(step, "Every known spawn", "Every herb and ore spawn Wowhead knows, built in.", { { NOTE } },
+        "Marks every herb and ore spawn Wowhead knows for Forever, whether or not you've been there.", function() PickSources(2) end)
+    Card(step, "Both", "The known spawns and yours, marked once each.", { { HERB }, { NOTE } },
+        "Your own places and every known spawn. A place in both is marked once.", function() PickSources(3) end)
+    step.sources = true
+    step.note = Label(step, "A known spawn is where a herb or ore can grow, not one that's up now: near you, the game's yellow dot shows that.",
+        "GameFontDisableSmall")
+    step.note:SetPoint("TOPLEFT", step.cards[1], "BOTTOMLEFT", 0, -22)
+    step.note:SetWidth(2 * WIDE)
+    step.note:SetJustifyH("LEFT")
+
+    step = Step(setup)
+    local finder = C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(2383)
+    Card(step, "Only my professions", "Herbs with Herbalism, ore with Mining.", { { HERB }, { ORE } },
+        "Herbs are marked only on characters with Herbalism, ore only with Mining.", function() Set(FILTERS[1], not ns.db[FILTERS[1]]) end)
+    Card(step, "Only while tracking", "While Find Herbs or Find Minerals is on.", { { finder or HERB } },
+        "Herbs are marked only while Find Herbs is on, ore only while Find Minerals is on. With the Herb/Ore Switch on, both are.",
+        function() Set(FILTERS[2], not ns.db[FILTERS[2]]) end)
+    Card(step, "Hide gray ones", "Not the ones that no longer give a skill-up.", { { HERB, gray = true }, { ORE, gray = true } },
+        "Leaves out herbs and ore that no longer give you a skill-up (gray in your profession window).",
+        function() Set(FILTERS[3], not ns.db[FILTERS[3]]) end)
+    step.showOn = Label(step, "Show them on", "GameFontNormal")
+    step.showOn:SetPoint("TOPLEFT", step.cards[1], "BOTTOMLEFT", 0, -30)
+    local map = SmallBox(step, "collectMap", "World map", "A symbol on the world map for each marked place. Put your mouse on one to see what it was.")
+    map:SetPoint("LEFT", step.showOn, "LEFT", 130, 0)
+    local mini = SmallBox(step, "collectMinimap", "Minimap", "The same symbols on the minimap for the places near you. They let the mouse through to the game's own dots.")
+    mini:SetPoint("LEFT", map, "LEFT", 140, 0)
+
+    NodeStep(setup, "herbs")
+    NodeStep(setup, "ore")
+
+    step = Step(setup)
+    MapRows(step.column)
+    MapPreviews(step, CONTENT - 4)
+
+    setup.skip = Button(setup, "Skip setup", 110, function() CloseSetup(setup) end)
+    setup.skip:SetPoint("BOTTOMLEFT", LEFT, 40) -- (clear of the window's version line)
+    setup.next = Button(setup, NEXT, 100, function()
+        if setup.step >= #setup.steps then return CloseSetup(setup) end
+        ShowSetup(setup, setup.step + 1)
+    end)
+    setup.next:SetPoint("BOTTOMRIGHT", -16, 40)
+    setup.back = Button(setup, BACK, 100, function() ShowSetup(setup, math.max(1, setup.step - 1)) end)
+    setup.back:SetPoint("RIGHT", setup.next, "LEFT", -6, 0)
+
+    -- The page's own button to go through it again, and the first time it opens.
+    page.setupButton = Button(page, "Set up", 96, function() ShowSetup(setup, 1) end)
+    page.setupButton:SetPoint("TOPRIGHT", -16, -12)
+    Tooltip(page.setupButton, "Set up", "Goes through Collecting's setup again: where the marks come from, when they show, which herbs and ore, the look and the areas.")
+    page:HookScript("OnShow", function()
+        if not ns.db.collectSetupDone and not setup:IsShown() then
+            setup.step = 1
+            setup:Show()
+        end
+    end)
+end
+
 local function BuildGeneral(page) Page(page, GENERAL, GeneralColumns) end
-local function BuildCollect(page) Page(page, "Collecting (Beta)", CollectColumns) end
+local function BuildFarm(page) Page(page, "Where to farm", FarmColumns) end
+local function BuildCollect(page)
+    Page(page, "General", CollectColumns)
+    page.parts[#page.parts + 1] = page.future -- (hidden with the page's rows while the setup shows)
+    page.parts[#page.parts + 1] = page.thanks
+    BuildSetup(page)
+end
+local function BuildSymbols(page)
+    Page(page, "Symbols", SymbolColumns)
+    MapPreviews(page, -60)
+end
+local function BuildAreas(page)
+    Page(page, "Areas", AreaColumns)
+    page.areaPreview = PreviewGround(page, RIGHT + 70, -310) -- (under the right column's rows, the shorter one)
+    page.areaPreview.glows = {}
+    page.areaPreview.note = Label(page, "Changes as you change the settings.", "GameFontDisableSmall")
+    page.areaPreview.note:SetPoint("TOP", page.areaPreview, "BOTTOM", 0, -14)
+end
+-- Everything on the Compass and arrow page but its on and off boxes, back to the defaults.
+local COMPASS_RESET = { "compassX", "compassY", "compassWidth", "compassRange", "nodeArrowX", "nodeArrowY", "nodeArrowRange", "nodeArrowSize" }
+local function BuildCompass(page)
+    Page(page, "Compass and arrow", CompassColumns)
+    page.reset = Button(page, "Reset", 96, function()
+        for _, key in ipairs(COMPASS_RESET) do ns.db[key] = ns.defaults[key] end
+        ns.CompassChanged()
+        ns.ArrowChanged()
+        ns.RefreshSparkleWindow()
+    end)
+    page.reset:SetPoint("TOPRIGHT", -16, -12)
+    Tooltip(page.reset, "Reset", "Puts the compass bar and the arrow back where they started, at their first sizes and ranges.")
+end
 
 local function BuildSwitch(page)
     Page(page, "Herb/Ore Switch", SwitchColumns)
@@ -370,8 +1273,36 @@ local function RefreshPart(part)
     elseif part.kind == "slider" then
         part:SetValue(ns.db[key])
     elseif part.kind == "dropdown" then
-        part:GenerateMenu()
+        part:SetText(part.choices[ns.db[key]]) -- (nothing for a number it doesn't list)
+    elseif part.kind == "choices" then
+        for i, tile in ipairs(part.tiles) do
+            local on = ns.db[key] == i
+            tile.border:SetAtlas(on and "PetList-ButtonSelect" or "PetList-ButtonBackground")
+            tile.text:SetFontObject(on and "GameFontHighlightSmall" or "GameFontNormalSmall")
+        end
     end
+end
+
+local function RefreshSetup(setup)
+    for i, step in ipairs(setup.steps) do step:SetShown(i == setup.step) end
+    local step, info, db = setup.steps[setup.step], SETUP_STEPS[setup.step], ns.db
+    setup.heading:SetText(info[2])
+    LightDots(setup)
+    setup.back:SetEnabled(setup.step > 1)
+    setup.next:SetText(setup.step == #setup.steps and DONE or NEXT)
+    for _, part in ipairs(step.column) do RefreshPart(part) end
+    for _, box in ipairs(step.small or {}) do RefreshPart(box) end
+    for _, box in ipairs(step.boxes or {}) do box:SetChecked(not db.collectHidden[box.entry]) end
+    for i, card in ipairs(step.cards) do
+        if step.sources then
+            LightCard(card, db.collect == SOURCES[i][1] and db.collectSpawns == SOURCES[i][2])
+        else
+            LightCard(card, db[FILTERS[i]] == true)
+        end
+    end
+    if step.areaPreview then RefreshAreaPreview(step.areaPreview) end
+    if step.worldPreview then RefreshWorldPreview(step.worldPreview) end
+    Stack(step.column)
 end
 
 local function Refresh(page)
@@ -391,11 +1322,28 @@ local function Refresh(page)
         local color, text = SwitchLine()
         page.line:SetText(("|c%s%s|r"):format(color, text))
     end
+    if page.farm then
+        local zones = ns.Collecting.FarmZones()
+        FillFarm(page.farm.herbs, zones.herbs, "herbs")
+        FillFarm(page.farm.ore, zones.ore, "ore")
+    end
+    -- Collecting's setup in place of the page while it shows.
+    local inSetup = page.setup ~= nil and page.setup:IsShown()
+    if page.setup then
+        for _, part in ipairs(page.parts) do part:SetShown(not inSetup) end
+        page.about:SetShown(not inSetup)
+        page.title:SetShown(not inSetup)
+        page.setupButton:SetShown(not inSetup)
+        if inSetup then RefreshSetup(page.setup) end
+    end
     if page.count then
         local all, herbs, ore = ns.NodeCount()
         page.count:SetText(("%d herbs, %d ore"):format(herbs, ore))
         page.forget:SetEnabled(all > 0)
+        page.noGatherMate:SetShown(not inSetup and not ns.GatherMateLoaded())
     end
+    if page.worldPreview then RefreshWorldPreview(page.worldPreview) end
+    if page.areaPreview then RefreshAreaPreview(page.areaPreview) end
     for _, column in ipairs(page.columns) do Stack(column) end
     refreshing = false
 end
@@ -403,7 +1351,11 @@ end
 ns.WINDOW_PAGES = {
     { key = "nodesight", name = GENERAL, build = BuildGeneral, refresh = Refresh },
     { key = "switch", name = "Herb/Ore Switch", build = BuildSwitch, refresh = Refresh },
-    { key = "collect", name = "Collecting (Beta)", build = BuildCollect, refresh = Refresh },
+    { key = "collect", header = "Collecting (Beta)", name = "General", build = BuildCollect, refresh = Refresh },
+    { key = "symbols", name = "Symbols", build = BuildSymbols, refresh = Refresh },
+    { key = "areas", name = "Areas", build = BuildAreas, refresh = Refresh },
+    { key = "compass", name = "Compass and arrow", build = BuildCompass, refresh = Refresh },
+    { key = "farm", name = "Where to farm", build = BuildFarm, refresh = Refresh },
 }
 ns.WindowSet = Set -- what the page's controls do, by key
 
