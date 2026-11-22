@@ -2543,7 +2543,10 @@ function MINI.Fade(dx, dy, half)
     return math.max(MINI.FADE_TO, 1 - (out - MINI.FADE_FROM) / (1 - MINI.FADE_FROM) * (1 - MINI.FADE_TO))
 end
 MINI.FADE_FROM, MINI.FADE_TO = 0.4, 0.3 -- (full within 40 % of the way out, down to 30 % at the edge)
-MINI.STILL = 0.5 -- minimap units a symbol may lag before it's drawn again
+MINI.STILL = 0.5 -- minimap units a turn may move a symbol before it's drawn again
+-- Moving, every frame the symbols slide together with the ground (one frame holds them all); they
+-- are worked out again (which ones, their fade, the edge) once you've moved this many minimap units.
+MINI.SLIDE = 1.5
 -- In a cave (indoors) only the nearest few: the places have no height, so every tunnel and
 -- level of a mine would show at once, and the minimap is zoomed right in there.
 MINI.INDOORS = 5
@@ -2561,7 +2564,7 @@ local function MiniSymbol(key, kind, dx, dy, count, look, second)
     end
     ShowCount(pin, count)
     if pin.shrink ~= miniShrink then pin.shrink = miniShrink pin:SetScale(miniShrink) end
-    pin:SetPoint("CENTER", mini, "CENTER", dx / miniShrink, dy / miniShrink)
+    pin:SetPoint("CENTER", MINI.slide, "CENTER", dx / miniShrink, dy / miniShrink)
     local fade = MINI.Fade(dx, dy, last.half)
     if pin.fade ~= fade then
         pin.fade = fade
@@ -2586,8 +2589,8 @@ function MINI.Keep(key, kind, dx, dy, far, second)
 end
 
 local function Follow()
-    -- Moved and turned less than would shift a symbol half a unit (UnitPosition, plain numbers,
-    -- no table made), and zoom, shape, size and places the same: nothing to do.
+    -- Moved less than MINI.SLIDE units and turned less than half a unit (UnitPosition, plain numbers,
+    -- no table made), with the zoom, shape, size and places the same: the symbols only slide.
     local wx, wy = UnitPosition("player")
     if issecretvalue(wx) or issecretvalue(wy) then wx, wy = nil, nil end
     local radius = C_Minimap.GetViewRadius()
@@ -2603,16 +2606,31 @@ local function Follow()
     local half = last.half
     if wx and last.wx and map and map == last.map and indoors == last.indoors and type(radius) == "number" and radius > 0 and radius == last.radius and version == last.version
         and quarters == last.quarters and zoom == last.zoom and half and half > 0 and Minimap:GetWidth() / 2 == half then
-        local still = MINI.STILL * radius / half -- (in yards)
+        local scale = half / radius
+        local far = MINI.SLIDE / scale -- (in yards)
         local ex, ey = wx - last.wx, wy - last.wy
         local turned = facing ~= last.facing
         if turned and facing and last.facing then
             turned = abs((facing - last.facing + math.pi) % (2 * math.pi) - math.pi) * half >= MINI.STILL
         end
-        if ex * ex + ey * ey < still * still and not turned then return end
+        if ex * ex + ey * ey < far * far and not turned then
+            -- You moved north ex and west ey yards since they were worked out: they move the other
+            -- way (turned with a rotating minimap, as drawn).
+            local sin, cos = math.sin(last.facing or 0), math.cos(last.facing or 0)
+            local sx, sy = (ey * cos - ex * sin) * scale, (-ex * cos - ey * sin) * scale
+            if sx ~= last.sx or sy ~= last.sy then
+                last.sx, last.sy = sx, sy
+                MINI.slide:SetPoint("CENTER", mini, "CENTER", sx, sy)
+            end
+            return
+        end
     end
     last.wx, last.wy, last.radius, last.facing, last.version, last.quarters, last.zoom, last.map = wx, wy, radius, facing, version, quarters, zoom, map
     last.indoors = indoors
+    if last.sx ~= 0 or last.sy ~= 0 then
+        last.sx, last.sy = 0, 0
+        MINI.slide:SetPoint("CENTER", mini, "CENTER", 0, 0)
+    end
     miniUsed = 0
     local own, gm, x, y, width, height
     if type(map) == "number" then own, gm = Sources(map) end
@@ -2668,16 +2686,9 @@ local function Follow()
     miniShown = miniUsed
 end
 
--- At most about 60 times a second: a faster frame rate skips frames (one a little short of
--- a 60th still counts, so 60 fps draws every frame).
-local STEP = 1 / 60
-local miniWait = 0
 -- An error here would repeat every frame: reported once, then no minimap symbols until a reload.
 local miniBroken = false
-local function MiniUpdate(_, elapsed)
-    miniWait = miniWait + (elapsed or STEP)
-    if miniWait < STEP * 0.9 then return end
-    miniWait = math.min(miniWait - STEP, STEP)
+local function MiniUpdate()
     if not xpcall(Follow, geterrorhandler()) then
         miniBroken = true
         mini:Hide()
@@ -2694,6 +2705,9 @@ local function MakeMinimap()
     mini = New("Frame", Minimap)
     mini:SetPoint("TOPLEFT", MINI.DOT[1], MINI.DOT[2])
     mini:SetPoint("BOTTOMRIGHT", MINI.DOT[1], MINI.DOT[2])
+    MINI.slide = New("Frame", Minimap) -- (an anchor only: the symbols stay mini's children)
+    MINI.slide:SetSize(1, 1)
+    MINI.slide:SetPoint("CENTER")
     mini:SetScript("OnUpdate", MiniUpdate)
     -- A skill-up changes Skill colors; after a loading screen GatherMate2's places are read again.
     mini:RegisterEvent("SKILL_LINES_CHANGED")

@@ -51,7 +51,7 @@ end
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
-        { version = "4.0.3",
+        { version = "4.0.3.1",
             { "New", {
                 { "Collecting (Beta), much bigger.", "Off by default. Every herb and ore spawn is built in and marked on your world map and minimap, with a map button to hide them, filters and a quick setup. Turn it on in General, on Collecting (Beta) or with Ctrl Left Click on the minimap button" },
                 { "Compass bar and next node arrow.", "Off by default. Find the herbs and ore around you from the top of the screen. On Collecting (Beta) > Compass and arrow" },
