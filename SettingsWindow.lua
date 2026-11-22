@@ -371,7 +371,7 @@ local function CollectColumns(column, places, page)
     Checkbox(column, "collect", "Places I gather",
         "Remembers each place you gather a herb or ore. Off: nothing new is remembered and the world map shows no marks; the places remembered are kept.")
     Checkbox(column, "collectSpawns", "Every known spawn",
-        "Marks every herb and ore spawn Wowhead knows for Forever, whether or not you've been there. A known spawn is where one can grow, not one that's up now.")
+        "Marks every known herb and ore spawn in Forever, whether or not you've been there. A known spawn is where one can grow, not one that's up now.")
     local function GatherMate() return ns.GatherMateLoaded() end
     page.gatherMate = Needs(Checkbox(column, "collectGatherMate", "GatherMate2's places", "Marks the herbs and ore GatherMate2 knows too."), GatherMate)
     Needs(Checkbox(column, "collectHideGatherMate", "Hide its own icons", "Turns off GatherMate2's own herb and ore icons while its places show here."),
@@ -1173,8 +1173,8 @@ local function BuildSetup(page)
     local step = Step(setup)
     Card(step, "Places I gather", "NodeSight remembers each herb and ore you pick.", { { HERB }, { ORE } },
         "Remembers each place you gather a herb or ore and marks it, from now on.", function() PickSources(1) end)
-    Card(step, "Every known spawn", "Every herb and ore spawn Wowhead knows, built in.", { { NOTE } },
-        "Marks every herb and ore spawn Wowhead knows for Forever, whether or not you've been there.", function() PickSources(2) end)
+    Card(step, "Every known spawn", "Every known herb and ore spawn, built in.", { { NOTE } },
+        "Marks every known herb and ore spawn in Forever, whether or not you've been there.", function() PickSources(2) end)
     Card(step, "Both", "The known spawns and yours, marked once each.", { { HERB }, { NOTE } },
         "Your own places and every known spawn. A place in both is marked once.", function() PickSources(3) end)
     step.sources = true
@@ -1374,6 +1374,13 @@ ns.WINDOW_PAGES = {
 ns.WindowSet = Set -- what the page's controls do, by key
 
 function ns.ShowSettingsWindow() ns.ShowSparkleWindow("nodesight") end
+-- Collecting's page with its setup from the first step, also for one who went through it before.
+function ns.ShowCollectSetup()
+    ns.ShowSparkleWindow("collect")
+    for _, entry in ipairs(ns.WINDOW_PAGES) do
+        if entry.key == "collect" and entry.page.setup and ns.SparkleWindowPage() == "collect" then ShowSetup(entry.page.setup, 1) end
+    end
+end
 -- The window is open on NodeSight's own page.
 function ns.SettingsWindowShown() return ns.SparkleWindowShown() and ns.SparkleWindowPage() == "nodesight" end
 function ns.HideSettingsWindow() ns.HideSparkleWindow() end

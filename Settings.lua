@@ -222,7 +222,7 @@ local function RegisterSettings()
             "Remembers each place you gather a herb or ore, on this computer only. Off: nothing new is remembered and the world map shows no marks; the places remembered are kept.",
             function() ns.UpdateCollect() end)
         Checkbox("collectSpawns", "Every known spawn",
-            "Marks every herb and ore spawn Wowhead knows for Forever, whether or not you've been there. A known spawn is where one can grow, not one that's up now.",
+            "Marks every known herb and ore spawn in Forever, whether or not you've been there. A known spawn is where one can grow, not one that's up now.",
             function() ns.RereadNodePins() end)
         Checkbox("collectMap", "World map marks",
             "A small herb or ore icon on the world map for each place you gathered at. Put your mouse on one to see what it was.",

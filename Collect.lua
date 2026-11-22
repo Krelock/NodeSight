@@ -2543,6 +2543,23 @@ function MINI.Fade(dx, dy, half)
     return math.max(MINI.FADE_TO, 1 - (out - MINI.FADE_FROM) / (1 - MINI.FADE_FROM) * (1 - MINI.FADE_TO))
 end
 MINI.FADE_FROM, MINI.FADE_TO = 0.4, 0.3 -- (full within 40 % of the way out, down to 30 % at the edge)
+-- Near a spawn you see the node itself: its symbol fades out over NEAR_FADE yards, gone within
+-- NEAR yards. (MINI.scale: minimap units a yard, as last worked out.)
+MINI.NEAR, MINI.NEAR_FADE = 20, 5
+function MINI.Near(dx, dy)
+    local yards = math.sqrt(dx * dx + dy * dy) / MINI.scale
+    return math.max(0, math.min(1, (yards - MINI.NEAR) / MINI.NEAR_FADE))
+end
+-- The symbols that close or a slide from it: their fade follows you every frame.
+MINI.near = { n = 0 }
+-- A symbol's fade at dx, dy (minimap units from you): toward the edge and near you.
+function MINI.Alpha(pin, dx, dy)
+    local fade = MINI.Fade(dx, dy, last.half) * MINI.Near(dx, dy)
+    if pin.fade ~= fade then
+        pin.fade = fade
+        pin:SetAlpha(fade)
+    end
+end
 MINI.STILL = 0.5 -- minimap units a turn may move a symbol before it's drawn again
 -- Moving, every frame the symbols slide together with the ground (one frame holds them all); they
 -- are worked out again (which ones, their fade, the edge) once you've moved this many minimap units.
@@ -2565,10 +2582,12 @@ local function MiniSymbol(key, kind, dx, dy, count, look, second)
     ShowCount(pin, count)
     if pin.shrink ~= miniShrink then pin.shrink = miniShrink pin:SetScale(miniShrink) end
     pin:SetPoint("CENTER", MINI.slide, "CENTER", dx / miniShrink, dy / miniShrink)
-    local fade = MINI.Fade(dx, dy, last.half)
-    if pin.fade ~= fade then
-        pin.fade = fade
-        pin:SetAlpha(fade)
+    pin.dx, pin.dy = dx, dy
+    MINI.Alpha(pin, dx, dy)
+    if dx * dx + dy * dy <= MINI.closeBy then
+        local near = MINI.near
+        near.n = near.n + 1
+        near[near.n] = pin
     end
     return look
 end
@@ -2621,6 +2640,8 @@ local function Follow()
             if sx ~= last.sx or sy ~= last.sy then
                 last.sx, last.sy = sx, sy
                 MINI.slide:SetPoint("CENTER", mini, "CENTER", sx, sy)
+                local near = MINI.near
+                for i = 1, near.n do MINI.Alpha(near[i], near[i].dx + sx, near[i].dy + sy) end
             end
             return
         end
@@ -2642,6 +2663,9 @@ local function Follow()
         local crop = square and Crop() or 1
         -- In yards: as far as the edge, or a square's corners.
         local scale, reach = half / radius, radius * radius * ((quarters[1] and quarters[2] and quarters[3] and quarters[4]) and 1 or 2)
+        -- (the ones whose fade near you can change before they're worked out again)
+        MINI.scale, MINI.near.n = scale, 0
+        MINI.closeBy = ((MINI.NEAR + MINI.NEAR_FADE) * scale + MINI.SLIDE) ^ 2
         local levels = Minimap:GetZoomLevels()
         miniShrink = type(zoom) == "number" and type(levels) == "number" and levels > 1 and Shrink(zoom / (levels - 1)) or 1
         -- A rotating minimap turns everything by your facing.
@@ -3019,7 +3043,7 @@ ns.Collecting = {
     Version = function() return version end, PACK = PACK, UNITS = UNITS,
     SkillColor = SkillColor, FarmZones = FarmZones, FARM_LEVELS = FARM_LEVELS, DisplayName = DisplayName,
     AreasIn = AreasIn, ShowCount = ShowCount, Regions = Regions,
-    Shrink = Shrink, MiniShared = MINI.Shared, Common = Common, MiniFade = MINI.Fade, Spots = Spots,
+    Shrink = Shrink, MiniShared = MINI.Shared, Common = Common, MiniFade = MINI.Fade, Spots = Spots, MiniNear = MINI.near,
 }
 ns.COLLECT_SHAPES, ns.COLLECT_SKILL_LOOKS = SHAPES, SKILL_LOOKS
 ns.COLLECT_ZOOM_LOOKS = { "Symbols", false, false, "Hex tiles", "Mix rings", "One symbol a group", false, "Dots", "Regions" } -- (false: taken out, a saved one goes back to the default)

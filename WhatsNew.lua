@@ -51,7 +51,7 @@ end
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
-        { version = "4.0.3.1",
+        { version = "4.0.3.2",
             { "New", {
                 { "Collecting (Beta), much bigger.", "Off by default. Every herb and ore spawn is built in and marked on your world map and minimap, with a map button to hide them, filters and a quick setup. Turn it on in General, on Collecting (Beta) or with Ctrl Left Click on the minimap button" },
                 { "Compass bar and next node arrow.", "Off by default. Find the herbs and ore around you from the top of the screen. On Collecting (Beta) > Compass and arrow" },
@@ -67,6 +67,7 @@ do
                 { "Herbs grouped too.", "Close spawns of one herb now show as one symbol with a count, like mines" },
                 { "Own icons only.", "The symbols' Picture setting is gone: each herb and ore always shows its own icon" },
                 { "Lighter.", "Collecting's minimap symbols and the compass use far less CPU and memory" },
+                { "Out of the way near you.", "A minimap symbol fades out as you get within 20 yards of it, where you can see the node itself" },
             } },
             { "Fixes", {
                 { "Interact Key pop-up at login.", "Blizzard's tip asking you to assign an Interact Key binding no longer shows every time you log in while sparkles are on. Sparkles don't need a key" },
@@ -308,16 +309,15 @@ ns.ShowWhatsNew, ns.ShowNotice = ShowWhatsNew, ShowNotice
 -- Collecting news
 ---------------------------------------------------------------------------
 -- Collecting is off until a player turns it on, and its marks aren't live: told once per account.
-local COLLECT_NEWS = RED_FONT_COLOR:WrapTextInColorCode("Herbs and ore on your maps aren't live anymore: Blizzard's latest "
-    .. "update stopped addons from reading the nodes on the minimap.")
-    .. "\n\nCollecting (Beta) marks every place a herb or ore can spawn, and the places you gather, on your world map "
-    .. "and minimap. These are spawn points, not live nodes: one may already be picked or not up yet."
-local COLLECT_ON = "\n\nIt's off until you turn it on: %sthe Collecting (Beta) box on NodeSight's General page, "
-    .. "or Ctrl Left Click on the minimap button."
-    .. "\n\nThe sparkles on herbs and ore near you work as before."
+local COLLECT_NEWS = RED_FONT_COLOR:WrapTextInColorCode("NodeSight can't see live herbs and ore anymore: Blizzard's update "
+    .. "blocked addons from reading the minimap.")
+    .. "\n\nNew: Collecting (Beta) shows every spot a herb or ore can spawn on your world map and minimap. They're spawn "
+    .. "points, so a node may already be picked."
+local COLLECT_ON = "\n\n%s on NodeSight's General page or with Ctrl Left Click on the minimap button."
+    .. "\n\nYour sparkles work as before."
 
 function ns.ShowCollectNews()
-    if ns.OptionsOnly() then return ShowNotice("NodeSight", COLLECT_NEWS .. COLLECT_ON:format(""), true) end
-    ShowNotice("NodeSight", COLLECT_NEWS .. COLLECT_ON:format("Set up below, "), true,
-        { "Set up", function() ns.ShowSparkleWindow("collect") end })
+    if ns.OptionsOnly() then return ShowNotice("NodeSight", COLLECT_NEWS .. COLLECT_ON:format("Turn it on any time"), true) end
+    ShowNotice("NodeSight", COLLECT_NEWS .. COLLECT_ON:format("Click Set up to try it, or turn it on any time"), true,
+        { "Set up", function() ns.ShowCollectSetup() end })
 end
