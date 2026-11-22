@@ -54,12 +54,11 @@ AFTER.nodeArrowSize = AFTER.nodeArrow
 AFTER.collectGatherMate = function() ns.RereadNodePins() end
 AFTER.collectSpawns = AFTER.collectGatherMate
 AFTER.collectHideGatherMate = AFTER.collectGatherMate
-for _, key in ipairs({ "collectAreas", "collectAreaYards", "collectAreaHerbs", "collectRareOnly", "collectRarePercent", "collectAreasRows" }) do
+for _, key in ipairs({ "collectAreas", "collectRareOnly", "collectRarePercent", "collectMapRare" }) do
     AFTER[key] = AFTER.collectGatherMate
 end
 for _, key in ipairs({ "collectMinimap", "collectPicture", "collectShape", "collectSize", "collectMiniSize", "collectMiniLook", "collectMiniShared", "collectOpacity", "collectSkill", "collectOreRings",
-    "collectMerge", "collectDots", "collectOnlyProfession", "collectOnlyTracking", "collectHideGray", "collectAreaStripes", "collectRowLook", "collectRegions", "collectZoomLook", "collectAreasMap", "collectAreasMinimap",
-    "collectAreasZoom" }) do
+    "collectMerge", "collectOnlyProfession", "collectOnlyTracking", "collectHideGray", "collectZoomLook", "collectMiniFade" }) do
     AFTER[key] = function() ns.RefreshNodePins() end
 end
 
@@ -75,9 +74,12 @@ local function Set(key, value)
 end
 
 local COLUMN = 150 -- where a row's control starts, after its label
+local TILES_WIDE, TILE_LINE = 330, 26 -- a row of tiles' widest (the previews sit right of it), and a wrapped line's step
+local INDENT = 18 -- a row under the one it depends on
 -- The columns, and how wide their words go. A slider row with its value is about 380 wide,
 -- so the right column starts past the left one's widest ("100 % (233 yd)").
 local LEFT, RIGHT, WIDE = 16, 400, 340
+local NONE = {}
 
 -- A gold label on the left, a control at COLUMN.
 local function Row(text, control, tip)
@@ -103,7 +105,7 @@ local function Checkbox(column, key, text, tip)
         Set(key, self:GetChecked() == true)
     end)
     Row(text, box, tip)
-    box.hover:SetScript("OnMouseDown", function() box:Click() end)
+    box.hover:SetScript("OnMouseDown", function() if box:IsEnabled() then box:Click() end end)
     box.key, box.kind = key, "box"
     Tooltip(box, text, tip)
     column[#column + 1] = box
@@ -152,7 +154,7 @@ local function Stack(column)
             if part.tall then -- (rows of boxes: placed by their top)
                 part:SetPoint("TOPLEFT", column.page, "TOPLEFT", column.x, y)
             else
-                part:SetPoint("LEFT", column.page, "TOPLEFT", part.inRow and column.x + COLUMN or column.x, y - 13)
+                part:SetPoint("LEFT", column.page, "TOPLEFT", part.inRow and column.x + COLUMN or column.x, y - 13 - (part.drop or 0))
             end
             y = y - (part.height or 32)
         end
@@ -208,31 +210,77 @@ local function GeneralColumns(column, _, page)
     Header(column, "Options")
     Checkbox(column, "skillLine", "Required skill in tooltips",
         "Shows the skill a herb or ore needs in its tooltip when your mouse is on it in the world, and on herb and ore items.")
-    Checkbox(column, "popups", "Popups",
-        "NodeSight's popups: when Enable Interact Key is off, and when the game needs a restart after an update. They wait until a fight is over. Off: none at all.")
-    Checkbox(column, "minimapButton", "Minimap button",
-        "NodeSight's button on the minimap: left click opens these settings, Shift left click the sparkles, right click turns all sparkles on or off, Shift right click the Herb/Ore Switch.")
-    Checkbox(column, "own", "Settings for this character only",
+    Checkbox(column, "popups", "Popups", "Popups when Enable Interact Key is off or the game needs a restart.")
+    Checkbox(column, "minimapButton", "Minimap button", "Left click opens these settings, right click turns all sparkles on or off.")
+    Checkbox(column, "own", "This character only",
         "This character keeps its own NodeSight settings. Untick it to use the settings your other characters share. It offers a reload to switch.")
     Checkbox(column, "stoneBackground", "Stone background", "Blizzard's stone texture behind this window, warmed to the logo's brown. Off: plain brown.")
 end
 
--- A dropdown's menu of choices (their words, in order), saved as the choice's number. Its
--- two functions are made once: the menu hands them the choice's number. Blizzard's template
--- builds the whole menu each time the dropdown shows, and SetupMenu builds it at once if
--- shown, only to show the chosen option's name: here it's built when the menu opens, and
--- RefreshPart writes the name.
-local function ChoiceMenu(dropdown, key, choices)
-    local function IsPicked(i) return ns.db[key] == i end
-    local function Pick(i) Set(key, i) end
-    dropdown:SetScript("OnShow", nil)
-    dropdown:Hide()
-    dropdown:SetupMenu(function(_, root)
-        for i, name in ipairs(choices) do root:CreateRadio(name, IsPicked, Pick, i) end
-    end)
-    dropdown:Show()
-    dropdown.choices = choices
+-- A row of choice tiles, the setup cards' art in small: the picked one lit. `short`: the words on
+-- the tiles; the full names show in their tooltips, with a tile's own line from `notes`. A false
+-- word is a choice taken out: no tile, the others keep their saved numbers.
+local function Choices(column, key, text, choices, short, tip, notes)
+    local row = New("Frame", column.page)
+    row:SetSize(1, 22)
+    row.tiles = {}
+    local x, line, wide, at = 0, 0, 0, {}
+    for i, name in ipairs(short) do
+        if name then
+            local tile = New("Button", row)
+            local back = tile:CreateTexture(nil, "BACKGROUND")
+            back:SetAtlas("collections-background-tile")
+            back:SetAllPoints()
+            tile.border = tile:CreateTexture(nil, "BORDER")
+            tile.border:SetAllPoints()
+            tile.border:SetTextureSliceMargins(8, 8, 8, 8)
+            local hover = tile:CreateTexture(nil, "HIGHLIGHT")
+            hover:SetAtlas("PetList-ButtonHighlight")
+            hover:SetAllPoints()
+            hover:SetTextureSliceMargins(8, 8, 8, 8)
+            tile.text = Label(tile, name, "GameFontNormalSmall")
+            tile.text:SetPoint("CENTER")
+            local width = math.ceil(tile.text:GetStringWidth()) + 18
+            tile:SetSize(width, 22)
+            if x > 0 and x + width > TILES_WIDE then x, line = 0, line + 1 end
+            at[#at + 1] = { x, line }
+            x = x + width + 4
+            wide = math.max(wide, x - 4)
+            tile:SetScript("OnClick", function()
+                PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+                Set(key, i)
+            end)
+            Tooltip(tile, choices[i], notes and notes[i] and tip .. " " .. notes[i] or tip)
+            tile.value = i
+            row.tiles[#row.tiles + 1] = tile
+        end
+    end
+    -- A row too wide for the page wraps; its label stays by the first line.
+    local drop = line * TILE_LINE / 2
+    for i, tile in ipairs(row.tiles) do tile:SetPoint("LEFT", row, "LEFT", at[i][1], drop - at[i][2] * TILE_LINE) end
+    row:SetSize(math.max(1, wide), 22 + line * TILE_LINE)
+    Row(text, row, tip)
+    if line > 0 then
+        row.label:SetPoint("LEFT", row, "LEFT", -COLUMN, drop)
+        row.drop, row.height = drop, 32 + line * TILE_LINE
+    end
+    row.key, row.kind = key, "choices"
+    column[#column + 1] = row
+    return row
 end
+
+-- A box or slider that only does something while `needs()` says so: grayed out otherwise, and
+-- set in under the row it depends on (`under`).
+local function Needs(part, needs, under)
+    part.needs = needs
+    if under then
+        part.label:ClearAllPoints()
+        part.label:SetPoint("LEFT", part, "LEFT", -COLUMN + INDENT, part.drop or 0)
+        part.label:SetWidth(COLUMN - 8 - INDENT)
+    end
+    return part
+end
+local function On(key) return function() return ns.db[key] == true end end
 
 -- The Herb/Ore Switch: its line and box over both columns, then When, Switch in and the
 -- thanks on the left, Pauses on the right (its header level with When's).
@@ -242,16 +290,11 @@ local function SwitchColumns(column, right, page)
     page.line:SetWidth(2 * WIDE)
     page.line:SetJustifyH("LEFT")
     column.top = -50
-    page.finders = Checkbox(column, "switchFinders", "Switch between herbs and ore",
+    page.finders = Checkbox(column, "switchFinders", "Herb/Ore Switch",
         "Switches between Find Herbs and Find Minerals as you travel. You need both trained and one active to start.")
     Header(column, "When")
-    local measure = New("DropdownButton", page, "WowStyle1DropdownTemplate")
-    measure:SetWidth(168)
-    ChoiceMenu(measure, "switchMeasure", ns.SWITCH_MEASURES)
-    Row("Measure distance in", measure,
+    Choices(column, "switchMeasure", "Measure by", ns.SWITCH_MEASURES, { "Minimap %", "Yards", "Time" },
         "How the distance between switches is measured: percent of what your minimap shows (it changes with the zoom), yards, or seconds on the move.")
-    measure.key, measure.kind = "switchMeasure", "dropdown"
-    column[#column + 1] = measure
     local yards, seconds = ns.SWITCH_RANGES.switchDistanceYards, ns.SWITCH_RANGES.switchSeconds
     page.percent = Slider(column, "switchPercent", "Distance", 20, 100, 5,
         "How far you go between switches, in percent of what your minimap shows: farther when zoomed out or outdoors.", Percent)
@@ -281,11 +324,11 @@ local function SwitchColumns(column, right, page)
     column = right
     column.top = -82 -- (under the box)
     Header(column, "Pauses")
-    Checkbox(column, "switchPauseBusy", "Pause while casting, looting or with something on the cursor",
-        "Switching pauses while you cast, gather or loot, and while a spell waits for a target or something is on your cursor.").height = 42
+    Checkbox(column, "switchPauseBusy", "While busy",
+        "Switching pauses while you cast, gather or loot, and while a spell waits for a target or something is on your cursor.")
     Slider(column, "switchEnemyYards", "Enemy targeted within", 0, 60, 1,
         "Switching pauses while you target a living enemy this close, and for a second after you mouse over one. Distances are rough: the game doesn't give exact ones.", YardsOrOff)
-    Checkbox(column, "switchPauseStealth", "Pause while stealthed", "Switching pauses while you're stealthed.")
+    Checkbox(column, "switchPauseStealth", "While stealthed", "Switching pauses while you're stealthed.")
     Slider(column, "switchAfterCast", "After your own spells", 0, 10, 1,
         "Switching pauses this long after your own spells end, and after you dismount, so the switch's global cooldown doesn't get in your way.", SecondsOrOff)
     -- The line, twice a second while the page shows.
@@ -297,56 +340,6 @@ local function SwitchColumns(column, right, page)
         local color, text = SwitchLine()
         page.line:SetText(("|c%s%s|r"):format(color, text))
     end)
-end
-
--- A dropdown of choices (their words, in order) saved as the choice's number.
-local function Dropdown(column, key, text, choices, tip)
-    local dropdown = New("DropdownButton", column.page, "WowStyle1DropdownTemplate")
-    dropdown:SetWidth(168)
-    ChoiceMenu(dropdown, key, choices)
-    Row(text, dropdown, tip)
-    dropdown.key, dropdown.kind = key, "dropdown"
-    column[#column + 1] = dropdown
-    return dropdown
-end
-
--- A row of choice tiles, the setup cards' art in small: the picked one lit. `short`: the words on
--- the tiles; the full names show in their tooltips, with a tile's own line from `notes`.
-local function Choices(column, key, text, choices, short, tip, notes)
-    local row = New("Frame", column.page)
-    row:SetSize(1, 22)
-    row.tiles = {}
-    local x = 0
-    for i, name in ipairs(short) do
-        local tile = New("Button", row)
-        local back = tile:CreateTexture(nil, "BACKGROUND")
-        back:SetAtlas("collections-background-tile")
-        back:SetAllPoints()
-        tile.border = tile:CreateTexture(nil, "BORDER")
-        tile.border:SetAllPoints()
-        tile.border:SetTextureSliceMargins(8, 8, 8, 8)
-        local hover = tile:CreateTexture(nil, "HIGHLIGHT")
-        hover:SetAtlas("PetList-ButtonHighlight")
-        hover:SetAllPoints()
-        hover:SetTextureSliceMargins(8, 8, 8, 8)
-        tile.text = Label(tile, name, "GameFontNormalSmall")
-        tile.text:SetPoint("CENTER")
-        local width = math.ceil(tile.text:GetStringWidth()) + 18
-        tile:SetSize(width, 22)
-        tile:SetPoint("LEFT", row, "LEFT", x, 0)
-        x = x + width + 4
-        tile:SetScript("OnClick", function()
-            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-            Set(key, i)
-        end)
-        Tooltip(tile, choices[i], notes and notes[i] and tip .. " " .. notes[i] or tip)
-        row.tiles[i] = tile
-    end
-    row:SetWidth(math.max(1, x - 4))
-    Row(text, row, tip)
-    row.key, row.kind = key, "choices"
-    column[#column + 1] = row
-    return row
 end
 
 local function Percent100(value) return ("%d %%"):format(value) end
@@ -361,21 +354,19 @@ local function About(page, text, column, other)
     column.top, other.top = -56, -56
 end
 
--- Collecting's General: the sources and GatherMate2 on the left; what shows and the places
--- remembered on the right.
+-- Collecting's General: where the marks come from on the left; where they show, which ones and the
+-- places remembered on the right.
 local function CollectColumns(column, places, page)
     About(page, "Remembers where you gather herbs and ore and marks the places on your world map and minimap.", column, places)
     Header(column, "Sources")
-    Checkbox(column, "collect", "Remember where I gather",
+    Checkbox(column, "collect", "Places I gather",
         "Remembers each place you gather a herb or ore. Off: nothing new is remembered and the world map shows no marks; the places remembered are kept.")
     Checkbox(column, "collectSpawns", "Every known spawn",
         "Marks every herb and ore spawn Wowhead knows for Forever, whether or not you've been there. A known spawn is where one can grow, not one that's up now.")
-    Header(column, "GatherMate2")
-    page.gatherMate = Checkbox(column, "collectGatherMate", "GatherMate2's places",
-        "Marks the herbs and ore GatherMate2 knows too, on the world map, the minimap and the compass bar. Needs GatherMate2. "
-        .. "Wowhead's places from GatherMate2_Data (Retail & Forever) are read too, without an import.")
-    Checkbox(column, "collectHideGatherMate", "Hide its own herb and ore icons",
-        "While GatherMate2's places are marked here, sets its Herbs and Mining to never show in its own settings, so the icons don't sit on top of each other. Its other icons stay. Untick to put its settings back.")
+    local function GatherMate() return ns.GatherMateLoaded() end
+    page.gatherMate = Needs(Checkbox(column, "collectGatherMate", "GatherMate2's places", "Marks the herbs and ore GatherMate2 knows too."), GatherMate)
+    Needs(Checkbox(column, "collectHideGatherMate", "Hide its own icons", "Turns off GatherMate2's own herb and ore icons while its places show here."),
+        function() return ns.GatherMateLoaded() and ns.db.collectGatherMate == true end, true)
     page.noGatherMate = Label(page, "GatherMate2 isn't loaded.", "GameFontDisableSmall")
     page.noGatherMate.gap, page.noGatherMate.height = 0, 20
     column[#column + 1] = page.noGatherMate
@@ -384,15 +375,21 @@ local function CollectColumns(column, places, page)
     page.thanks:SetPoint("BOTTOMLEFT", page, "BOTTOMLEFT", LEFT, 16)
     page.future = Label(page, "Collecting is new and will be improved in future updates.", "GameFontDisableSmall")
     page.future:SetPoint("BOTTOMLEFT", page.thanks, "TOPLEFT", 0, 4)
-    Header(places, "Show")
-    Checkbox(places, "collectMap", "World map marks",
-        "A small herb or ore symbol on the world map for each place you gathered at. Put your mouse on one to see what it was.")
-    Checkbox(places, "collectMinimap", "Minimap marks",
-        "The same symbols on the minimap for the places near you. They let the mouse through to the game's own dots.")
-    Checkbox(places, "collectOnlyProfession", "Only with the profession", "Herbs are marked only on characters with Herbalism, ore only with Mining.")
-    Checkbox(places, "collectOnlyTracking", "Only while tracking",
+    Header(places, "Show on")
+    Checkbox(places, "collectMap", "World map", "A symbol on the world map for each marked place. Put your mouse on one to see what it was.")
+    Needs(Checkbox(places, "collectMapRare", "Rares and near you", "Far from you, the world map shows only rare herbs and ore, such as silver and Kingsblood."),
+        function() return ns.db.collectMap == true and not ns.db.collectRareOnly end, true)
+    Checkbox(places, "collectMinimap", "Minimap", "The same symbols on the minimap for the places near you. They let the mouse through to the game's own dots.")
+    Needs(Checkbox(places, "collectMiniFade", "Fade toward the edge", "Symbols farther from you fade, so the ones near you stand out."), On("collectMinimap"), true)
+    Header(places, "Only show")
+    Checkbox(places, "collectOnlyProfession", "My professions", "Herbs are marked only on characters with Herbalism, ore only with Mining.")
+    Checkbox(places, "collectOnlyTracking", "While tracking",
         "Herbs are marked only while Find Herbs is on, ore only while Find Minerals is on. With the Herb/Ore Switch on, both are.")
-    Checkbox(places, "collectHideGray", "Hide gray ones", "Leaves out herbs and ore that no longer give you a skill-up (gray in your profession window).")
+    Checkbox(places, "collectHideGray", "Skill-ups", "Leaves out herbs and ore that no longer give you a skill-up (gray in your profession window).")
+    Checkbox(places, "collectRareOnly", "Rare ones", "Marks only rare herbs and ore, such as gold and Black Lotus.")
+    local rare = ns.COLLECT_RANGES.collectRarePercent
+    Needs(Slider(places, "collectRarePercent", "Or under", rare[1], rare[2], rare[3],
+        "Herbs or ore that make up less than this share of a zone's count as rare there too. 0: only the list.", Percent100), On("collectRareOnly"), true)
     Header(places, "Remembered places")
     page.count = Label(page, "", "GameFontHighlight")
     page.count.height = 28
@@ -405,72 +402,77 @@ local function CollectColumns(column, places, page)
     places[#places + 1] = page.forget
 end
 
--- The areas' own rows.
-local function AreaRows(column)
-    local areaYards = ns.COLLECT_RANGES.collectAreaYards
-    Checkbox(column, "collectAreas", "Areas for close spawns",
-        "Where five or more spawns of one ore are close together, like a mine, the map shows one soft area with the ore's symbol and a count in place of a symbol each. Other nodes there keep their symbols.")
-    Slider(column, "collectAreaYards", "How close", areaYards[1], areaYards[2], areaYards[3],
-        "How near spawns must be to each other to share an area.", Yards)
-    Checkbox(column, "collectAreaHerbs", "Herbs too", "Herbs that grow close together get areas as well, not only ore.")
-    Checkbox(column, "collectAreasRows", "Along rows too",
-        "Spawns spread out along a row (a ridge, a road) get a glow along the row too, not only ones packed together like a mine.")
-    Dropdown(column, "collectRowLook", "Row look", ns.COLLECT_ROW_LOOKS, "How a row of spawns shows. Soft band: a faint glow along the row. Dotted line: like the map's flight paths. Thin line: a quiet line.")
-    Checkbox(column, "collectAreaStripes", "Stripes", "Stripes over the round areas' glow, so they stand out more.")
-    Checkbox(column, "collectRegions", "Regions when zoomed out", "At the world map's widest zoom, spawns show as outlined regions with a count. Zoom in to see each one.")
-    Dropdown(column, "collectZoomLook", "Zoomed-out look", ns.COLLECT_ZOOM_LOOKS, "How spawns show on the world map at its widest zoom. Anything but Symbols takes the place of dots, areas and regions there.")
+-- The rows setup's maps step shares with the Symbols and Areas pages.
+local function AreasBox(column)
+    Checkbox(column, "collectAreas", "Group close spawns", "Close spawns of one ore, like a mine, show as one symbol with a count.")
 end
--- The settings that change the maps most, each one a click: setup's maps step and the Symbols page.
-local function MapRows(column)
-    local mini, size = ns.COLLECT_RANGES.collectMiniSize, ns.COLLECT_RANGES.collectSize
-    Slider(column, "collectMiniSize", "Minimap size", mini[1], mini[2], mini[3], "How big the symbols are on the minimap.", Whole)
-    Slider(column, "collectSize", "World map size", size[1], size[2], size[3], "How big the symbols are on the world map.", Whole)
-    local opacity = ns.COLLECT_RANGES.collectOpacity
-    Slider(column, "collectOpacity", "Minimap opacity", opacity[1], opacity[2], opacity[3],
-        "How much of a minimap symbol's picture shows; its ring stays solid. Lower lets the game's dot under it show through.", Percent100)
+local function MergeBox(column)
+    Checkbox(column, "collectMerge", "Merge overlaps", "Symbols of one herb or ore that would cover each other on the world map show as one, with how many there are. Zoom in to see each one.")
+end
+local function ShapeRow(column)
     Choices(column, "collectShape", "Shape", ns.COLLECT_SHAPES, { "Square", "Round", "Gold ring", "Slim ring" },
         "The symbols' shape, on the world map and the minimap.")
-    Choices(column, "collectMiniLook", "Minimap look", ns.COLLECT_MINI_LOOKS, { "Whole", "Hole", "See-through", "Pin" },
+end
+local function MiniLookRows(column, look)
+    Choices(column, "collectMiniLook", look, ns.COLLECT_MINI_LOOKS, { "Whole", "Hole", "See-through", "Pin" },
         "How a minimap symbol leaves room for the game's own dot under it.", { [2] = "Best with Minimap size 30." })
     Choices(column, "collectMiniShared", "Shared spots", ns.COLLECT_MINI_SHARED, { "Common one", "Split", "Badge" },
         "Where two herbs or ores can spawn at one spot, how a minimap symbol shows both, for example copper and tin split down the middle.")
-    Choices(column, "collectZoomLook", "Zoomed out", ns.COLLECT_ZOOM_LOOKS, { "Symbols", "Tiny", "Glow", "Hex tiles", "Rings" },
-        "How spawns show on the world map at its widest zoom. Anything but Symbols takes the place of dots, areas and regions there.")
+end
+local function MiniSize(column, text)
+    local mini = ns.COLLECT_RANGES.collectMiniSize
+    Slider(column, "collectMiniSize", text, mini[1], mini[2], mini[3], "How big the symbols are on the minimap.", Whole)
+end
+local function MapSize(column, text)
+    local size = ns.COLLECT_RANGES.collectSize
+    Slider(column, "collectSize", text, size[1], size[2], size[3], "How big the symbols are on the world map.", Whole)
+end
+local function Opacity(column, text)
+    local opacity = ns.COLLECT_RANGES.collectOpacity
+    Slider(column, "collectOpacity", text, opacity[1], opacity[2], opacity[3],
+        "How much of a minimap symbol's picture shows; its ring stays solid. Lower lets the game's dot under it show through.", Percent100)
+end
+local function ZoomRow(column)
+    Choices(column, "collectZoomLook", "Zoomed out", ns.COLLECT_ZOOM_LOOKS, { "Symbols", false, false, "Hex tiles", "Rings", "Groups", false, "Dots", "Regions" },
+        "How spawns show on the world map at its widest zoom, for example groups: one symbol with a count for each group of herbs or ore.")
+end
+local function SkillRow(column)
     Choices(column, "collectSkill", "Skill colors", ns.COLLECT_SKILL_LOOKS, { "Red if too low", "Ring", "Gem", "Off" },
-        "How a symbol shows your skill. Red when too low: red if you can't gather it yet. Colored ring and Colored gem: the profession window's skill-up colors, from red to gray. Colored ring needs a gold ring shape.")
-    Checkbox(column, "collectAreas", "Areas for close spawns",
-        "Where five or more spawns of one ore are close together, like a mine, the map shows one soft area with the ore's symbol and a count in place of a symbol each. Other nodes there keep their symbols.")
-    Checkbox(column, "collectMerge", "Merge overlaps", "Symbols of one herb or ore that would cover each other on the world map show as one, with how many there are. Zoom in to see each one.")
+        "How a symbol shows your skill, for example a gem in the profession window's colors. Ring needs a ring shape.")
 end
 
--- Symbols: the maps step's rows, then the rest under More; the previews on the right.
+-- The settings that change the maps most, each one a click: setup's maps step.
+local function MapRows(column)
+    MiniSize(column, "Minimap size")
+    MapSize(column, "World map size")
+    Opacity(column, "Minimap opacity")
+    ShapeRow(column)
+    MiniLookRows(column, "Minimap look")
+    ZoomRow(column)
+    SkillRow(column)
+    AreasBox(column)
+    MergeBox(column)
+end
+
+-- Symbols: what both maps share, then the minimap's and the world map's own, in the previews' order.
 local function SymbolColumns(column, other, page)
     About(page, "How the herb and ore symbols look on the world map and the minimap.", column, other)
-    MapRows(column)
-    Header(column, "More")
-    Dropdown(column, "collectPicture", "Picture", ns.COLLECT_PICTURES,
+    Header(column, "Both maps")
+    ShapeRow(column)
+    Choices(column, "collectPicture", "Picture", ns.COLLECT_PICTURES, { "Own icon", "Plain" },
         "Each node's own item icon, or one plain icon for herbs and one for ore.")
-    Checkbox(column, "collectOreRings", "High visibility tin and iron",
-        "Tin gets a green ring and iron a rust one, so they're easy to tell apart. Needs a gold ring shape.")
-    Checkbox(column, "collectDots", "Dots when zoomed out", "On the world map at its widest zoom, each spawn is a small dot in its herb's or ore's color. Zoom in for the full symbols.")
-end
-
--- Areas: what makes one and how it looks on the left; where they show and the rare ones on the right.
-local function AreaColumns(column, other, page)
-    About(page, "Spawns of one herb or ore close together shown as one soft area with a count, in place of a symbol each.", column, other)
-    Header(column, "Areas")
-    AreaRows(column)
-    Header(other, "Where")
-    Checkbox(other, "collectAreasMap", "On the world map", "Shows the areas on the world map. Off: a symbol for each spawn there.")
-    Checkbox(other, "collectAreasMinimap", "On the minimap", "Shows the areas on the minimap. Off: a symbol for each spawn there.")
-    Checkbox(other, "collectAreasZoom", "Only when zoomed out",
-        "Areas show only while the world map is zoomed all the way out, and at the minimap's two widest zooms. Zoom in to see each spawn. Off: areas at every zoom.")
-    Header(other, "Rare ones")
-    local rare = ns.COLLECT_RANGES.collectRarePercent
-    Checkbox(other, "collectRareOnly", "Rare ones only",
-        "Marks only the rare herbs and ore on the world map and the minimap: silver, gold, truesilver, rich thorium and Black Lotus everywhere, and any that make up less of a zone's herbs or ore than the share below.")
-    Slider(other, "collectRarePercent", "Or under", rare[1], rare[2], rare[3],
-        "Herbs or ore that make up less than this share of a zone's count as rare there too. 0: only the list.", Percent100)
+    SkillRow(column)
+    Needs(Checkbox(column, "collectOreRings", "Tin and iron rings",
+        "Tin gets a green ring and iron a rust one, so they're easy to tell apart. Needs a ring shape."), function() return ns.db.collectShape > 2 end)
+    AreasBox(column)
+    Header(column, "Minimap")
+    MiniSize(column, "Size")
+    Opacity(column, "Opacity")
+    MiniLookRows(column, "Look")
+    Header(column, "World map")
+    MapSize(column, "Size")
+    MergeBox(column)
+    ZoomRow(column)
 end
 
 -- Compass and arrow: the compass bar on the left, the next node arrow on the right. Both can be
@@ -479,20 +481,17 @@ local function CompassColumns(column, other, page)
     About(page, "A compass strip and an arrow at the top of the screen for the herbs and ore marked near you. Drag them to move them while this page is open.",
         column, other)
     Header(column, "Compass bar")
-    Checkbox(column, "compass", "Compass bar",
-        "A strip at the top of the screen with the compass points and a symbol for each herb and ore marked near you, in its direction. "
-        .. "Nearer ones are brighter. Drag it to move it while this page is open.")
+    Checkbox(column, "compass", "Show", "A strip at the top of the screen with the herbs and ore near you.")
     local width, range = ns.COLLECT_RANGES.compassWidth, ns.COLLECT_RANGES.compassRange
-    Slider(column, "compassWidth", "Width", width[1], width[2], width[3], "How wide the compass bar is.", Whole)
-    Slider(column, "compassRange", "Range", range[1], range[2], range[3], "How far away a place can be to show on the compass bar.", Yards)
+    Needs(Slider(column, "compassWidth", "Width", width[1], width[2], width[3], "How wide the compass bar is.", Whole), On("compass"), true)
+    Needs(Slider(column, "compassRange", "Range", range[1], range[2], range[3], "How far away a place can be to show on the compass bar.", Yards), On("compass"), true)
     Header(other, "Next node arrow")
-    Checkbox(other, "nodeArrow", "Next node arrow",
-        "Points to the nearest marked herb or ore you can gather, with the yards to it. Within 15 yards of one, it points to the next for 2 minutes. "
-        .. "Drag it to move it while this page is open.")
+    Checkbox(other, "nodeArrow", "Show", "Points to the nearest marked herb or ore you can gather.")
     local arrowRange = ns.COLLECT_RANGES.nodeArrowRange
-    Slider(other, "nodeArrowRange", "Range", arrowRange[1], arrowRange[2], arrowRange[3], "How far away a place can be for the arrow to point to it.", Yards)
+    Needs(Slider(other, "nodeArrowRange", "Range", arrowRange[1], arrowRange[2], arrowRange[3], "How far away a place can be for the arrow to point to it.", Yards),
+        On("nodeArrow"), true)
     local arrowSize = ns.COLLECT_RANGES.nodeArrowSize
-    Slider(other, "nodeArrowSize", "Size", arrowSize[1], arrowSize[2], arrowSize[3], "How big the arrow is.", Percent100)
+    Needs(Slider(other, "nodeArrowSize", "Size", arrowSize[1], arrowSize[2], arrowSize[3], "How big the arrow is.", Percent100), On("nodeArrow"), true)
     page:HookScript("OnShow", function()
         ns.CompassMovable(true)
         ns.ArrowMovable(true)
@@ -926,6 +925,7 @@ local AREA_SAMPLES = {
     { "peacebloom", "herbs", 75, -71, 5 }, { "peacebloom", "herbs", 64, -68, 5 },
     -- And some alone.
     { "mageroyal", "herbs", -20, -110, 4, empty = true }, { "silverleaf", "herbs", 115, -5, 5 }, { "earthroot", "herbs", -125, 0, 5, empty = true },
+    { "silver vein", "ore", 35, 25, 2 }, -- (rare: what Rare ones only keeps)
 }
 -- On the setup's maps step also: a spot copper and tin share, and the game's own node dot under
 -- every symbol but the empty spawns', for the minimap looks and shared spots to show on.
@@ -966,58 +966,55 @@ local function RefreshAreaPreview(preview)
         end
     end
     local look = C.CurrentLook(true) -- (the minimap's look)
+    local common = C.Common(nil, areaPlaces, nil) or NONE -- (Rare ones only: the ones left out)
     local areas, inAreas
-    if not ns.db.collectAreasZoom or preview.zoom <= 1 then -- (as the minimap: closer in, a symbol each)
+    if preview.zoom <= 1 then -- (as the minimap: closer in, a symbol each)
         areas, inAreas = C.AreasIn(AREA_MAP, AREA_MAP, areaPlaces, nil)
     end
     local n, glows = 0, 0
     for _, sample in ipairs(AREA_SAMPLES) do
         local key = sample[1]
         local place = (AREA_MIDDLE + sample[3]) * C.PACK + AREA_MIDDLE + sample[4]
-        if not (inAreas and inAreas[key] and inAreas[key][place]) then
+        if not common[key] and not (inAreas and inAreas[key] and inAreas[key][place]) then
             n = n + 1
             AreaSymbol(preview, n, key, sample[2], sample[3] * perYard, -sample[4] * perYard, nil, look, size)
         end
     end
-    for _, area in ipairs(areas or {}) do
-        glows = glows + 1
-        if not preview.extras then -- (the maps preview: the area's symbol and count, no glow)
-            if not preview.glows[glows] then
-                preview.glows[glows] = C.NewEdgeGlow(preview)
-                preview.glows[glows]:SetFrameLevel(preview:GetFrameLevel() + 1) -- (over the ground, under the symbols)
+    for _, area in ipairs(areas or NONE) do
+        if not common[area.key] then
+            glows = glows + 1
+            n = n + 1
+            AreaSymbol(preview, n, area.key, area.kind, (area.x - AREA_MIDDLE) * perYard, (AREA_MIDDLE - area.y) * perYard, area.count, look, size)
+            local dot = preview.areaDots and (preview.areaDots[glows] or Coin(preview, preview.areaDots))
+            if dot then
+                dot:SetSize(dot.across * preview.unit, dot.across * preview.unit)
+                dot:SetPoint("CENTER", preview, "CENTER", (area.x - AREA_MIDDLE) * perYard, (AREA_MIDDLE - area.y) * perYard)
+                dot:Show()
             end
-            C.DrawArea(preview.glows[glows], preview, area, perYard, 0.5, 0.5, AREA_MAP, AREA_MAP)
-            preview.glows[glows]:Show()
-        end
-        n = n + 1
-        AreaSymbol(preview, n, area.key, area.kind, (area.x - AREA_MIDDLE) * perYard, (AREA_MIDDLE - area.y) * perYard, area.count, look, size)
-        local dot = preview.areaDots and (preview.areaDots[glows] or Coin(preview, preview.areaDots))
-        if dot then
-            dot:SetSize(dot.across * preview.unit, dot.across * preview.unit)
-            dot:SetPoint("CENTER", preview, "CENTER", (area.x - AREA_MIDDLE) * perYard, (AREA_MIDDLE - area.y) * perYard)
-            dot:Show()
         end
     end
     for i = glows + 1, preview.areaDots and #preview.areaDots or 0 do preview.areaDots[i]:Hide() end
     if preview.extras then
         local shared = MAP_EXTRAS.shared
-        n = n + 1
-        AreaSymbol(preview, n, shared[1], shared[2], shared[3] * perYard, -shared[4] * perYard, nil, look, size, shared[6])
+        if not common[shared[1]] then
+            n = n + 1
+            AreaSymbol(preview, n, shared[1], shared[2], shared[3] * perYard, -shared[4] * perYard, nil, look, size, shared[6])
+        end
         for _, dot in ipairs(preview.dots) do
             local sample = dot.sample
             local place = (AREA_MIDDLE + sample[3]) * C.PACK + AREA_MIDDLE + sample[4]
-            dot:SetShown(not (inAreas and inAreas[sample[1]] and inAreas[sample[1]][place])) -- (the shared spot is in none)
+            dot:SetShown(not common[sample[1]] and not (inAreas and inAreas[sample[1]] and inAreas[sample[1]][place])) -- (the shared spot is in none)
             dot:SetPoint("CENTER", preview, "CENTER", sample[3] * perYard, -sample[4] * perYard)
         end
     end
     for i = n + 1, #preview.symbols do preview.symbols[i]:Hide() end
-    for i = glows + 1, #preview.glows do preview.glows[i]:Hide() end
 end
 
 -- The maps step's world map preview: a piece of Elwynn Forest's own map art with made-up spawns,
 -- drawn by the world map's own code as it draws them zoomed all the way out, in the zoomed-out
 -- look set. Node, kind, pixels from the top left, skill color.
 local WORLD_W, WORLD_H, WORLD_MAP, WORLD_TILE = 210, 140, 1429, 6 -- (a tile of 256: about 900 yards)
+local WORLD_YARDS = 900 -- the preview's width in yards
 -- Elwynn's explored parts over that tile, so it looks explored whoever opens it: the game's map
 -- draws each part from tiles of 256 art pixels (the last row and column cut from a smaller
 -- file), as its exploration pins do. Width, height, x, y, files row by row (Forever's map art
@@ -1098,13 +1095,14 @@ local function WorldPreview(step, above)
     end
     frame.title = Label(step, "World map, zoomed out", "GameFontNormalSmall")
     frame.title:SetPoint("BOTTOM", frame, "TOP", 0, 5)
-    frame.symbols = {}
+    -- The spawns as a map's places, and a symbol for each (never more show: areas take some in).
+    frame.symbols, frame.own, frame.levels = {}, {}, {}
     for i, sample in ipairs(WORLD_SAMPLES) do
-        local symbol = C.NewSymbol(frame)
-        symbol:SetFrameLevel(frame:GetFrameLevel() + 3)
-        symbol.key, symbol.kind, symbol.sampleLevel = sample[1], sample[2], sample[5]
-        symbol.x, symbol.y = sample[3] / WORLD_W * C.UNITS, sample[4] / WORLD_H * C.UNITS
-        frame.symbols[i] = symbol
+        local key = sample[1]
+        frame.own[key] = frame.own[key] or {}
+        table.insert(frame.own[key], math.floor(sample[3] / WORLD_W * C.UNITS + 0.5) * C.PACK + math.floor(sample[4] / WORLD_H * C.UNITS + 0.5))
+        frame.levels[key] = sample[5]
+        frame.symbols[i] = C.NewSymbol(frame)
     end
     return frame
 end
@@ -1120,14 +1118,7 @@ local function MapPreviews(parent, y)
     parent.areaPreview, parent.worldPreview = preview, WorldPreview(parent, preview)
 end
 local function RefreshWorldPreview(frame)
-    local C = ns.Collecting
-    local look = C.CurrentLook()
-    look.alpha = 1 -- (solid on the world map)
-    for _, symbol in ipairs(frame.symbols) do
-        if symbol.shape ~= look.shape or symbol.size ~= look.size then C.ApplyShape(symbol, look) end
-        C.ApplyLook(symbol, symbol.key, symbol.kind, look)
-    end
-    C.Regions.Preview(frame, frame.symbols, #frame.symbols, frame:GetFrameLevel() + 3)
+    ns.Collecting.Regions.Preview(frame, frame.own, frame.levels, WORLD_YARDS, WORLD_YARDS * WORLD_H / WORLD_W, frame:GetFrameLevel() + 3)
 end
 
 local function ShowSetup(setup, step)
@@ -1182,7 +1173,7 @@ local function BuildSetup(page)
     Card(step, "Only while tracking", "While Find Herbs or Find Minerals is on.", { { finder or HERB } },
         "Herbs are marked only while Find Herbs is on, ore only while Find Minerals is on. With the Herb/Ore Switch on, both are.",
         function() Set(FILTERS[2], not ns.db[FILTERS[2]]) end)
-    Card(step, "Hide gray ones", "Not the ones that no longer give a skill-up.", { { HERB, gray = true }, { ORE, gray = true } },
+    Card(step, "Only skill-ups", "Herbs and ore that still raise your skill.", { { HERB, gray = true }, { ORE, gray = true } },
         "Leaves out herbs and ore that no longer give you a skill-up (gray in your profession window).",
         function() Set(FILTERS[3], not ns.db[FILTERS[3]]) end)
     step.showOn = Label(step, "Show them on", "GameFontNormal")
@@ -1233,25 +1224,18 @@ local function BuildSymbols(page)
     Page(page, "Symbols", SymbolColumns)
     MapPreviews(page, -60)
 end
-local function BuildAreas(page)
-    Page(page, "Areas", AreaColumns)
-    page.areaPreview = PreviewGround(page, RIGHT + 70, -310) -- (under the right column's rows, the shorter one)
-    page.areaPreview.glows = {}
-    page.areaPreview.note = Label(page, "Changes as you change the settings.", "GameFontDisableSmall")
-    page.areaPreview.note:SetPoint("TOP", page.areaPreview, "BOTTOM", 0, -14)
-end
 -- Everything on the Compass and arrow page but its on and off boxes, back to the defaults.
 local COMPASS_RESET = { "compassX", "compassY", "compassWidth", "compassRange", "nodeArrowX", "nodeArrowY", "nodeArrowRange", "nodeArrowSize" }
 local function BuildCompass(page)
     Page(page, "Compass and arrow", CompassColumns)
-    page.reset = Button(page, "Reset", 96, function()
+    page.reset = Button(page, DEFAULTS, 96, function()
         for _, key in ipairs(COMPASS_RESET) do ns.db[key] = ns.defaults[key] end
         ns.CompassChanged()
         ns.ArrowChanged()
         ns.RefreshSparkleWindow()
     end)
     page.reset:SetPoint("TOPRIGHT", -16, -12)
-    Tooltip(page.reset, "Reset", "Puts the compass bar and the arrow back where they started, at their first sizes and ranges.")
+    Tooltip(page.reset, DEFAULTS, "Puts the compass bar and the arrow back where they started, at their first sizes and ranges.")
 end
 
 local function BuildSwitch(page)
@@ -1268,15 +1252,21 @@ end
 local function RefreshPart(part)
     local key = part.key
     if not key then return end
+    if part.needs then
+        local on = part.needs() and true or false
+        if part.usable ~= on then
+            part.usable = on
+            part.label:SetFontObject(on and "GameFontNormal" or "GameFontDisable")
+            part:SetEnabled(on)
+        end
+    end
     if part.kind == "box" then
         part:SetChecked(key == "own" and ns.OwnSettings() or ns.db[key] == true)
     elseif part.kind == "slider" then
         part:SetValue(ns.db[key])
-    elseif part.kind == "dropdown" then
-        part:SetText(part.choices[ns.db[key]]) -- (nothing for a number it doesn't list)
     elseif part.kind == "choices" then
-        for i, tile in ipairs(part.tiles) do
-            local on = ns.db[key] == i
+        for _, tile in ipairs(part.tiles) do
+            local on = ns.db[key] == tile.value
             tile.border:SetAtlas(on and "PetList-ButtonSelect" or "PetList-ButtonBackground")
             tile.text:SetFontObject(on and "GameFontHighlightSmall" or "GameFontNormalSmall")
         end
@@ -1353,7 +1343,6 @@ ns.WINDOW_PAGES = {
     { key = "switch", name = "Herb/Ore Switch", build = BuildSwitch, refresh = Refresh },
     { key = "collect", header = "Collecting (Beta)", name = "General", build = BuildCollect, refresh = Refresh },
     { key = "symbols", name = "Symbols", build = BuildSymbols, refresh = Refresh },
-    { key = "areas", name = "Areas", build = BuildAreas, refresh = Refresh },
     { key = "compass", name = "Compass and arrow", build = BuildCompass, refresh = Refresh },
     { key = "farm", name = "Where to farm", build = BuildFarm, refresh = Refresh },
 }

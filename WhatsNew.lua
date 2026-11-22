@@ -51,6 +51,20 @@ end
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
+        { version = "4.0.1",
+            { "New", {
+                { "Map button.", "Shows or hides NodeSight's herbs and ore on the world map in one click, at the map's top right" },
+                { "Bright.", "Off by default. One herb or ore stands out and the rest fade back. Pick it in the world map's filter menu" },
+                { "Rares and near you.", "Off by default. Away from you, the world map shows only the rare herbs and ore. On Collecting (Beta) > General" },
+                { "Groups.", "The new default when zoomed out: one symbol with a count for each group of herbs or ore. Dots and Regions are choices there too. On Collecting (Beta) > Symbols" },
+                { "Fade toward the edge.", "On by default. Minimap symbols far from you fade, so the ones near you stand out. On Collecting (Beta) > General" },
+            } },
+            { "Changes", {
+                { "Cleaner settings.", "Each setting shows once, grouped by map, with live previews" },
+                { "Mines without the glow.", "Close spawns are one symbol with a count now, and the Areas page is gone" },
+                { "New defaults.", "Every known spawn marked from the start, smaller minimap symbols and bigger world map ones" },
+            } },
+        },
         { version = "4.0.0",
             { "New", {
                 { "Collecting (Beta), much bigger.", "Every herb and ore spawn is now built in, with a quick setup, cleaner map and minimap symbols, areas for mines, and filters. Open Collecting (Beta) to set it up" },

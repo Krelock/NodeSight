@@ -78,39 +78,31 @@ local defaults = {
     rareGlow = false, -- a gold glow around rare herbs and ore
     harvest = 5, -- how a gathered node finishes (Sparkles.lua's HARVESTS: Fade away)
     minimapButton = true, -- the minimap button (its place: minimapIcon, LibDBIcon's)
-    collect = false, -- remember where you gather herbs and ore (Collect.lua)
+    collect = true, -- remember where you gather herbs and ore (Collect.lua)
     collectMap = true, -- and mark those places on the world map
     collectMinimap = true, -- and on the minimap
     collectPicture = 1, -- the map symbols' picture (Collect.lua's PICTURES): each node's own icon
     collectShape = 3, -- their shape (SHAPES): round with a gold ring
-    collectSize = 14, -- their size on the world map
-    collectMiniSize = 30, -- and on the minimap
+    collectSize = 19, -- their size on the world map
+    collectMiniSize = 24, -- and on the minimap
     collectMiniLook = 2, -- the minimap's symbols (COLLECT_MINI_LOOKS): a hole in the middle
     collectMiniShared = 3, -- a shared spot on the minimap (COLLECT_MINI_SHARED): the other node as a small badge
     collectOpacity = 100, -- how much of a minimap symbol's picture shows (%): all (the hole shows the node)
     collectSkill = 3, -- how they show your skill (SKILL_LOOKS): a colored gem
     collectOreRings = false, -- green and rust rings for tin and iron
-    collectDots = false, -- dots in the node's color on the world map at its widest zoom
     collectMerge = true, -- a node's symbols that overlap on the world map shown as one, with their count
-    collectSpawns = false, -- every known spawn marked too (Spawns.lua)
+    collectSpawns = true, -- every known spawn marked too (Spawns.lua)
     collectGatherMate = false, -- GatherMate2's herbs and ore marked too
-    collectHideGatherMate = true, -- and GatherMate2's own herb and ore icons off meanwhile
+    collectHideGatherMate = false, -- and GatherMate2's own herb and ore icons off meanwhile
     collectOnlyProfession = false, -- herbs only with Herbalism, ore only with Mining
     collectOnlyTracking = false, -- herbs only while Find Herbs is on, ore with Find Minerals
     collectHideGray = false, -- not the ones that no longer give a skill-up
     collectRareOnly = false, -- only the rare herbs and ore marked
     collectRarePercent = 10, -- and any under this share (%) of a zone's herbs or ore
-    collectAreas = true, -- spawns of one node close together drawn as one area
-    collectAreaYards = 35, -- how close (yards, spawn to spawn)
-    collectAreaHerbs = false, -- herbs too, not only ore
-    collectAreaStripes = false, -- stripes over the areas' glow
-    collectAreasRows = true, -- spread-out spawns along a row as an area too
-    collectRowLook = 1, -- how a row shows (COLLECT_ROW_LOOKS): a soft band
-    collectRegions = false, -- the world map zoomed out: outlined regions with a count, no symbol each
-    collectZoomLook = 4, -- the world map at its widest zoom (COLLECT_ZOOM_LOOKS): hex tiles
-    collectAreasMap = true, -- areas on the world map
-    collectAreasMinimap = true, -- areas on the minimap
-    collectAreasZoom = true, -- only zoomed out (the minimap's two widest zooms)
+    collectAreas = true, -- close spawns of one ore (a mine) as one symbol with a count
+    collectZoomLook = 6, -- the world map at its widest zoom (COLLECT_ZOOM_LOOKS): one symbol a group
+    collectMapRare = false, -- the world map: only rare herbs and ore, and everything near you
+    collectMiniFade = true, -- minimap symbols fade toward its edge
     collectSetupDone = false, -- Collecting's setup steps shown once
     compass = false, -- the compass bar (Compass.lua)
     compassWidth = 400, -- its width
@@ -457,8 +449,13 @@ local function OnAddonLoaded()
     if not ns.COLLECT_PICTURES[settings.collectPicture] then settings.collectPicture = defaults.collectPicture end
     if not ns.COLLECT_SHAPES[settings.collectShape] then settings.collectShape = defaults.collectShape end
     if not ns.COLLECT_SKILL_LOOKS[settings.collectSkill] then settings.collectSkill = defaults.collectSkill end
-    if not ns.COLLECT_ROW_LOOKS[settings.collectRowLook] then settings.collectRowLook = defaults.collectRowLook end
     if not ns.COLLECT_ZOOM_LOOKS[settings.collectZoomLook] then settings.collectZoomLook = defaults.collectZoomLook end
+    -- The zoomed-out default changed while Collecting was in beta: the old one (hex tiles) moves to the new one, once.
+    if not settings.collectCalm then
+        if settings.collectZoomLook == 4 then settings.collectZoomLook = defaults.collectZoomLook end
+        settings.collectCalm = true
+    end
+    if type(settings.collectBright) ~= "string" then settings.collectBright = nil end -- (Bright: a node's entry, or none)
     if not ns.COLLECT_MINI_LOOKS[settings.collectMiniLook] then settings.collectMiniLook = defaults.collectMiniLook end
     if not ns.COLLECT_MINI_SHARED[settings.collectMiniShared] then settings.collectMiniShared = defaults.collectMiniShared end
     -- A hand-edited number: one in its slider's range, else the default.

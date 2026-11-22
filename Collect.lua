@@ -513,6 +513,7 @@ local function Tracked(kind)
 end
 
 local function Shown(key, kind)
+    if Spots.sample then return true end -- (a settings preview's made-up spawns)
     if shownVersion ~= version then
         wipe(shown)
         shownVersion = version
@@ -540,10 +541,11 @@ end
 local RARE = { ["silver vein"] = true, ["ooze covered silver vein"] = true, ["gold vein"] = true, ["ooze covered gold vein"] = true,
     ["truesilver deposit"] = true, ["ooze covered truesilver deposit"] = true, ["rich thorium vein"] = true,
     ["ooze covered rich thorium vein"] = true, ["black lotus"] = true }
--- The nodes a map doesn't mark ([key] = true), or nil while the setting is off.
-local function Common(map, own, gm)
+-- The nodes a map doesn't mark ([key] = true), or nil while the setting is off (`always`: the
+-- world map's own rare ones, worked out anyway).
+local function Common(map, own, gm, always)
     local db = ns.db
-    if not db.collectRareOnly then return nil end
+    if not (db.collectRareOnly or always) then return nil end
     local counts, totals = {}, { herbs = 0, ore = 0 }
     for source = 1, 2 do
         for key, places in pairs(source == 1 and own or source == 2 and gm or EMPTY) do
@@ -652,13 +654,11 @@ end
 ---------------------------------------------------------------------------
 -- Areas
 ---------------------------------------------------------------------------
--- Spawns of one node close together drawn as one soft area with the node's symbol and a count,
--- in place of a symbol each: round where they fill a circle (a mine), else a glow along the
--- chain that links them (a row along a ridge). Other nodes' spawns there keep their symbols.
--- Ore only, or herbs too, rows or not, on either map, as set; by default only while a map is
--- zoomed out (the minimap's two widest zooms).
+-- Spawns of one ore close together (a mine: they fill a circle) shown as one symbol with a count
+-- in place of a symbol each, while a map is zoomed out (the world map's widest zoom, the
+-- minimap's two widest). Other nodes' spawns there keep their symbols.
 
-local AREA_LEAST = 5 -- spawns that make an area
+local AREA_LEAST, AREA_YARDS = 5, 35 -- spawns that make an area, and how close (yards, spawn to spawn)
 local AREA_PAD = 12 -- yards an area reaches past its outer spawns
 local HERB_AREA = { 0.45, 0.85, 0.35 }
 -- Each ore's area in its metal's color, by part of the node name; first match wins, so
@@ -683,11 +683,8 @@ local function AreaColor(key, kind)
     return oreColors[key]
 end
 local GLOW = "Interface\\AddOns\\NodeSight\\AreaGlow" -- white, fading out from the middle
-local STRIPES = "Interface\\AddOns\\NodeSight\\AreaStripes" -- white stripes, a 16 pixel tile
-local STRIPE_TILE = 16 -- screen pixels a stripe tile covers
-local LINE = "Interface\\AddOns\\NodeSight\\AreaLine" -- white, fading out across its height
+local LINE = "Interface\\AddOns\\NodeSight\\AreaLine" -- white, fading out across its height (a region's bands)
 local ROUND_SPACING = 60 -- yards a spawn or closer, on average over its circle: a round area
-local RIBBON = 18 -- yards from a long area's chain to its edge
 
 -- One node's places in groups: two share a group when a chain of places, each within
 -- `yards` of the next, joins them. A grid of yards-wide cells keeps each search to its neighbors.
@@ -727,10 +724,8 @@ local function Groups(places, width, height, yards)
     return groups, xs, ys
 end
 
--- A map's areas, each { key, kind, x, y (its symbol, in units), yards (its radius), wide,
--- high (the radius in units), count }, a long one with `line` (the chain: x1, y1, x2, y2 in
--- units, link after link), `spots` (its spawns: x, y) and `thick` (its width, in units
--- across); and the places in them ([key][place] = true). nil while areas are off or the
+-- A map's areas, each { key, kind, color, x, y (its symbol, in units), yards (its radius),
+-- count }; and the places in them ([key][place] = true). nil while areas are off or the
 -- map's size is unknown.
 -- The links of a group's chain (Prim's tree: each spawn to its nearest already linked), as
 -- pairs of indexes into the node's places.
@@ -767,7 +762,7 @@ local function AreasIn(width, height, own, gm)
     for source = 1, 2 do
         for key, places in pairs(source == 1 and own or source == 2 and gm or EMPTY) do
             local kind = ns.NodeKind(key)
-            if type(places) == "table" and (kind == "ore" or kind == "herbs" and db.collectAreaHerbs) then
+            if type(places) == "table" and kind == "ore" then
                 local into = all[key] or {}
                 all[key] = into
                 for _, place in ipairs(places) do into[#into + 1] = place end
@@ -776,8 +771,8 @@ local function AreasIn(width, height, own, gm)
     end
     local list, hidden = {}, {}
     for key, places in pairs(all) do
-        local groups, xs, ys = Groups(places, width, height, db.collectAreaYards)
-        local mine, long = {}, {}
+        local groups, xs, ys = Groups(places, width, height, AREA_YARDS)
+        local mine = {}
         for _, group in ipairs(groups) do
             if #group >= AREA_LEAST then
                 local sx, sy = 0, 0
@@ -787,36 +782,15 @@ local function AreasIn(width, height, own, gm)
                     local dx, dy = xs[i] - cx, ys[i] - cy
                     far = math.max(far, dx * dx + dy * dy)
                 end
-                local yards = math.sqrt(far) + AREA_PAD
-                local area = { key = key, kind = ns.NodeKind(key), color = AreaColor(key, ns.NodeKind(key)), x = cx / width * UNITS, y = cy / height * UNITS, cx = cx, cy = cy,
-                    midX = cx / width * UNITS, midY = cy / height * UNITS,
-                    yards = yards, wide = yards / width * UNITS, high = yards / height * UNITS, count = 0 }
-                if math.pi * far <= ROUND_SPACING * ROUND_SPACING * #group then
-                    mine[#mine + 1] = area
-                elseif db.collectAreasRows then
-                    -- Its symbol on the spawn nearest its middle, so it sits on the row.
-                    local mid, near = group[1], math.huge
-                    for _, i in ipairs(group) do
-                        local dx, dy = xs[i] - cx, ys[i] - cy
-                        if dx * dx + dy * dy < near then mid, near = i, dx * dx + dy * dy end
-                    end
-                    area.x, area.y = xs[mid] / width * UNITS, ys[mid] / height * UNITS
-                    area.line, area.spots, area.thick, area.group = {}, {}, 2 * RIBBON / width * UNITS, group
-                    local links = Links(group, xs, ys)
-                    for n = 1, #links do
-                        local i = links[n]
-                        area.line[2 * n - 1], area.line[2 * n] = xs[i] / width * UNITS, ys[i] / height * UNITS
-                    end
-                    for n, i in ipairs(group) do
-                        area.spots[2 * n - 1], area.spots[2 * n] = xs[i] / width * UNITS, ys[i] / height * UNITS
-                    end
-                    long[#long + 1] = area
+                if math.pi * far <= ROUND_SPACING * ROUND_SPACING * #group then -- (spread along a row: no area)
+                    local yards = math.sqrt(far) + AREA_PAD
+                    mine[#mine + 1] = { key = key, kind = ns.NodeKind(key), color = AreaColor(key, ns.NodeKind(key)), x = cx / width * UNITS, y = cy / height * UNITS,
+                        cx = cx, cy = cy, yards = yards, count = 0 }
                 end
             end
         end
-        -- Every place of the node inside a round area is in it, not only its group's; a long
-        -- area has its own group's.
-        if mine[1] or long[1] then
+        -- Every place of the node inside an area is in it, not only its group's.
+        if mine[1] then
             local inside = {}
             hidden[key] = inside
             for i, place in ipairs(places) do
@@ -828,16 +802,6 @@ local function AreasIn(width, height, own, gm)
                         break
                     end
                 end
-            end
-            for _, area in ipairs(long) do
-                for _, i in ipairs(area.group) do
-                    if not inside[places[i]] then
-                        inside[places[i]] = true
-                        area.count = area.count + 1
-                    end
-                end
-                area.group = nil
-                mine[#mine + 1] = area
             end
             for _, area in ipairs(mine) do
                 if area.count > 0 then list[#list + 1] = area end -- (none left when another area took them all)
@@ -863,6 +827,8 @@ local function MapInfo(map, own, gm)
     kept = { own = own, gm = gm }
     kept.areas, kept.inAreas = Areas(map, own, gm)
     kept.common = Common(map, own, gm)
+    -- The world map: rare ones, and every spawn near you (nil when Rare ones only does it already).
+    kept.mapCommon = ns.db.collectMapRare and not ns.db.collectRareOnly and Common(map, own, gm, true) or nil
     kept.spots = Spots.Of(map, own, gm)
     mapInfo[map] = kept
     return kept
@@ -1167,7 +1133,7 @@ local function NodeTooltip(owner, anchor, key, area, gatherMate, merges, spot)
     if spot then GameTooltip:AddLine("Any of these can spawn here", GRAY_FONT_COLOR:GetRGB()) end
     if area then
         GameTooltip:AddLine(("%d spawns close together"):format(area.count), GRAY_FONT_COLOR:GetRGB())
-        if ns.db.collectAreasZoom then GameTooltip:AddLine("Zoom in to see each one", GRAY_FONT_COLOR:GetRGB()) end
+        GameTooltip:AddLine("Zoom in to see each one", GRAY_FONT_COLOR:GetRGB())
     elseif merges and merges > 1 then
         GameTooltip:AddLine(("%d spawns here"):format(merges), GRAY_FONT_COLOR:GetRGB())
         GameTooltip:AddLine("Zoom in to see each one", GRAY_FONT_COLOR:GetRGB())
@@ -1445,11 +1411,11 @@ local function ToDot(pin, key, kind, size)
         pin.dotEdge = Smooth(pin:CreateTexture(nil, "ARTWORK", nil, 1))
         pin.dotEdge:SetAtlas("CircleMask")
         pin.dotEdge:SetAllPoints()
-        pin.dotEdge:SetVertexColor(0, 0, 0, 0.8)
         pin.dotFill = Smooth(pin:CreateTexture(nil, "ARTWORK", nil, 2))
         pin.dotFill:SetAtlas("CircleMask")
         pin.dotFill:SetPoint("CENTER")
     end
+    pin.dotEdge:SetVertexColor(0, 0, 0, 0.8)
     pin.dotFill:SetSize(size * 0.7, size * 0.7) -- (inside its dark edge)
     local color = AreaColor(key, kind)
     pin.dotFill:SetVertexColor(color[1], color[2], color[3])
@@ -1485,165 +1451,9 @@ local function ShowCount(pin, count)
     end
 end
 
--- An area's glow: the node's color fading out from the middle, and stripes over it if set
--- (cut to the glow's shape). `edge` cuts both to the minimap's shape there.
+-- A region's frame over the canvas; Regions.Draw gives it its outline, soft glows and bands.
 local function NewGlow(parent)
-    local glow = New("Frame", parent)
-    glow.fill = Smooth(glow:CreateTexture(nil, "BACKGROUND"))
-    glow.fill:SetTexture(GLOW)
-    glow.fill:SetAllPoints()
-    glow.lines, glow.dots, glow.rims = {}, {}, {}
-    return glow
-end
-
-local function GlowLook(glow, color, striped, long)
-    if glow.color ~= color or glow.striped ~= striped or glow.long ~= long then
-        glow.color, glow.striped, glow.long = color, striped, long
-        glow.fill:SetShown(not long)
-        striped = striped and not long -- (a long area has no stripes)
-        glow.fill:SetVertexColor(color[1], color[2], color[3])
-        glow.fill:SetAlpha(striped and 0.3 or 0.6)
-        if striped and not glow.stripes then
-            glow.stripes = Smooth(glow:CreateTexture(nil, "BORDER"))
-            glow.stripes:SetTexture(STRIPES, "REPEAT", "REPEAT")
-            glow.stripes:SetAllPoints()
-            glow.shape = glow:CreateMaskTexture()
-            glow.shape:SetTexture(GLOW, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-            glow.shape:SetAllPoints()
-            glow.stripes:AddMaskTexture(glow.shape)
-            if glow.edge then glow.stripes:AddMaskTexture(glow.edge) end
-        end
-        if glow.stripes then
-            glow.stripes:SetShown(striped)
-            glow.stripes:SetVertexColor(color[1], color[2], color[3])
-            glow.stripes:SetAlpha(0.8)
-        end
-    end
-end
-
--- The part of a line inside a circle of radius r around 0, 0 (round), or a square r each way;
--- nil if none. Lines take no mask, so the minimap's are cut to its shape this way.
-local function ClipEdge(p, q, t0, t1)
-    if p == 0 then
-        if q < 0 then return nil end
-        return t0, t1
-    end
-    local t = q / p
-    if p < 0 then return math.max(t0, t), t1 end
-    return t0, math.min(t1, t) -- (nothing left: t0 >= t1, seen below)
-end
-local function Clip(x1, y1, x2, y2, r, round)
-    local dx, dy = x2 - x1, y2 - y1
-    local t0, t1 = 0, 1
-    if round then
-        local a, b, c = dx * dx + dy * dy, x1 * dx + y1 * dy, x1 * x1 + y1 * y1 - r * r
-        local d = b * b - a * c
-        if a == 0 or d < 0 then return nil end
-        d = math.sqrt(d)
-        t0, t1 = math.max(0, (-b - d) / a), math.min(1, (-b + d) / a)
-    else
-        t0, t1 = ClipEdge(-dx, x1 + r, t0, t1)
-        if t0 then t0, t1 = ClipEdge(dx, r - x1, t0, t1) end
-        if t0 then t0, t1 = ClipEdge(-dy, y1 + r, t0, t1) end
-        if t0 then t0, t1 = ClipEdge(dy, r - y1, t0, t1) end
-        if not t0 then return nil end
-    end
-    if t0 >= t1 then return nil end
-    return x1 + dx * t0, y1 + dy * t0, x1 + dx * t1, y1 + dy * t1
-end
-
--- A long area along the links of its chain, as set (Row look): 1 a soft band, 2 a dotted
--- line with a dot on each spawn, 3 a thin line. A point in units (u, v) goes to
--- x = ax * u + bx * v + cx, y = ay * u + by * v + cy from `rel`'s `relPoint`; `limit` (the
--- minimap's half width) keeps them inside its shape.
-local AT = { ax = 0, bx = 0, cx = 0, ay = 0, by = 0, cy = 0, thick = 0 }
--- One dot of a dotted line: the node's color in a dark edge.
-local function Bead(glow, n, rel, relPoint, x, y, size, color)
-    local fill, rim = glow.dots[n], glow.rims[n]
-    if not fill then
-        rim = Smooth(glow:CreateTexture(nil, "BACKGROUND", nil, 1))
-        rim:SetAtlas("CircleMask")
-        rim:SetVertexColor(0, 0, 0, 0.7)
-        fill = Smooth(glow:CreateTexture(nil, "BACKGROUND", nil, 2))
-        fill:SetAtlas("CircleMask")
-        fill:SetPoint("CENTER", rim)
-        if glow.edge then
-            rim:AddMaskTexture(glow.edge)
-            fill:AddMaskTexture(glow.edge)
-        end
-        glow.dots[n], glow.rims[n] = fill, rim
-    end
-    rim:SetSize(size * 1.5, size * 1.5)
-    rim:ClearAllPoints()
-    rim:SetPoint("CENTER", rel, relPoint, x, y)
-    fill:SetSize(size, size)
-    fill:SetVertexColor(color[1], color[2], color[3])
-    rim:Show()
-    fill:Show()
-end
-local function Ribbon(glow, area, rel, relPoint, thick, limit, round)
-    local color, line, n, b = area.color, area.line, 0, 0
-    local at, look = AT, ns.db.collectRowLook
-    local dotted, bead = look == 2, thick * 0.4
-    local width = look == 1 and thick * 2 or thick * 0.55
-    for i = 1, #line, 4 do
-        local x1, y1 = at.ax * line[i] + at.bx * line[i + 1] + at.cx, at.ay * line[i] + at.by * line[i + 1] + at.cy
-        local x2, y2 = at.ax * line[i + 2] + at.bx * line[i + 3] + at.cx, at.ay * line[i + 2] + at.by * line[i + 3] + at.cy
-        if limit then x1, y1, x2, y2 = Clip(x1, y1, x2, y2, limit - (dotted and bead or width) / 2, round) end
-        if x1 and dotted then
-            -- Dots between its ends, evenly; the spawns get theirs below.
-            local dx, dy = x2 - x1, y2 - y1
-            local steps = math.min(40, floor(math.sqrt(dx * dx + dy * dy) / (bead * 1.8)))
-            for step = 1, steps - 1 do
-                b = b + 1
-                Bead(glow, b, rel, relPoint, x1 + dx * step / steps, y1 + dy * step / steps, bead, color)
-            end
-        elseif x1 then
-            n = n + 1
-            local part = glow.lines[n]
-            if not part then
-                part = glow:CreateLine(nil, "BACKGROUND")
-                part:SetTexture(LINE)
-                glow.lines[n] = part
-            end
-            part:SetStartPoint(relPoint, rel, x1, y1)
-            part:SetEndPoint(relPoint, rel, x2, y2)
-            part:SetThickness(width)
-            part:SetVertexColor(color[1], color[2], color[3])
-            part:SetAlpha(look == 1 and 0.3 or 0.55)
-            part:Show()
-        end
-    end
-    for i = n + 1, #glow.lines do glow.lines[i]:Hide() end
-    if dotted then
-        local spots, reach = area.spots, limit and limit + bead / 2
-        for i = 1, #spots, 2 do
-            local x = at.ax * spots[i] + at.bx * spots[i + 1] + at.cx
-            local y = at.ay * spots[i] + at.by * spots[i + 1] + at.cy
-            if not reach or (round and x * x + y * y <= reach * reach) or (not round and abs(x) <= reach and abs(y) <= reach) then
-                b = b + 1
-                Bead(glow, b, rel, relPoint, x, y, bead, color)
-            end
-        end
-    end
-    for i = b + 1, #glow.dots do
-        glow.dots[i]:Hide()
-        glow.rims[i]:Hide()
-    end
-end
-
-local function HideRibbon(glow)
-    for _, part in ipairs(glow.lines) do part:Hide() end
-    for i, dot in ipairs(glow.dots) do
-        dot:Hide()
-        glow.rims[i]:Hide()
-    end
-end
-
--- Its size; the stripes keep their size on screen (`scale`: screen pixels per unit of the glow).
-local function SizeGlow(glow, width, height, scale)
-    glow:SetSize(width, height)
-    if glow.stripes then glow.stripes:SetTexCoord(0, width * scale / STRIPE_TILE, 0, height * scale / STRIPE_TILE) end
+    return New("Frame", parent)
 end
 
 -- Regions and the other zoomed-out looks (below).
@@ -1656,10 +1466,9 @@ local function ZoomedOut()
     local ok, out = pcall(scroll.IsAtMinZoom, scroll)
     return not ok or out ~= false
 end
--- Areas on the world map now: on, and zoomed out if that's asked for.
+-- Areas on the world map now: at its widest zoom, with a look that has a symbol each.
 local function MapAreas()
-    local db = ns.db
-    return db.collectAreasMap == true and (not db.collectAreasZoom or ZoomedOut()) and Regions.Look() == 1
+    return ZoomedOut() and Regions.Plain(Regions.Look())
 end
 local mapAreas -- what the symbols shown were set up for
 local mapDots
@@ -1690,10 +1499,11 @@ function Regions.Look()
     if look == 1 or MapZoom(WorldMapFrame.GetCanvasScale and WorldMapFrame:GetCanvasScale()) > 0 then return 1 end
     return look
 end
--- Dots now: on, and a map that zooms at its widest zoom.
+-- A look with a symbol for each spawn (Symbols, Dots, Regions): areas show with them.
+function Regions.Plain(look) return look == 1 or look == 8 or look == 9 end
+-- Dots now: the zoomed-out look, on a map that zooms at its widest zoom.
 local function MapDots()
-    return ns.db.collectDots == true and MapZoom(WorldMapFrame.GetCanvasScale and WorldMapFrame:GetCanvasScale()) <= 0
-        and Regions.Look() == 1
+    return Regions.Look() == 8
 end
 
 ---------------------------------------------------------------------------
@@ -1967,10 +1777,9 @@ function Regions.Of(info, map)
     return info.regions or nil
 end
 
--- Regions now: on, and a map that zooms at its widest zoom.
+-- Regions now: the zoomed-out look, on a map that zooms at its widest zoom.
 function Regions.Now()
-    return ns.db.collectRegions == true and MapZoom(WorldMapFrame.GetCanvasScale and WorldMapFrame:GetCanvasScale()) <= 0
-        and Regions.Look() == 1
+    return Regions.Look() == 9
 end
 
 -- The mouse at u, v (units) inside the region: near one of its spots or links.
@@ -2097,13 +1906,14 @@ end
 local cells = {}
 local function Merge(width, height, near, look)
     for i = 1, used do pins[i].lead = nil end
-    if look == 2 or (look == 1 and not ns.db.collectMerge) then return end
+    if look == 1 and not ns.db.collectMerge then return end
     wipe(cells)
+    local byKind = look == 5 or look == 6 -- (mix rings and groups: every node of a kind together)
     for i = 1, used do
         local pin = pins[i]
         if not pin.area then
             pin.px, pin.py = pin.x / UNITS * width, pin.y / UNITS * height
-            local group = look == 5 and pin.kind or pin.key -- (mix rings: every node of a kind together)
+            local group = byKind and pin.kind or pin.key
             local byKey = cells[group] or {}
             cells[group] = byKey
             local cell = floor(pin.px / near) * 65536 + floor(pin.py / near)
@@ -2117,7 +1927,7 @@ local function Merge(width, height, near, look)
         if not lead.area and not lead.lead then
             lead.lead = lead
             local n, sx, sy = 1, lead.px, lead.py
-            local byKey, cx, cy = cells[look == 5 and lead.kind or lead.key], floor(lead.px / near), floor(lead.py / near)
+            local byKey, cx, cy = cells[byKind and lead.kind or lead.key], floor(lead.px / near), floor(lead.py / near)
             for dx = -1, 1 do
                 for dy = -1, 1 do
                     for _, pin in ipairs(byKey[(cx + dx) * 65536 + cy + dy] or EMPTY) do
@@ -2136,11 +1946,14 @@ end
 ---------------------------------------------------------------------------
 -- Zoomed-out looks
 ---------------------------------------------------------------------------
--- Other ways to show spawns at the world map's widest zoom (COLLECT_ZOOM_LOOKS): 2 small
--- symbols, 3 a soft glow on each spawn with a symbol on busy groups, 4 hex tiles tinted by
--- their most common node, its symbol in each, 5 a symbol a group with a ring split by its nodes' shares.
--- Sizes in symbols: a tiny symbol, the glow across, a tile from its middle to a corner, the ring.
-Regions.TINY, Regions.GLOW, Regions.HEX, Regions.RING, Regions.BUSY = 0.6, 2.9, 0.95, 0.18, 3 -- (BUSY: spawns for a symbol)
+-- Other ways to show spawns at the world map's widest zoom (COLLECT_ZOOM_LOOKS; 2, 3 and 7 are
+-- unused): 4 hex tiles tinted by their most common node, its symbol in each, 5 a symbol a group
+-- with a ring split by its nodes' shares, 6 one symbol for each group of herbs or ore, the most
+-- common one's, with a count; 8 dots and 9 regions are drawn by Refresh.
+-- Sizes in symbols: a tile from its middle to a corner, the ring, a group's reach.
+Regions.HEX, Regions.RING, Regions.GROUP = 0.95, 0.18, 3
+-- A faded node's strength (Bright), and the world map's reach round you for its common nodes (yards).
+Regions.FADED, Regions.NEAR = 0.35, 300
 Regions.TILE = "Interface\\CovenantRenown\\CovenantRenownHexagonMask" -- (a white flat-topped hex, 40 of its 64 pixels wide)
 Regions.ARCS, Regions.BLACK = 20, { 0, 0, 0 } -- (lines a ring)
 
@@ -2205,10 +2018,10 @@ function Regions.Lead()
     end
 end
 
--- The glows, tiles and rings, on one frame under the symbols (`sym`: a symbol's width on the canvas).
+-- The tiles and rings, on one frame under the symbols (`sym`: a symbol's width on the canvas).
 function Regions.Layer(canvas, look, width, height, sym, level)
     local layer = Regions.layer
-    if look < 3 then
+    if look < 4 then
         if layer then layer:Hide() end
         return
     end
@@ -2256,9 +2069,7 @@ function Regions.Layer(canvas, look, width, height, sym, level)
     local BLACK = Regions.BLACK
     for i = 1, used do
         local pin = pins[i]
-        if look == 3 then
-            Tex(GLOW, 0, pin.x / UNITS * width, pin.y / UNITS * height, Regions.GLOW * sym, AreaColor(pin.key, pin.kind), 0.35)
-        elseif pin.lead == pin and look == 4 then
+        if pin.lead == pin and look == 4 then
             local size, n = 3.2 * Regions.HEX * sym, pin.merges -- (the hex is 20 of the texture's 64 pixels from middle to corner)
             Tex(Regions.TILE, 0, pin.mx, pin.my, size, BLACK, math.min(0.8, 0.25 + 0.14 * n))
             Tex(Regions.TILE, 1, pin.mx, pin.my, size * 0.86, AreaColor(pin.key, pin.kind), math.min(0.55, 0.17 + 0.1 * n))
@@ -2296,18 +2107,19 @@ local function Place(canvas, scale, zoom, look, level)
     local shrink = Shrink(zoom or MapZoom(scale))
     scale = scale and scale > 0 and 1 / scale or 1
     look = look or Regions.Look()
-    local size, sym = scale * shrink * (look == 2 and Regions.TINY or 1), ns.db.collectSize * scale * shrink
+    if look == 8 or look == 9 then look = 1 end -- (dots and regions are set up by Refresh)
+    local size, sym = scale * shrink, ns.db.collectSize * scale * shrink
     if look == 4 then
         Regions.Hex(width, height, Regions.HEX * sym)
     else
-        Merge(width, height, sym * (look == 3 and 2.2 or look == 5 and 2.5 or 1), look)
+        Merge(width, height, sym * (look == 5 and 2.5 or look == 6 and Regions.GROUP or 1), look)
     end
     if look >= 4 then Regions.Lead() end
-    local tiles = look == 3 or look == 4 -- (no count: the glow or the tile shows how many)
+    local tiles = look == 4 -- (no count: the tile shows how many)
     for i = 1, used do
         local pin = pins[i]
         local lead = pin.lead
-        local hidden = lead ~= nil and (lead ~= pin or look == 3 and pin.merges < Regions.BUSY)
+        local hidden = lead ~= nil and lead ~= pin
         if pin.hidden ~= hidden then
             pin.hidden = hidden
             pin:SetShown(not hidden)
@@ -2324,37 +2136,12 @@ local function Place(canvas, scale, zoom, look, level)
         end
     end
     Regions.Layer(canvas, look, width, height, sym, level)
-    -- The areas grow with the map.
+    -- The regions' outlines grow with the map.
     for i = 1, glowsUsed do
-        local glow, area = glows[i], glows[i].area
-        if area.region then
-            HideRibbon(glow)
-            glow:SetAllPoints(canvas)
-            Regions.Draw(glow, area, canvas, width, height, scale)
-        elseif area.line then
-            Regions.Hide(glow)
-            glow:SetAllPoints(canvas)
-            AT.ax, AT.bx, AT.cx, AT.ay, AT.by, AT.cy = width / UNITS, 0, 0, 0, -height / UNITS, 0
-            Ribbon(glow, area, canvas, "TOPLEFT", area.thick / UNITS * width)
-        else
-            HideRibbon(glow)
-            Regions.Hide(glow)
-            SizeGlow(glow, 2 * area.wide / UNITS * width, 2 * area.high / UNITS * height, 1 / scale)
-            glow:SetPoint("CENTER", canvas, "TOPLEFT", area.x / UNITS * width, -area.y / UNITS * height)
-        end
+        local glow = glows[i]
+        glow:SetAllPoints(canvas)
+        Regions.Draw(glow, glow.area, canvas, width, height, scale)
     end
-end
-
--- The setup's world map preview: `set` (symbols with key, kind and x, y in units, `n` of them)
--- placed on `frame` as the world map places its own at its widest zoom, in the zoomed-out look
--- set. The world map's symbols, count and layer are put back after.
-function Regions.Preview(frame, set, n, level)
-    local mine = { pins, used, glowsUsed, Regions.layer }
-    pins, used, glowsUsed, Regions.layer = set, n, 0, frame.layer
-    local ok, err = pcall(Place, frame, 1, 0, ns.db.collectZoomLook, level)
-    frame.layer = Regions.layer
-    pins, used, glowsUsed, Regions.layer = mine[1], mine[2], mine[3], mine[4]
-    if not ok then error(err, 0) end
 end
 
 -- The symbols' settings (`mini`: the minimap's size).
@@ -2363,6 +2150,114 @@ local function CurrentLook(mini)
     return { picture = db.collectPicture, shape = db.collectShape, size = mini and db.collectMiniSize or db.collectSize, skill = db.collectSkill,
         mini = mini and db.collectMiniLook or nil,
         oreRings = db.collectOreRings, alpha = db.collectOpacity / 100 }
+end
+
+-- A map's symbols and areas set up on canvas as the world map shows them (`info`: MapInfo's;
+-- `regions`, `areasOn` and `dots`: what shows at this zoom). A preview's made-up spawns bring
+-- their own skill colors (`levels`).
+function Regions.Fill(canvas, own, gm, info, regions, areasOn, dots, level, levels, near)
+    local db = ns.db
+    local common = info.common or EMPTY
+    -- The world map's rare ones: a common node shows only within reach of you (`near`: where
+    -- you are in units, yards a unit each way and the reach squared).
+    local mapCommon = info.mapCommon
+    local function Far(x, y)
+        if not near then return true end
+        local dx, dy = (x - near.x) * near.w, (y - near.y) * near.h
+        return dx * dx + dy * dy > near.r2
+    end
+    local function Away(key, x, y) return mapCommon ~= nil and mapCommon[key] == true and Far(x, y) end
+    local bright = db.collectBright
+    -- Areas off here, or zoomed in: every spawn has its symbol.
+    local areas, inAreas
+    if regions then
+        areas = regions -- (every spawn in one: no symbol each)
+    elseif areasOn then
+        areas, inAreas = info.areas, info.inAreas
+    end
+    local look = CurrentLook()
+    look.alpha = 1 -- solid: no node under them on the world map
+    local function Symbol(key, kind, x, y, gatherMate, area, spot)
+        local pin = Pin(canvas)
+        pin.sampleLevel = levels and levels[key] or nil
+        pin.key, pin.x, pin.y, pin.gatherMate, pin.area, pin.spot, pin.kind = key, x, y, gatherMate, area, spot, kind
+        if dots and not area then
+            ToDot(pin, key, kind, look.size)
+        else
+            FromDot(pin)
+            if pin.shape ~= look.shape or pin.size ~= look.size then ApplyShape(pin, look) end
+            ApplyLook(pin, key, kind, look)
+        end
+        ShowCount(pin, area and area.count > 1 and area.count or nil)
+        -- Bright: one node in full, the others faded and under it.
+        local faded = bright and NodeEntry(key, kind) ~= bright
+        pin:SetAlpha(faded and Regions.FADED or 1)
+        pin:SetFrameLevel(level + (bright and not faded and 1 or 0))
+        pin:ClearAllPoints()
+        pin:Show()
+        pin.hidden = false
+    end
+    for source = 1, regions and 0 or 2 do
+        local nodes = source == 1 and own or source == 2 and gm or EMPTY
+        for key, places in pairs(nodes) do
+            local kind = ns.NodeKind(key)
+            if (kind == "herbs" or kind == "ore") and type(places) == "table" and Shown(key, kind) and not common[key] then
+                local skip = inAreas and inAreas[key] or EMPTY
+                for _, place in ipairs(places) do
+                    local x, y = Unpack(place)
+                    -- Far from you a shared spot shows its rare node (gold at iron's spot), as Rare ones only does.
+                    local far = mapCommon ~= nil and Far(x, y)
+                    local drawn, spot = Spots.Drawn(info.spots, key, place, far and mapCommon or info.common)
+                    if not skip[place] and drawn and not (far and mapCommon[key]) then Symbol(key, kind, x, y, source == 2, nil, spot) end
+                end
+            end
+        end
+    end
+    for _, area in ipairs(areas or EMPTY) do
+        local keys = area.region and Regions.Shown(area, common)
+        if (keys and keys[1]) or (not keys and Shown(area.key, area.kind) and not common[area.key] and not Away(area.key, area.x, area.y)) then
+            Symbol(keys and keys[1] or area.key, area.kind, area.x, area.y, false, area)
+            if area.region then
+                glowsUsed = glowsUsed + 1
+                local glow = glows[glowsUsed] or NewGlow(canvas)
+                glows[glowsUsed] = glow
+                glow.area, glow.keys = area, keys
+                glow:SetAlpha(bright and NodeEntry(keys[1], area.kind) ~= bright and Regions.FADED or 1)
+                glow:SetFrameLevel(math.max(0, level - 1))
+                glow:ClearAllPoints()
+                glow:Show()
+            end
+        end
+    end
+end
+
+-- The settings window's world map preview: made-up spawns (`own`, on a map width by height
+-- yards) drawn on `frame` as the world map draws a map at its widest zoom, into
+-- `frame.symbols` (one for each spawn). The world map's own symbols, areas and layer are put
+-- back after.
+function Regions.Preview(frame, own, levels, width, height, level)
+    local mine = { pins, used, glows, glowsUsed, Regions.layer }
+    frame.glows = frame.glows or {}
+    pins, used, glows, glowsUsed, Regions.layer = frame.symbols, 0, frame.glows, 0, frame.layer
+    Spots.sample = true
+    local ok, err = pcall(function()
+        local db = ns.db
+        local look = db.collectZoomLook
+        local plain = Regions.Plain(look) -- (the other looks take the place of areas)
+        local info = { common = Common(nil, own, nil) }
+        info.mapCommon = db.collectMapRare and not db.collectRareOnly and Common(nil, own, nil, true) or nil
+        info.areas, info.inAreas = AreasIn(width, height, own, nil)
+        local regions = look == 9 and Regions.In(width, height, own, nil, nil, info.common) or nil
+        local near = { x = UNITS / 2, y = UNITS / 2, w = width / UNITS, h = height / UNITS, r2 = Regions.NEAR * Regions.NEAR } -- (you at the middle)
+        Regions.Fill(frame, own, nil, info, regions, plain, look == 8, level, levels, near)
+        Place(frame, 1, 0, db.collectZoomLook, level)
+        for i = used + 1, #pins do pins[i]:Hide() end
+        for i = glowsUsed + 1, #glows do glows[i]:Hide() end
+    end)
+    Spots.sample = nil
+    frame.layer = Regions.layer
+    pins, used, glows, glowsUsed, Regions.layer = mine[1], mine[2], mine[3], mine[4], mine[5]
+    if not ok then error(err, 0) end
 end
 
 -- The symbols of the map shown, set up again.
@@ -2376,67 +2271,10 @@ local function Refresh()
         if not issecretvalue(map) and type(map) == "number" then own, gm = Sources(map) end
         if own or gm then
             local info = MapInfo(map, own, gm)
-            local common = info.common or EMPTY
-            -- Areas off here, or zoomed in: every spawn has its symbol.
             mapAreas, mapDots = MapAreas(), MapDots()
             Regions.shown = Regions.Now()
-            local areas, inAreas
-            local regions = Regions.shown and Regions.Of(info, map)
-            if regions then
-                areas = regions -- (every spawn in one: no symbol each)
-            elseif mapAreas then
-                areas, inAreas = info.areas, info.inAreas
-            end
-            local level = PinLevel(canvas)
-            local look = CurrentLook()
-            look.alpha = 1 -- solid: no node under them on the world map
-            local function Symbol(key, kind, x, y, gatherMate, area, spot)
-                local pin = Pin(canvas)
-                pin.key, pin.x, pin.y, pin.gatherMate, pin.area, pin.spot, pin.kind = key, x, y, gatherMate, area, spot, kind
-                if mapDots and not area then
-                    ToDot(pin, key, kind, look.size)
-                else
-                    FromDot(pin)
-                    if pin.shape ~= look.shape or pin.size ~= look.size then ApplyShape(pin, look) end
-                    ApplyLook(pin, key, kind, look)
-                end
-                ShowCount(pin, area and area.count > 1 and area.count or nil)
-                pin:SetFrameLevel(level)
-                pin:ClearAllPoints()
-                pin:Show()
-                pin.hidden = false
-            end
-            for source = 1, regions and 0 or 2 do
-                local nodes = source == 1 and own or source == 2 and gm or EMPTY
-                for key, places in pairs(nodes) do
-                    local kind = ns.NodeKind(key)
-                    if (kind == "herbs" or kind == "ore") and type(places) == "table" and Shown(key, kind) and not common[key] then
-                        local skip = inAreas and inAreas[key] or EMPTY
-                        for _, place in ipairs(places) do
-                            local drawn, spot = Spots.Drawn(info.spots, key, place, info.common)
-                            if not skip[place] and drawn then
-                                local x, y = Unpack(place)
-                                Symbol(key, kind, x, y, source == 2, nil, spot)
-                            end
-                        end
-                    end
-                end
-            end
-            local striped = db.collectAreaStripes == true
-            for _, area in ipairs(areas or EMPTY) do
-                local keys = area.region and Regions.Shown(area, common)
-                if (keys and keys[1]) or (not keys and Shown(area.key, area.kind) and not common[area.key]) then
-                    Symbol(keys and keys[1] or area.key, area.kind, area.x, area.y, false, area)
-                    glowsUsed = glowsUsed + 1
-                    local glow = glows[glowsUsed] or NewGlow(canvas)
-                    glows[glowsUsed] = glow
-                    glow.area, glow.keys = area, keys
-                    GlowLook(glow, area.color, striped, area.line ~= nil)
-                    glow:SetFrameLevel(math.max(0, level - 1))
-                    glow:ClearAllPoints()
-                    glow:Show()
-                end
-            end
+            local near = info.mapCommon and Regions.Near(map)
+            Regions.Fill(canvas, own, gm, info, Regions.shown and Regions.Of(info, map), mapAreas, mapDots, PinLevel(canvas), nil, near)
             Place()
         end
     end
@@ -2477,7 +2315,6 @@ local ELLESMERE = { circle = QUARTERS.ROUND, textured_circle = QUARTERS.ROUND, s
 local mini -- the frame over the minimap
 local minis, miniUsed, miniShown = {}, 0, 0
 local miniShrink = 1 -- the symbols' scale at the minimap's zoom
-local miniGlows, miniGlowsUsed, miniGlowsShown = {}, 0, 0 -- the areas
 local last = {} -- what the symbols were last placed for
 local kinds = {} -- NodeKind by node key
 
@@ -2528,6 +2365,12 @@ local function MapPosition(map)
         or type(y) ~= "number" or type(width) ~= "number" or type(height) ~= "number" or width <= 0 or height <= 0 then return nil end
     return x, y, width, height
 end
+-- Where you are on `map` for the world map's rare ones (Regions.Fill's `near`), or nil.
+function Regions.Near(map)
+    local x, y, width, height = MapPosition(map)
+    if not x then return nil end
+    return { x = x * UNITS, y = y * UNITS, w = width / UNITS, h = height / UNITS, r2 = Regions.NEAR * Regions.NEAR }
+end
 
 -- The places within reach plus NEAR_STEP yards of where the list was made, so a frame
 -- goes through those and not every place on the map. Made again after NEAR_STEP yards.
@@ -2576,6 +2419,16 @@ local function Near(list, own, gm, x, y, width, height, reach, inAreas, common, 
 end
 
 -- One minimap symbol (an area's with its count); returns the look, worked out once a frame.
+-- How strong a minimap symbol shows dx, dy from the middle of a minimap `half` across: full near
+-- you, fading toward the edge (Fade toward the edge).
+function MINI.Fade(dx, dy, half)
+    if not ns.db.collectMiniFade or not half or half <= 0 then return 1 end
+    local out = math.sqrt(dx * dx + dy * dy) / half
+    if out <= MINI.FADE_FROM then return 1 end
+    return math.max(MINI.FADE_TO, 1 - (out - MINI.FADE_FROM) / (1 - MINI.FADE_FROM) * (1 - MINI.FADE_TO))
+end
+MINI.FADE_FROM, MINI.FADE_TO = 0.4, 0.3 -- (full within 40 % of the way out, down to 30 % at the edge)
+
 local function MiniSymbol(key, kind, dx, dy, count, look, second)
     miniUsed = miniUsed + 1
     local pin = minis[miniUsed] or NewSymbol(mini)
@@ -2590,61 +2443,12 @@ local function MiniSymbol(key, kind, dx, dy, count, look, second)
     ShowCount(pin, count)
     if pin.shrink ~= miniShrink then pin.shrink = miniShrink pin:SetScale(miniShrink) end
     pin:SetPoint("CENTER", mini, "CENTER", dx / miniShrink, dy / miniShrink)
+    local fade = MINI.Fade(dx, dy, last.half)
+    if pin.fade ~= fade then
+        pin.fade = fade
+        pin:SetAlpha(fade)
+    end
     return look
-end
-
--- A glow cut to `frame`'s shape: the minimap's, or the sparkle window's preview.
-local function NewEdgeGlow(frame)
-    local glow = NewGlow(frame)
-    glow:SetFrameLevel(frame:GetFrameLevel()) -- (under the symbols)
-    glow.edge = Smooth(glow:CreateMaskTexture())
-    glow.edge:SetAllPoints(frame)
-    glow.fill:AddMaskTexture(glow.edge)
-    return glow
-end
-
--- An area on `frame` (round, or square), dx, dy from its middle; a long one by AT.
-local function PlaceGlow(glow, frame, area, round, striped, across, dx, dy, half)
-    if glow.round ~= round then
-        glow.round = round
-        if round then
-            glow.edge:SetAtlas("CircleMask", false, nil, nil, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-        else
-            glow.edge:SetTexture("Interface\\Buttons\\WHITE8X8", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-            glow.edge:SetTexCoord(0, 1, 0, 1) -- (SetTexture keeps an atlas's coords)
-        end
-    end
-    glow.area = area
-    GlowLook(glow, area.color, striped, area.line ~= nil)
-    glow:ClearAllPoints()
-    if area.line then
-        glow:SetAllPoints(frame)
-        Ribbon(glow, area, frame, "CENTER", AT.thick, half, round)
-    else
-        HideRibbon(glow)
-        SizeGlow(glow, across, across, 1)
-        glow:SetPoint("CENTER", frame, "CENTER", dx, dy)
-    end
-end
-
--- An area on the minimap, cut to the minimap's shape (round, or square).
-local function MiniGlow(area, round, striped, across, dx, dy, half)
-    miniGlowsUsed = miniGlowsUsed + 1
-    local glow = miniGlows[miniGlowsUsed] or NewEdgeGlow(mini)
-    miniGlows[miniGlowsUsed] = glow
-    PlaceGlow(glow, mini, area, round, striped, across, dx, dy, half)
-end
-
--- An area on a round frame with north up (the sparkle window's preview): `scale` pixels a
--- yard, its middle at x, y (0 to 1 across the map) on a map width by height yards.
-local function DrawArea(glow, frame, area, scale, x, y, width, height)
-    if area.line then
-        AT.ax, AT.bx, AT.ay, AT.by = scale * width / UNITS, 0, 0, -scale * height / UNITS
-        AT.cx, AT.cy = -scale * width * x, scale * height * y
-        AT.thick = area.thick / UNITS * width * scale
-    end
-    PlaceGlow(glow, frame, area, true, ns.db.collectAreaStripes == true, 2 * area.yards * scale,
-        (area.midX / UNITS - x) * width * scale, (y - area.midY / UNITS) * height * scale, frame:GetWidth() / 2)
 end
 
 local function Follow()
@@ -2660,13 +2464,14 @@ local function Follow()
     if wx and wx == last.wx and wy == last.wy and radius == last.radius and facing == last.facing and version == last.version
         and quarters == last.quarters and zoom == last.zoom then return end
     last.wx, last.wy, last.radius, last.facing, last.version, last.quarters, last.zoom = wx, wy, radius, facing, version, quarters, zoom
-    miniUsed, miniGlowsUsed = 0, 0
+    miniUsed = 0
     local map = C_Map.GetBestMapForUnit("player")
     local own, gm, x, y, width, height
     if not issecretvalue(map) and type(map) == "number" then own, gm = Sources(map) end
     if own or gm then x, y, width, height = MapPosition(map) end
     if x and facing and not issecretvalue(radius) and type(radius) == "number" and radius > 0 then
         local half = Minimap:GetWidth() / 2
+        last.half = half
         local square = not (quarters[1] or quarters[2] or quarters[3] or quarters[4])
         local crop = square and Crop() or 1
         -- In yards: as far as the edge, or a square's corners.
@@ -2678,12 +2483,9 @@ local function Follow()
         local look
         local info = MapInfo(map, own, gm)
         local common = info.common
-        -- Areas at the minimap's two widest zooms (or every zoom, as set); closer in, every spawn has its symbol.
-        local db = ns.db
+        -- Areas at the minimap's two widest zooms; closer in, every spawn has its symbol.
         local areas, inAreas
-        if db.collectAreasMinimap and (not db.collectAreasZoom or type(zoom) == "number" and zoom <= 1) then
-            areas, inAreas = info.areas, info.inAreas
-        end
+        if type(zoom) == "number" and zoom <= 1 then areas, inAreas = info.areas, info.inAreas end
         Near(nearMini, own, gm, x, y, width, height, reach, inAreas, common, info.spots)
         local keys, kindsOf, placesOf, seconds = nearMini.key, nearMini.kind, nearMini.place, nearMini.second
         for i = 1, nearMini.count do
@@ -2695,37 +2497,18 @@ local function Follow()
                 if InShape(dx, dy, half, quarters, crop) then look = MiniSymbol(key, kind, dx, dy, nil, look, seconds[i] or nil) end
             end
         end
-        -- The areas reaching into the minimap's view, and their symbols where those are in it.
-        local edge, round = math.sqrt(reach), quarters[1] and quarters[2] and quarters[3] and quarters[4]
-        local striped = ns.db.collectAreaStripes == true
+        -- The areas' symbols in view, with their counts.
         for _, area in ipairs(areas or EMPTY) do
             if Shown(area.key, area.kind) and not (common and common[area.key]) then
-                local east = (area.midX / UNITS - x) * width
-                local north = (y - area.midY / UNITS) * height
-                local far = edge + area.yards
-                if east * east + north * north <= far * far then
-                    local dx, dy = (east * cos + north * sin) * scale, (north * cos - east * sin) * scale
-                    if area.line then -- (a unit at u, v to the minimap: see Ribbon)
-                        AT.ax, AT.bx = scale * cos * width / UNITS, -scale * sin * height / UNITS
-                        AT.ay, AT.by = -scale * sin * width / UNITS, -scale * cos * height / UNITS
-                        AT.cx, AT.cy = scale * (sin * height * y - cos * width * x), scale * (cos * height * y + sin * width * x)
-                        AT.thick = area.thick / UNITS * width * scale
-                    end
-                    MiniGlow(area, round, striped, 2 * area.yards * scale, dx, dy, half)
-                    -- Its symbol (a long area's sits on a spawn, not its middle).
-                    east, north = (area.x / UNITS - x) * width, (y - area.y / UNITS) * height
-                    dx, dy = (east * cos + north * sin) * scale, (north * cos - east * sin) * scale
-                    if InShape(dx, dy, half, quarters, crop) then look = MiniSymbol(area.key, area.kind, dx, dy, area.count, look) end
-                end
+                local east, north = (area.x / UNITS - x) * width, (y - area.y / UNITS) * height
+                local dx, dy = (east * cos + north * sin) * scale, (north * cos - east * sin) * scale
+                if InShape(dx, dy, half, quarters, crop) then look = MiniSymbol(area.key, area.kind, dx, dy, area.count, look) end
             end
         end
     end
     for i = miniUsed + 1, miniShown do minis[i]:Hide() end
     for i = miniShown + 1, miniUsed do minis[i]:Show() end
     miniShown = miniUsed
-    for i = miniGlowsUsed + 1, miniGlowsShown do miniGlows[i]:Hide() end
-    for i = miniGlowsShown + 1, miniGlowsUsed do miniGlows[i]:Show() end
-    miniGlowsShown = miniGlowsUsed
 end
 
 -- An error here would repeat every frame: reported once, then no minimap symbols until a reload.
@@ -2781,6 +2564,7 @@ local function Run(fn)
 end
 function ns.RefreshNodePins()
     UpdateMinimap()
+    if Regions.button then Regions.button:Look() end
     if ns.CompassChanged then ns.CompassChanged() end
     Run(Refresh)
 end
@@ -2799,30 +2583,13 @@ local function Rescale()
     end
 end
 
--- The mouse on an area of the world map: its tooltip. Areas take no mouse (the map keeps its
+-- The mouse in a region of the world map: its tooltip. Regions take no mouse (the map keeps its
 -- clicks), so this looks while the mouse is on the bare map.
 local hover, hovered = nil, {} -- (the area, and where the mouse was)
 local function AreaAt(u, v) -- (in units)
     for i = 1, glowsUsed do
         local area = glows[i].area
-        if area.region then
-            if Regions.Inside(area, u, v) then return area end
-        elseif not area.line then
-            local ux, uy = area.yards / area.wide, area.yards / area.high -- (yards a unit)
-            local dx, dy = (u - area.midX) / area.wide, (v - area.midY) / area.high
-            if dx * dx + dy * dy <= 1 then return area end
-        else
-            local ux, uy = area.yards / area.wide, area.yards / area.high
-            local line = area.line
-            for j = 1, #line, 4 do
-                local ax, ay = line[j] * ux, line[j + 1] * uy
-                local bx, by = line[j + 2] * ux - ax, line[j + 3] * uy - ay
-                local px, py = u * ux - ax, v * uy - ay
-                local t = (bx * bx + by * by) > 0 and math.min(math.max((px * bx + py * by) / (bx * bx + by * by), 0), 1) or 0
-                local ex, ey = px - bx * t, py - by * t
-                if ex * ex + ey * ey <= RIBBON * RIBBON then return area end
-            end
-        end
+        if Regions.Inside(area, u, v) then return area end
     end
 end
 local function Hover()
@@ -2848,6 +2615,67 @@ local function HoverGone()
     if GameTooltip:IsOwned(hover) then GameTooltip:Hide() end
 end
 
+-- A button on the world map like Blizzard's own at its top right (Blizzard_WorldMapTemplates'
+-- tracking pin button, under theirs): this map's herb and ore symbols on or off.
+function Regions.MapButton()
+    local button = New("Button", WorldMapFrame)
+    button:SetSize(32, 32)
+    button:SetFrameStrata("HIGH")
+    local back = button:CreateTexture(nil, "BACKGROUND")
+    back:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
+    back:SetSize(25, 25)
+    back:SetPoint("TOPLEFT", 3, -4)
+    button.icon = button:CreateTexture(nil, "ARTWORK")
+    button.icon:SetTexture("Interface\\AddOns\\NodeSight\\logo")
+    button.icon:SetSize(20, 20)
+    button.icon:SetPoint("TOPLEFT", 7, -6)
+    local pressed = button:CreateTexture(nil, "OVERLAY")
+    pressed:SetAllPoints(button.icon)
+    pressed:SetColorTexture(0, 0, 0, 0.3)
+    pressed:Hide()
+    local border = button:CreateTexture(nil, "OVERLAY", nil, 1)
+    border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+    border:SetSize(54, 54)
+    border:SetPoint("TOPLEFT")
+    button:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight", "ADD")
+    button:SetScript("OnMouseDown", function()
+        button.icon:SetPoint("TOPLEFT", 8, -8)
+        pressed:Show()
+    end)
+    button:SetScript("OnMouseUp", function()
+        button.icon:SetPoint("TOPLEFT", 7, -6)
+        pressed:Hide()
+    end)
+    local function Tip()
+        GameTooltip:SetOwner(button, "ANCHOR_LEFT")
+        GameTooltip:SetText("NodeSight")
+        GameTooltip:AddLine(ns.db.collectMap and "Click to hide the herbs and ore on the map." or "Click to show the herbs and ore on the map.", 1, 1, 1)
+        GameTooltip:Show()
+    end
+    button:SetScript("OnClick", function()
+        ns.db.collectMap = not ns.db.collectMap
+        PlaySound(ns.db.collectMap and SOUNDKIT.UI_MAP_WAYPOINT_BUTTON_CLICK_ON or SOUNDKIT.UI_MAP_WAYPOINT_BUTTON_CLICK_OFF)
+        ns.RefreshNodePins()
+        if ns.RefreshSparkleWindow then ns.RefreshSparkleWindow() end
+        if GameTooltip:IsOwned(button) then Tip() end
+    end)
+    button:SetScript("OnEnter", Tip)
+    button:SetScript("OnLeave", GameTooltip_Hide)
+    -- Under Blizzard's buttons there (32 apart, from 2 down).
+    local below = (WorldMapFrame.WorldMapTrackingOptionsButton and 1 or 0) + (WorldMapFrame.WorldMapTrackingPinButton and 1 or 0)
+    local container = WorldMapFrame.GetCanvasContainer and WorldMapFrame:GetCanvasContainer() or WorldMapFrame.ScrollContainer
+    button:SetPoint("TOPRIGHT", container, "TOPRIGHT", -4, -2 - 32 * below)
+    -- Shown while Collecting marks anything; gray while the symbols are off.
+    function button:Look()
+        local db = ns.db
+        self:SetShown(db.collect == true or db.collectSpawns == true or db.collectGatherMate == true)
+        self.icon:SetDesaturated(not db.collectMap)
+        self.icon:SetAlpha(db.collectMap and 1 or 0.6)
+    end
+    Regions.button = button
+    button:Look()
+end
+
 -- Once Blizzard_WorldMap is loaded.
 local function HookMap()
     if hooked or not Canvas() then return end
@@ -2856,6 +2684,7 @@ local function HookMap()
     hover:SetScript("OnUpdate", function() Run(Hover) end)
     hover:SetScript("OnHide", HoverGone)
     WorldMapFrame:HookScript("OnShow", ns.RereadNodePins) -- (an import in GatherMate2 sends no message)
+    Regions.MapButton()
     if WorldMapFrame.OnMapChanged then hooksecurefunc(WorldMapFrame, "OnMapChanged", ns.RefreshNodePins) end
     if WorldMapFrame.OnCanvasScaleChanged then hooksecurefunc(WorldMapFrame, "OnCanvasScaleChanged", Rescale) end
     -- The map's own filter menu: herbs and ore (setup's lists), each with the ones on this map.
@@ -2901,6 +2730,19 @@ local function HookMap()
                             Changed()
                         end)
                     end
+                end
+            end
+            -- Bright: one herb or ore in full, the others faded.
+            local function IsBright(entry) return (db.collectBright or false) == entry end -- (None: false)
+            local function SetBright(entry)
+                db.collectBright = entry or nil
+                Changed()
+            end
+            local bright = root:CreateButton("Bright")
+            bright:CreateRadio(NONE, IsBright, SetBright, false)
+            for _, kind in ipairs({ "herbs", "ore" }) do
+                for _, entry in ipairs(NODE_LIST[kind]) do
+                    if here[entry] then bright:CreateRadio(DisplayName(entry), IsBright, SetBright, entry) end
                 end
             end
         end)
@@ -2994,14 +2836,13 @@ ns.Collecting = {
     NewSymbol = NewSymbol, ApplyShape = ApplyShape, ApplyLook = ApplyLook, CurrentLook = CurrentLook,
     Version = function() return version end, PACK = PACK, UNITS = UNITS,
     SkillColor = SkillColor, FarmZones = FarmZones, FARM_LEVELS = FARM_LEVELS, DisplayName = DisplayName,
-    AreasIn = AreasIn, NewEdgeGlow = NewEdgeGlow, DrawArea = DrawArea, ShowCount = ShowCount, Regions = Regions,
-    Shrink = Shrink, MiniShared = MINI.Shared,
+    AreasIn = AreasIn, ShowCount = ShowCount, Regions = Regions,
+    Shrink = Shrink, MiniShared = MINI.Shared, Common = Common, MiniFade = MINI.Fade,
 }
 ns.COLLECT_PICTURES, ns.COLLECT_SHAPES, ns.COLLECT_SKILL_LOOKS = PICTURES, SHAPES, SKILL_LOOKS
-ns.COLLECT_ROW_LOOKS = { "Soft band", "Dotted line", "Thin line" }
-ns.COLLECT_ZOOM_LOOKS = { "Symbols", "Tiny symbols", "Glow and symbols", "Hex tiles", "Mix rings" }
+ns.COLLECT_ZOOM_LOOKS = { "Symbols", false, false, "Hex tiles", "Mix rings", "One symbol a group", false, "Dots", "Regions" } -- (false: taken out, a saved one goes back to the default)
 ns.COLLECT_MINI_LOOKS = { "Whole symbol", "Hole in the middle", "See-through middle", "Pin" }
 ns.COLLECT_MINI_SHARED = { "The common one", "Split down the middle", "Second as a badge" }
 ns.NODE_LIST, ns.NODE_NEEDS = NODE_LIST, NODE_NEEDS -- (setup's herbs and ore)
 -- The sliders: low, high, step (the compass bar's too).
-ns.COLLECT_RANGES = { collectSize = { 8, 24, 1 }, collectMiniSize = { 8, 40, 1 }, collectOpacity = { 10, 100, 5 }, collectAreaYards = { 20, 200, 5 }, collectRarePercent = { 0, 50, 5 }, compassWidth = { 200, 1000, 10 }, compassRange = { 50, 500, 25 }, nodeArrowRange = { 50, 1000, 25 }, nodeArrowSize = { 50, 200, 10 } }
+ns.COLLECT_RANGES = { collectSize = { 8, 24, 1 }, collectMiniSize = { 8, 40, 1 }, collectOpacity = { 10, 100, 5 }, collectRarePercent = { 0, 50, 5 }, compassWidth = { 200, 1000, 10 }, compassRange = { 50, 500, 25 }, nodeArrowRange = { 50, 1000, 25 }, nodeArrowSize = { 50, 200, 10 } }
