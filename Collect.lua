@@ -982,6 +982,19 @@ local function UpdateCollect()
     ns.RereadNodePins()
 end
 
+-- Collecting on or off in one go (General's box, the minimap button): on is the places you
+-- gather and every known spawn, off is every source.
+function ns.CollectingOn()
+    local db = ns.db
+    return db.collect == true or db.collectSpawns == true or db.collectGatherMate == true
+end
+function ns.SetCollecting(on)
+    local db = ns.db
+    db.collect, db.collectSpawns = on, on
+    if not on then db.collectGatherMate = false end
+    UpdateCollect() -- (it redraws the maps too)
+end
+
 ---------------------------------------------------------------------------
 -- World map
 ---------------------------------------------------------------------------
@@ -2665,10 +2678,10 @@ function Regions.MapButton()
     local below = (WorldMapFrame.WorldMapTrackingOptionsButton and 1 or 0) + (WorldMapFrame.WorldMapTrackingPinButton and 1 or 0)
     local container = WorldMapFrame.GetCanvasContainer and WorldMapFrame:GetCanvasContainer() or WorldMapFrame.ScrollContainer
     button:SetPoint("TOPRIGHT", container, "TOPRIGHT", -4, -2 - 32 * below)
-    -- Shown while Collecting marks anything; gray while the symbols are off.
+    -- Shown while Collecting marks anything and its setting is on; gray while the symbols are off.
     function button:Look()
         local db = ns.db
-        self:SetShown(db.collect == true or db.collectSpawns == true or db.collectGatherMate == true)
+        self:SetShown(db.collectMapButton == true and (db.collect == true or db.collectSpawns == true or db.collectGatherMate == true))
         self.icon:SetDesaturated(not db.collectMap)
         self.icon:SetAlpha(db.collectMap and 1 or 0.6)
     end

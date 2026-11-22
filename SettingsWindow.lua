@@ -45,6 +45,7 @@ local AFTER = {
     minimapButton = function() if ns.MinimapButtonChanged then ns.MinimapButtonChanged() end end,
     collect = function() ns.UpdateCollect() end,
     collectMap = function() ns.RefreshNodePins() end,
+    collectMapButton = function() ns.RefreshNodePins() end,
 }
 for _, key in ipairs({ "compass", "compassWidth", "compassRange" }) do
     AFTER[key] = function() ns.CompassChanged() end
@@ -63,6 +64,10 @@ for _, key in ipairs({ "collectMinimap", "collectPicture", "collectShape", "coll
 end
 
 local function Set(key, value)
+    if key == "collecting" then
+        ns.SetCollecting(value)
+        return ns.RefreshSparkleWindow()
+    end
     if key == "own" then
         ns.SetOwnSettings(value)
         ns.AskReload()
@@ -212,6 +217,8 @@ local function GeneralColumns(column, _, page)
         "Shows the skill a herb or ore needs in its tooltip when your mouse is on it in the world, and on herb and ore items.")
     Checkbox(column, "popups", "Popups", "Popups when Enable Interact Key is off or the game needs a restart.")
     Checkbox(column, "minimapButton", "Minimap button", "Left click opens these settings, right click turns all sparkles on or off.")
+    Checkbox(column, "collecting", "Collecting (Beta)",
+        "Marks herbs and ore on your world map and minimap, from the places you gather and every known spawn. Its pages below set it up.")
     Checkbox(column, "own", "This character only",
         "This character keeps its own NodeSight settings. Untick it to use the settings your other characters share. It offers a reload to switch.")
     Checkbox(column, "stoneBackground", "Stone background", "Blizzard's stone texture behind this window, warmed to the logo's brown. Off: plain brown.")
@@ -377,6 +384,7 @@ local function CollectColumns(column, places, page)
     page.future:SetPoint("BOTTOMLEFT", page.thanks, "TOPLEFT", 0, 4)
     Header(places, "Show on")
     Checkbox(places, "collectMap", "World map", "A symbol on the world map for each marked place. Put your mouse on one to see what it was.")
+    Needs(Checkbox(places, "collectMapButton", "Map button", "A button at the world map's top right that shows or hides these symbols."), nil, true)
     Needs(Checkbox(places, "collectMapRare", "Rares and near you", "Far from you, the world map shows only rare herbs and ore, such as silver and Kingsblood."),
         function() return ns.db.collectMap == true and not ns.db.collectRareOnly end, true)
     Checkbox(places, "collectMinimap", "Minimap", "The same symbols on the minimap for the places near you. They let the mouse through to the game's own dots.")
@@ -1261,7 +1269,14 @@ local function RefreshPart(part)
         end
     end
     if part.kind == "box" then
-        part:SetChecked(key == "own" and ns.OwnSettings() or ns.db[key] == true)
+        local db = ns.db
+        if key == "own" then
+            part:SetChecked(ns.OwnSettings())
+        elseif key == "collecting" then
+            part:SetChecked(ns.CollectingOn())
+        else
+            part:SetChecked(db[key] == true)
+        end
     elseif part.kind == "slider" then
         part:SetValue(ns.db[key])
     elseif part.kind == "choices" then

@@ -1,6 +1,6 @@
 -- NodeSight's minimap button (LibDBIcon, from Libs): left click opens NodeSight's window on
--- its settings, Shift left click on the sparkles, right click turns every kind of sparkle
--- on or off, Shift right click switching between herbs and ore. Its place is saved with
+-- its settings, Shift left click on the sparkles, Ctrl left click turns Collecting on or off,
+-- right click turns every kind of sparkle on or off, Shift right click switching between herbs and ore. Its place is saved with
 -- the settings.
 -- It never opens Options: Blizzard opens that window inside the caller's code, so the
 -- window manager would run tainted and later break Edit Mode. Our own windows are fine.
@@ -38,6 +38,7 @@ local function Tooltip(tooltip)
     if not ns.OptionsOnly() then -- (no window with the gamepad UI: the settings are on pages)
         Hint(tooltip, "Shift Left Click", "Sparkle Settings")
     end
+    Hint(tooltip, "Ctrl Left Click", ns.CollectingOn() and "Turn Collecting Off" or "Turn Collecting On")
     tooltip:AddLine(" ")
     Hint(tooltip, "Right Click", AllOn() and "Turn Sparkles Off" or "Turn Sparkles On")
     Hint(tooltip, "Shift Right Click", ns.db.switchFinders and "Turn Herb/Ore Switch Off" or "Turn Herb/Ore Switch On")
@@ -81,6 +82,11 @@ end
 local function Clicked(frame, button)
     if button == "RightButton" then
         if IsShiftKeyDown() then ToggleSwitch() else ToggleAll() end
+        return Retooltip(frame)
+    end
+    if IsControlKeyDown() then
+        ns.SetCollecting(not ns.CollectingOn())
+        ns.RefreshSettingsWindow()
         return Retooltip(frame)
     end
     if ns.OptionsOnly() then return Say(SETTINGS_PAGE) end -- the window isn't used (gamepad UI)

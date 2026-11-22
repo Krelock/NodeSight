@@ -227,6 +227,8 @@ local function RegisterSettings()
         Checkbox("collectMap", "World map marks",
             "A small herb or ore icon on the world map for each place you gathered at. Put your mouse on one to see what it was.",
             function() ns.RefreshNodePins() end)
+        Checkbox("collectMapButton", "World map: button", "A button at the world map's top right that shows or hides these symbols.",
+            function() ns.RefreshNodePins() end)
         Checkbox("collectMapRare", "World map: rares and near you", "Far from you, the world map shows only rare herbs and ore, such as silver and Kingsblood.",
             function() ns.RereadNodePins() end)
         Checkbox("collectMinimap", "Minimap marks",
@@ -243,7 +245,7 @@ local function RegisterSettings()
         Slider("collectMiniSize", "Minimap symbols' size", mini[1], mini[2], "How big the symbols are on the minimap.", MapChanged, mini[3])
         Slider("collectOpacity", "Minimap symbols' opacity (%)", opacity[1], opacity[2],
             "How much of a minimap symbol's picture shows; its ring stays solid. Lower lets the game's dot under it show through.", MapChanged, opacity[3])
-        Dropdown("collectMiniLook", "Minimap look", ns.COLLECT_MINI_LOOKS, "How a minimap symbol leaves room for the game's own dot under it, for example a hole in the middle (best with Minimap size 30).", MapChanged)
+        Dropdown("collectMiniLook", "Minimap look", ns.COLLECT_MINI_LOOKS, "How a minimap symbol leaves room for the game's own dot under it, for example a see-through middle.", MapChanged)
         Dropdown("collectMiniShared", "Minimap shared spots", ns.COLLECT_MINI_SHARED, "Where two herbs or ores can spawn at one spot, how a minimap symbol shows both, for example copper and tin split down the middle.", MapChanged)
         Dropdown("collectSkill", "Skill colors", ns.COLLECT_SKILL_LOOKS,
             "How a symbol shows your skill, for example a gem in the profession window's colors. Ring needs a ring shape.",
