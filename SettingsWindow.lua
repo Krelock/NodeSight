@@ -41,7 +41,7 @@ end
 
 -- What a setting does when it changes (beyond saving it). The switch reads its other settings each tick.
 local AFTER = {
-    switchFinders = function() ns.SwitchReset() ns.UpdateSwitch() end,
+    switchFinders = function() ns.SwitchReset() ns.UpdateSwitch() ns.RefreshNodePins() end, -- (Only while tracking counts both kinds while it's on)
     minimapButton = function() if ns.MinimapButtonChanged then ns.MinimapButtonChanged() end end,
     collect = function() ns.UpdateCollect() end,
     collectMap = function() ns.RefreshNodePins() end,
@@ -52,14 +52,15 @@ for _, key in ipairs({ "compass", "compassWidth", "compassRange" }) do
 end
 AFTER.nodeArrow = function() ns.ArrowChanged() end
 AFTER.nodeArrowSize = AFTER.nodeArrow
+AFTER.nodeArrowRange = AFTER.nodeArrow
 AFTER.collectGatherMate = function() ns.RereadNodePins() end
 AFTER.collectSpawns = AFTER.collectGatherMate
 AFTER.collectHideGatherMate = AFTER.collectGatherMate
 for _, key in ipairs({ "collectAreas", "collectRareOnly", "collectRarePercent", "collectMapRare" }) do
     AFTER[key] = AFTER.collectGatherMate
 end
-for _, key in ipairs({ "collectMinimap", "collectPicture", "collectShape", "collectSize", "collectMiniSize", "collectMiniLook", "collectMiniShared", "collectOpacity", "collectSkill", "collectOreRings",
-    "collectMerge", "collectOnlyProfession", "collectOnlyTracking", "collectHideGray", "collectZoomLook", "collectMiniFade" }) do
+for _, key in ipairs({ "collectMinimap", "collectShape", "collectSize", "collectMiniSize", "collectMiniLook", "collectMiniShared", "collectOpacity", "collectSkill", "collectOreRings",
+    "collectMerge", "collectOnlyProfession", "collectOnlyTracking", "collectHideGray", "collectZoomLook", "collectMiniFade", "collectCaveNearest" }) do
     AFTER[key] = function() ns.RefreshNodePins() end
 end
 
@@ -227,7 +228,7 @@ end
 -- A row of choice tiles, the setup cards' art in small: the picked one lit. `short`: the words on
 -- the tiles; the full names show in their tooltips, with a tile's own line from `notes`. A false
 -- word is a choice taken out: no tile, the others keep their saved numbers.
-local function Choices(column, key, text, choices, short, tip, notes)
+local function Choices(column, key, text, choices, short, tip, notes, tips)
     local row = New("Frame", column.page)
     row:SetSize(1, 22)
     row.tiles = {}
@@ -257,7 +258,8 @@ local function Choices(column, key, text, choices, short, tip, notes)
                 PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
                 Set(key, i)
             end)
-            Tooltip(tile, choices[i], notes and notes[i] and tip .. " " .. notes[i] or tip)
+            -- (`tips`: each tile's own text in place of the row's)
+            Tooltip(tile, choices[i], tips and tips[i] or notes and notes[i] and tip .. " " .. notes[i] or tip)
             tile.value = i
             row.tiles[#row.tiles + 1] = tile
         end
@@ -389,6 +391,7 @@ local function CollectColumns(column, places, page)
         function() return ns.db.collectMap == true and not ns.db.collectRareOnly end, true)
     Checkbox(places, "collectMinimap", "Minimap", "The same symbols on the minimap for the places near you. They let the mouse through to the game's own dots.")
     Needs(Checkbox(places, "collectMiniFade", "Fade toward the edge", "Symbols farther from you fade, so the ones near you stand out."), On("collectMinimap"), true)
+    Needs(Checkbox(places, "collectCaveNearest", "Caves: nearest only", "In a cave the minimap shows only the 5 nearest spawns, so a mine's tunnels and levels don't pile up."), On("collectMinimap"), true)
     Header(places, "Only show")
     Checkbox(places, "collectOnlyProfession", "My professions", "Herbs are marked only on characters with Herbalism, ore only with Mining.")
     Checkbox(places, "collectOnlyTracking", "While tracking",
@@ -412,7 +415,7 @@ end
 
 -- The rows setup's maps step shares with the Symbols and Areas pages.
 local function AreasBox(column)
-    Checkbox(column, "collectAreas", "Group close spawns", "Close spawns of one ore, like a mine, show as one symbol with a count.")
+    Checkbox(column, "collectAreas", "Group close spawns", "Close spawns of one herb or ore, like a mine, show as one symbol with a count.")
 end
 local function MergeBox(column)
     Checkbox(column, "collectMerge", "Merge overlaps", "Symbols of one herb or ore that would cover each other on the world map show as one, with how many there are. Zoom in to see each one.")
@@ -423,9 +426,18 @@ local function ShapeRow(column)
 end
 local function MiniLookRows(column, look)
     Choices(column, "collectMiniLook", look, ns.COLLECT_MINI_LOOKS, { "Whole", "Hole", "See-through", "Pin" },
-        "How a minimap symbol leaves room for the game's own dot under it.", { [2] = "Best with Minimap size 30." })
+        "How a minimap symbol leaves room for the game's own dot under it.", nil, {
+            "The full symbol sits on the spot, over the game's own dot.",
+            "A hole in the middle of the symbol shows the game's own dot under it. Best with Minimap size 30.",
+            "The middle of the symbol is faded, so the game's own dot shows through it.",
+            "The symbol sits above the spot on a short stem, leaving the game's own dot clear.",
+        })
     Choices(column, "collectMiniShared", "Shared spots", ns.COLLECT_MINI_SHARED, { "Common one", "Split", "Badge" },
-        "Where two herbs or ores can spawn at one spot, how a minimap symbol shows both, for example copper and tin split down the middle.")
+        "Where two herbs or ores can spawn at one spot, how a minimap symbol shows both.", nil, {
+            "Only the more common one shows, for example copper where tin can spawn too. Its tooltip names both.",
+            "Both show, each icon on one half of the symbol.",
+            "The more common one shows, with the other's symbol small at its top left.",
+        })
 end
 local function MiniSize(column, text)
     local mini = ns.COLLECT_RANGES.collectMiniSize
@@ -467,8 +479,6 @@ local function SymbolColumns(column, other, page)
     About(page, "How the herb and ore symbols look on the world map and the minimap.", column, other)
     Header(column, "Both maps")
     ShapeRow(column)
-    Choices(column, "collectPicture", "Picture", ns.COLLECT_PICTURES, { "Own icon", "Plain" },
-        "Each node's own item icon, or one plain icon for herbs and one for ore.")
     SkillRow(column)
     Needs(Checkbox(column, "collectOreRings", "Tin and iron rings",
         "Tin gets a green ring and iron a rust one, so they're easy to tell apart. Needs a ring shape."), function() return ns.db.collectShape > 2 end)

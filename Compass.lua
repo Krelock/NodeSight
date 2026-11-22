@@ -24,6 +24,11 @@ local bar, art, hint, pointer
 local marks, pins, shown = {}, {}, 0
 local list -- the places near you (Collect.lua's Near)
 local last = {}
+-- The places in range from the last full look: bearing and distance each. Turning only moves
+-- their marks; they're looked at again once you've moved far enough to shift the nearest one's
+-- mark STILL pixels, or anything else changed.
+local STILL = 0.5
+local seen = { n = 0, nearest = 1, key = {}, kind = {}, bearing = {}, distance = {} }
 local moving = false
 local broken = false
 
@@ -90,17 +95,40 @@ local function Draw()
     if own or gm then x, y, width, height = C.MapPosition(map) end
     if x then
         local range = ns.db.compassRange
-        local reach = range * range
-        C.Near(list, own, gm, x, y, width, height, reach)
-        local PACK, UNITS = C.PACK, C.UNITS
+        local still = STILL * seen.nearest / (half / (SPAN / 2)) -- (yards)
+        if seen.map ~= map or seen.version ~= version or seen.stamp ~= stamp or seen.range ~= range or seen.width ~= width
+            or seen.height ~= height or ((x - seen.x) * width) ^ 2 + ((y - seen.y) * height) ^ 2 >= still * still then
+            local reach = range * range
+            C.Near(list, own, gm, x, y, width, height, reach)
+            local PACK, UNITS = C.PACK, C.UNITS
+            local n, nearest = 0, range
+            for i = 1, list.count do
+                local place = list.place[i]
+                local east = (floor(place / PACK) / UNITS - x) * width
+                local north = (y - place % PACK / UNITS) * height
+                local distance = east * east + north * north
+                if distance <= reach then
+                    n = n + 1
+                    distance = math.sqrt(distance)
+                    seen.key[n], seen.kind[n], seen.bearing[n], seen.distance[n] = list.key[i], list.kind[i], atan2(-east, north), distance
+                    if distance < nearest then nearest = distance end
+                end
+            end
+            -- The arrow's place, at any distance.
+            seen.target = nil
+            if targetMap == map then
+                local east = (floor(targetPlace / PACK) / UNITS - x) * width
+                local north = (y - targetPlace % PACK / UNITS) * height
+                seen.target = atan2(-east, north)
+            end
+            seen.n, seen.nearest, seen.x, seen.y, seen.map, seen.version, seen.stamp = n, math.max(nearest, 1), x, y, map, version, stamp
+            seen.range, seen.width, seen.height = range, width, height
+        end
         local look
-        for i = 1, list.count do
-            local key, kind, place = list.key[i], list.kind[i], list.place[i]
-            local east = (floor(place / PACK) / UNITS - x) * width
-            local north = (y - place % PACK / UNITS) * height
-            local distance = east * east + north * north
-            if distance <= reach then
-                local at = Offset(atan2(-east, north), facing, half)
+        for i = 1, seen.n do
+            local key, kind, distance = seen.key[i], seen.kind[i], seen.distance[i]
+            do
+                local at = Offset(seen.bearing[i], facing, half)
                 if at and abs(at) < half then
                     used = used + 1
                     local pin = pins[used] or C.NewSymbol(art)
@@ -114,20 +142,17 @@ local function Draw()
                         if pin.shape ~= look.shape or pin.size ~= look.size then C.ApplyShape(pin, look) end
                         C.ApplyLook(pin, key, kind, look)
                     end
-                    local alpha = (1 - (1 - FAR_ALPHA) * math.sqrt(distance) / range) * EdgeAlpha(at, half)
-                    if pin.alpha ~= alpha then
-                        pin.alpha = alpha
+                    local alpha = (1 - (1 - FAR_ALPHA) * distance / range) * EdgeAlpha(at, half)
+                    if pin.barAlpha ~= alpha then
+                        pin.barAlpha = alpha
                         pin:SetAlpha(alpha)
                     end
                     pin:SetPoint("CENTER", art, "CENTER", at, 0)
                 end
             end
         end
-        -- The arrow's place, at any distance.
-        if targetMap == map then
-            local east = (floor(targetPlace / PACK) / UNITS - x) * width
-            local north = (y - targetPlace % PACK / UNITS) * height
-            pointAt = Offset(atan2(-east, north), facing, half)
+        if seen.target then
+            pointAt = Offset(seen.target, facing, half)
             if pointAt and abs(pointAt) >= half then pointAt = nil end
         end
     end
@@ -142,8 +167,13 @@ local function Draw()
     shown = used
 end
 
+-- At most about 60 times a second, as the minimap's symbols.
+local STEP, wait = 1 / 60, 0
 -- An error here would repeat every frame: reported once, then no compass until a reload.
-local function OnUpdate()
+local function OnUpdate(_, elapsed)
+    wait = wait + (elapsed or STEP)
+    if wait < STEP * 0.9 then return end
+    wait = math.min(wait - STEP, STEP)
     if not xpcall(Draw, geterrorhandler()) then
         broken = true
         bar:Hide()

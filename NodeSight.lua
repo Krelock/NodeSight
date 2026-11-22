@@ -82,7 +82,6 @@ local defaults = {
     collectMap = true, -- and mark those places on the world map
     collectMapButton = true, -- a button on the world map that shows or hides them
     collectMinimap = true, -- and on the minimap
-    collectPicture = 1, -- the map symbols' picture (Collect.lua's PICTURES): each node's own icon
     collectShape = 3, -- their shape (SHAPES): round with a gold ring
     collectSize = 19, -- their size on the world map
     collectMiniSize = 24, -- and on the minimap
@@ -100,10 +99,11 @@ local defaults = {
     collectHideGray = false, -- not the ones that no longer give a skill-up
     collectRareOnly = false, -- only the rare herbs and ore marked
     collectRarePercent = 10, -- and any under this share (%) of a zone's herbs or ore
-    collectAreas = true, -- close spawns of one ore (a mine) as one symbol with a count
+    collectAreas = true, -- close spawns of one herb or ore (a mine) as one symbol with a count
     collectZoomLook = 6, -- the world map at its widest zoom (COLLECT_ZOOM_LOOKS): one symbol a group
     collectMapRare = false, -- the world map: only rare herbs and ore, and everything near you
     collectMiniFade = true, -- minimap symbols fade toward its edge
+    collectCaveNearest = true, -- in a cave (indoors) the minimap shows only the nearest few spawns
     collectSetupDone = false, -- Collecting's setup steps shown once
     compass = false, -- the compass bar (Compass.lua)
     compassWidth = 400, -- its width
@@ -373,7 +373,7 @@ NodeSightAPI = {
 -- (NodeSightDB). Quest objects, gathered places and the CVars to put back are always shared.
 local function LoadSettings()
     NodeSightDB = NodeSightDB or {}
-    local SHARED = { learned = true, questObjects = true, saved = true, applied = true, rareNames = true, report = true, nodes = true, made = true, makerWarned = true, gatherMateShow = true } -- (made: the Sparkle Maker's sparkles)
+    local SHARED = { learned = true, questObjects = true, saved = true, applied = true, rareNames = true, report = true, nodes = true, made = true, madeTop = true, makerWarned = true, gatherMateShow = true } -- (made: the Sparkle Maker's sparkles)
     if type(NodeSightCharDB) ~= "table" then
         NodeSightCharDB = { own = true }
         for key, value in pairs(NodeSightDB) do
@@ -445,7 +445,6 @@ local function OnAddonLoaded()
     end
     if not ns.HARVESTS[settings.harvest] then settings.harvest = defaults.harvest end
     if not ns.SWITCH_MEASURES[settings.switchMeasure] then settings.switchMeasure = defaults.switchMeasure end
-    if not ns.COLLECT_PICTURES[settings.collectPicture] then settings.collectPicture = defaults.collectPicture end
     if not ns.COLLECT_SHAPES[settings.collectShape] then settings.collectShape = defaults.collectShape end
     if not ns.COLLECT_SKILL_LOOKS[settings.collectSkill] then settings.collectSkill = defaults.collectSkill end
     if not ns.COLLECT_ZOOM_LOOKS[settings.collectZoomLook] then settings.collectZoomLook = defaults.collectZoomLook end
@@ -456,7 +455,7 @@ local function OnAddonLoaded()
     end
     -- Collecting's symbols got new looks: saved looks move to them once (Collecting stays on or off as it was).
     if not settings.collectNewLooks then
-        for _, key in ipairs({ "collectPicture", "collectShape", "collectSize", "collectMiniSize", "collectMiniLook", "collectMiniShared",
+        for _, key in ipairs({ "collectShape", "collectSize", "collectMiniSize", "collectMiniLook", "collectMiniShared",
             "collectOpacity", "collectSkill", "collectOreRings", "collectMerge", "collectAreas", "collectZoomLook", "collectMapRare",
             "collectMiniFade" }) do
             settings[key] = defaults[key]
@@ -494,6 +493,7 @@ end
 
 local events = CreateFrame("Frame")
 events:RegisterEvent("ADDON_LOADED")
+events:RegisterEvent("PLAYER_LOGIN")
 events:RegisterEvent("PLAYER_ENTERING_WORLD")
 events:RegisterEvent("PLAYER_LOGOUT")
 events:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -516,14 +516,17 @@ events:SetScript("OnEvent", function(_, event, arg1)
             end
             OnAddonLoaded()
         end
+    elseif event == "PLAYER_LOGIN" then
+        ns.QuietInteractTip()
     elseif event == "PLAYER_ENTERING_WORLD" then
         QuestAreasBack()
         PadHoverBack()
         -- Restores CVars left changed (e.g. a restore delayed by combat).
         ns.Setup() -- after every loading screen
-        if not NodeSightDB.minimapNewsSeen then
-            NodeSightDB.minimapNewsSeen = true
-            ns.ShowMinimapNews()
+        -- Once per account: Collecting, and why its marks aren't live (not for those already using it).
+        if not NodeSightDB.collectNewsSeen then
+            NodeSightDB.collectNewsSeen = true
+            if not ns.CollectingOn() then ns.ShowCollectNews() end
         end
     elseif event == "NAME_PLATE_UNIT_REMOVED" then
         -- Free the plate's sparkle frame.

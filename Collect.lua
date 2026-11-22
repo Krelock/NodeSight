@@ -104,6 +104,15 @@ local function GatherMate()
         and type(gm.GetNameForNode) == "function" then return gm end
 end
 
+-- GatherMate2 says it added a place for every gather; during one of ours, or just after it was
+-- read in, that place is already marked, so the map isn't read again for it.
+local OWN_WAIT = 2
+local ownAt, ownGathering = -OWN_WAIT, nil
+local function GatherMateChanged()
+    if ownGathering and ownGathering() or GetTime() - ownAt < OWN_WAIT then return end
+    ns.RereadNodePins()
+end
+
 -- Its messages for a place added or deleted; an import sends none (the map's OnShow reads again).
 local function Listen()
     listening = true
@@ -111,9 +120,8 @@ local function Listen()
     if not events then return end
     local target = {}
     events:Embed(target)
-    local function Changed() ns.RereadNodePins() end
     for _, message in ipairs({ "GatherMate2NodeAdded", "GatherMate2NodeDeleted", "GatherMate2Cleanup", "GatherMateData2Import" }) do
-        target:RegisterMessage(message, Changed)
+        target:RegisterMessage(message, GatherMateChanged)
     end
 end
 
@@ -128,6 +136,7 @@ local function AddOnState(name)
 end
 
 -- Loads GatherMate2_Data (it loads on demand) and keeps its tables; not in combat.
+local dataWait -- (a frame that waits out a fight to load it)
 local function Data()
     if data or dataTried then return data end
     local loaded = false
@@ -137,7 +146,17 @@ local function Data()
             dataTried = true
             return nil
         end
-        if InCombatLockdown() then return nil end
+        if InCombatLockdown() then -- (loaded after the fight, and the maps read again)
+            if not dataWait then
+                dataWait = CreateFrame("Frame")
+                dataWait:SetScript("OnEvent", function(self)
+                    self:UnregisterAllEvents()
+                    if not data and not dataTried then ns.RereadNodePins() end
+                end)
+            end
+            dataWait:RegisterEvent("PLAYER_REGEN_ENABLED")
+            return nil
+        end
         pcall(C_AddOns.LoadAddOn, DATA)
     end
     dataTried = true
@@ -576,7 +595,9 @@ function Spots.Of(map, own, gm)
     if issecretvalue(width) or issecretvalue(height) or type(width) ~= "number" or type(height) ~= "number"
         or width <= 0 or height <= 0 then return nil end
     local near = Spots.NEAR
-    local entries, cells, counts, spots = {}, {}, {}, nil
+    -- Every place as a number in a few arrays, not a table each (less garbage on a map with thousands).
+    local keyOf, kindOf, placeOf, xs, ys, spotOf, n = {}, {}, {}, {}, {}, {}, 0
+    local cells, counts, spots = {}, {}, nil
     for source = 1, 2 do
         for key, places in pairs(source == 1 and own or source == 2 and gm or EMPTY) do
             local kind = ns.NodeKind(key)
@@ -584,12 +605,15 @@ function Spots.Of(map, own, gm)
                 counts[key] = (counts[key] or 0) + #places
                 for _, place in ipairs(places) do
                     local x, y = Unpack(place)
-                    local entry = { key = key, kind = kind, place = place, x = x / UNITS * width, y = y / UNITS * height }
-                    entries[#entries + 1] = entry
-                    local cell = floor(entry.x / near) * 65536 + floor(entry.y / near)
-                    cells[cell] = cells[cell] or {}
+                    n = n + 1
+                    keyOf[n], kindOf[n], placeOf[n], xs[n], ys[n] = key, kind, place, x / UNITS * width, y / UNITS * height
+                    local cell = floor(xs[n] / near) * 65536 + floor(ys[n] / near)
                     local list = cells[cell]
-                    list[#list + 1] = entry
+                    if not list then
+                        list = {}
+                        cells[cell] = list
+                    end
+                    list[#list + 1] = n
                 end
             end
         end
@@ -599,21 +623,23 @@ function Spots.Of(map, own, gm)
         if counts[a] ~= counts[b] then return counts[a] > counts[b] end
         return a < b
     end
-    for _, entry in ipairs(entries) do
-        if not entry.spot then
-            local cx, cy, spot = floor(entry.x / near), floor(entry.y / near), nil
+    for i = 1, n do
+        if not spotOf[i] then
+            local key, x, y = keyOf[i], xs[i], ys[i]
+            local cx, cy, spot = floor(x / near), floor(y / near), nil
             for dx = -1, 1 do
                 for dy = -1, 1 do
-                    for _, other in ipairs(cells[(cx + dx) * 65536 + cy + dy] or EMPTY) do
-                        if other.key ~= entry.key and other.kind == entry.kind and not other.spot and (other.x - entry.x) ^ 2 + (other.y - entry.y) ^ 2 <= near * near then
+                    for _, j in ipairs(cells[(cx + dx) * 65536 + cy + dy] or EMPTY) do
+                        local other = keyOf[j]
+                        if other ~= key and kindOf[j] == kindOf[i] and not spotOf[j] and (xs[j] - x) ^ 2 + (ys[j] - y) ^ 2 <= near * near then
                             if not spot then
-                                spot = { keys = { entry.key }, at = { [entry.key] = entry.place } }
-                                entry.spot = spot
+                                spot = { keys = { key }, at = { [key] = placeOf[i] } }
+                                spotOf[i] = spot
                             end
-                            if not spot.at[other.key] then
-                                spot.keys[#spot.keys + 1] = other.key
-                                spot.at[other.key] = other.place
-                                other.spot = spot
+                            if not spot.at[other] then
+                                spot.keys[#spot.keys + 1] = other
+                                spot.at[other] = placeOf[j]
+                                spotOf[j] = spot
                             end
                         end
                     end
@@ -654,7 +680,7 @@ end
 ---------------------------------------------------------------------------
 -- Areas
 ---------------------------------------------------------------------------
--- Spawns of one ore close together (a mine: they fill a circle) shown as one symbol with a count
+-- Spawns of one herb or ore close together (a mine, a patch: they fill a circle) shown as one symbol with a count
 -- in place of a symbol each, while a map is zoomed out (the world map's widest zoom, the
 -- minimap's two widest). Other nodes' spawns there keep their symbols.
 
@@ -762,7 +788,7 @@ local function AreasIn(width, height, own, gm)
     for source = 1, 2 do
         for key, places in pairs(source == 1 and own or source == 2 and gm or EMPTY) do
             local kind = ns.NodeKind(key)
-            if type(places) == "table" and kind == "ore" then
+            if type(places) == "table" and (kind == "herbs" or kind == "ore") then
                 local into = all[key] or {}
                 all[key] = into
                 for _, place in ipairs(places) do into[#into + 1] = place end
@@ -931,6 +957,8 @@ local LOOT_WAIT = 3 -- seconds from the cast's end to its loot
 
 local cast -- { guid, key }: the gathering cast under way
 local done -- { key, map, x, y, at }: the cast that worked, waiting for its loot
+-- A gather of ours under way (GatherMate2's message for it is skipped).
+ownGathering = function() return cast ~= nil or done ~= nil and GetTime() - done.at <= LOOT_WAIT end
 
 local function ObjectLoot()
     for slot = 1, GetNumLootItems() do
@@ -945,6 +973,7 @@ local function Gathered()
     done = nil
     if not found or GetTime() - found.at > LOOT_WAIT or not ObjectLoot() then return end
     if Remember(found.key, found.map, found.x, found.y) then
+        ownAt = GetTime()
         ns.RereadNodePins() -- (GatherMate2's place there isn't marked twice)
         ns.RefreshSparkleWindow()
     end
@@ -1002,11 +1031,9 @@ end
 -- names its node, clicks go through to the map. Their look is set in the Collecting
 -- settings, as NodeSight's minimap symbols once were.
 
-local PICTURES = { "Each node's own icon", "Plain herb and ore icons" }
 local SHAPES = { "Square", "Round", "Round, gold ring", "Round, slim gold ring" }
 local SKILL_LOOKS = { "Red when too low", "Colored ring", "Colored gem", "Off" }
-local OWN, RING, GEM = 1, 2, 3 -- (pictures: OWN; skill looks: 1 red, RING, GEM, 4 off)
-local PLAIN_ICONS = { herbs = "Interface\\Icons\\INV_Misc_Flower_02", ore = "Interface\\Icons\\INV_Ore_Copper_01" }
+local RING, GEM = 2, 3 -- (skill looks: 1 red, RING, GEM, 4 off)
 local TRACKING = { herbs = "Professions_Tracking_Herb", ore = "Professions_Tracking_Ore" } -- a node with no item icon
 local TOO_HARD = { 1, 0.2, 0.2 } -- red tint for nodes above your skill
 local PIN_LEVEL = 100 -- over the canvas, if the map has no pin levels
@@ -1286,7 +1313,7 @@ end
 
 -- The picture, the ore ring, skill colors and see-through, each set only when it changes.
 local function ApplyLook(pin, key, kind, look)
-    local picture = look.picture == OWN and NodeIcon(key, kind) or look.picture ~= OWN and PLAIN_ICONS[kind] or TRACKING[kind]
+    local picture = NodeIcon(key, kind) or TRACKING[kind]
     if pin.picture ~= picture then
         pin.picture = picture
         if picture == TRACKING[kind] then
@@ -1361,7 +1388,7 @@ end
 -- Either goes with the picture wherever a minimap look puts it, through its masks too.
 function MINI.Shared(pin, second, kind, look)
     local how = second and ns.db.collectMiniShared or 1
-    local split = how == 2 and look.picture == OWN and pin.picture ~= TRACKING[kind] and NodeIcon(second, kind) or nil
+    local split = how == 2 and pin.picture ~= TRACKING[kind] and NodeIcon(second, kind) or nil
     if split and not pin.half then
         pin.half = Smooth(pin:CreateTexture(nil, "ARTWORK", nil, 1))
         pin.half:SetPoint("TOPLEFT", pin.icon, "TOP")
@@ -2160,7 +2187,7 @@ end
 -- The symbols' settings (`mini`: the minimap's size).
 local function CurrentLook(mini)
     local db = ns.db
-    return { picture = db.collectPicture, shape = db.collectShape, size = mini and db.collectMiniSize or db.collectSize, skill = db.collectSkill,
+    return { shape = db.collectShape, size = mini and db.collectMiniSize or db.collectSize, skill = db.collectSkill,
         mini = mini and db.collectMiniLook or nil,
         oreRings = db.collectOreRings, alpha = db.collectOpacity / 100 }
 end
@@ -2322,8 +2349,9 @@ local QUARTERS = {
     ["TRICORNER-BOTTOMRIGHT"] = { true, true, true, false },
 }
 -- EllesmereUI's minimap shapes (its minimap replaces the game's); "rectangular" is a
--- square cut at the top and bottom.
-local ELLESMERE = { circle = QUARTERS.ROUND, textured_circle = QUARTERS.ROUND, square = QUARTERS.SQUARE, rectangular = QUARTERS.SQUARE }
+-- square cut at the top and bottom (a table of its own, so a change between them redraws).
+local ELLESMERE = { circle = QUARTERS.ROUND, textured_circle = QUARTERS.ROUND, square = QUARTERS.SQUARE,
+    rectangular = { false, false, false, false } }
 
 local mini -- the frame over the minimap
 local minis, miniUsed, miniShown = {}, 0, 0
@@ -2368,14 +2396,88 @@ local function InShape(x, y, half, quarters, crop)
     return abs(x) <= half and abs(y) <= half * crop
 end
 
--- Your place on a map (0 to 1) and the map's size in yards; nil where unknown.
-local function MapPosition(map)
+local function Plain(...)
+    for i = 1, select("#", ...) do
+        local v = select(i, ...)
+        if issecretvalue(v) or type(v) ~= "number" then return false end
+    end
+    return true
+end
+
+-- GetPlayerMapPosition makes a new table each call (garbage every frame while you move), so the
+-- place comes from UnitPosition's plain numbers through the map's corners in the world, read once
+-- a map. Checked against GetPlayerMapPosition at first and every few seconds; a map where they
+-- disagree keeps GetPlayerMapPosition.
+local corners = {} -- [map] = { a0, b0, a1, b1, how, instance, checkAt }, or false
+local CHECK_EVERY, CHECK_YARDS = 5, 1
+local function SlowPosition(map)
     local position = C_Map.GetPlayerMapPosition(map, "player")
     if issecretvalue(position) or not position then return nil end
     local x, y = position:GetXY()
+    if not Plain(x, y) then return nil end
+    return x, y
+end
+local function Corner(map, u, v)
+    if not (C_Map.GetWorldPosFromMapPos and CreateVector2D) then return nil end
+    local ok, _, world = pcall(C_Map.GetWorldPosFromMapPos, map, CreateVector2D(u, v))
+    if not ok or issecretvalue(world) or type(world) ~= "table" then return nil end
+    local a, b = world:GetXY()
+    if not Plain(a, b) then return nil end
+    return a, b
+end
+-- Which of UnitPosition's numbers and which of the corners' go with the map's x: one of four
+-- ways (`how`), found by the first check.
+local function FromWorld(c, how, wx, wy)
+    local u, v = wx, wy
+    if how == 2 or how == 4 then u, v = wy, wx end
+    if how <= 2 then return (u - c[1]) / (c[3] - c[1]), (v - c[2]) / (c[4] - c[2]) end
+    return (u - c[2]) / (c[4] - c[2]), (v - c[1]) / (c[3] - c[1])
+end
+local function Close(c, how, wx, wy, sx, sy, width, height)
+    local x, y = FromWorld(c, how, wx, wy)
+    return abs(x - sx) * width <= CHECK_YARDS and abs(y - sy) * height <= CHECK_YARDS
+end
+
+-- Your place on a map (0 to 1) and the map's size in yards; nil where unknown.
+local function MapPosition(map)
     local width, height = C_Map.GetMapWorldSize(map)
-    if issecretvalue(x) or issecretvalue(y) or issecretvalue(width) or issecretvalue(height) or type(x) ~= "number"
-        or type(y) ~= "number" or type(width) ~= "number" or type(height) ~= "number" or width <= 0 or height <= 0 then return nil end
+    if not Plain(width, height) or width <= 0 or height <= 0 then return nil end
+    local c = corners[map]
+    if c == nil then
+        local a0, b0 = Corner(map, 0, 0)
+        local a1, b1 = Corner(map, 1, 1)
+        c = a0 and a1 and a1 ~= a0 and b1 ~= b0 and { a0, b0, a1, b1, nil, nil, 0 } or false
+        corners[map] = c
+    end
+    local wx, wy, _, instance = UnitPosition("player")
+    if c and Plain(wx, wy, instance) and (c[6] == nil or c[6] == instance) then
+        if GetTime() < c[7] then
+            local x, y = FromWorld(c, c[5], wx, wy)
+            return x, y, width, height
+        end
+        local sx, sy = SlowPosition(map)
+        if not sx then return nil end
+        if not c[5] then
+            -- The way that fits; none: not for this map; more than one (a spot where they agree): later.
+            local found, fits = nil, 0
+            for how = 1, 4 do
+                if Close(c, how, wx, wy, sx, sy, width, height) then found, fits = how, fits + 1 end
+            end
+            if fits ~= 1 then
+                if fits == 0 then corners[map] = false end
+                return sx, sy, width, height
+            end
+            c[5] = found
+        end
+        if Close(c, c[5], wx, wy, sx, sy, width, height) then
+            c[6], c[7] = instance, GetTime() + CHECK_EVERY
+        else
+            corners[map] = false
+        end
+        return sx, sy, width, height
+    end
+    local x, y = SlowPosition(map)
+    if not x then return nil end
     return x, y, width, height
 end
 -- Where you are on `map` for the world map's rare ones (Regions.Fill's `near`), or nil.
@@ -2441,6 +2543,10 @@ function MINI.Fade(dx, dy, half)
     return math.max(MINI.FADE_TO, 1 - (out - MINI.FADE_FROM) / (1 - MINI.FADE_FROM) * (1 - MINI.FADE_TO))
 end
 MINI.FADE_FROM, MINI.FADE_TO = 0.4, 0.3 -- (full within 40 % of the way out, down to 30 % at the edge)
+MINI.STILL = 0.5 -- minimap units a symbol may lag before it's drawn again
+-- In a cave (indoors) only the nearest few: the places have no height, so every tunnel and
+-- level of a mine would show at once, and the minimap is zoomed right in there.
+MINI.INDOORS = 5
 
 local function MiniSymbol(key, kind, dx, dy, count, look, second)
     miniUsed = miniUsed + 1
@@ -2464,23 +2570,52 @@ local function MiniSymbol(key, kind, dx, dy, count, look, second)
     return look
 end
 
+-- Indoors, the nearest MINI.INDOORS places in view, nearest first (kept in arrays: no table a frame).
+local kept = { n = 0, key = {}, kind = {}, x = {}, y = {}, far = {}, second = {} }
+function MINI.Keep(key, kind, dx, dy, far, second)
+    local k, n = kept, kept.n
+    if n == MINI.INDOORS and far >= k.far[n] then return end
+    local at = n < MINI.INDOORS and n + 1 or n
+    k.n = at
+    while at > 1 and k.far[at - 1] > far do
+        k.key[at], k.kind[at], k.x[at], k.y[at], k.far[at], k.second[at] =
+            k.key[at - 1], k.kind[at - 1], k.x[at - 1], k.y[at - 1], k.far[at - 1], k.second[at - 1]
+        at = at - 1
+    end
+    k.key[at], k.kind[at], k.x[at], k.y[at], k.far[at], k.second[at] = key, kind, dx, dy, far, second
+end
+
 local function Follow()
-    -- Not moved (UnitPosition, plain numbers, no table made), zoom, facing, shape and places the same: nothing to do.
+    -- Moved and turned less than would shift a symbol half a unit (UnitPosition, plain numbers,
+    -- no table made), and zoom, shape, size and places the same: nothing to do.
     local wx, wy = UnitPosition("player")
     if issecretvalue(wx) or issecretvalue(wy) then wx, wy = nil, nil end
     local radius = C_Minimap.GetViewRadius()
+    if issecretvalue(radius) then radius = nil end
     local facing = C_CVar.GetCVar("rotateMinimap") == "1" and GetPlayerFacing() or 0
     if issecretvalue(facing) then facing = nil end
     local quarters = Quarters()
     local zoom = Minimap:GetZoom()
     if issecretvalue(zoom) then zoom = nil end
-    if wx and wx == last.wx and wy == last.wy and radius == last.radius and facing == last.facing and version == last.version
-        and quarters == last.quarters and zoom == last.zoom then return end
-    last.wx, last.wy, last.radius, last.facing, last.version, last.quarters, last.zoom = wx, wy, radius, facing, version, quarters, zoom
-    miniUsed = 0
     local map = C_Map.GetBestMapForUnit("player")
+    if issecretvalue(map) then map = nil end
+    local indoors = ns.db.collectCaveNearest == true and IsIndoors() == true
+    local half = last.half
+    if wx and last.wx and map and map == last.map and indoors == last.indoors and type(radius) == "number" and radius > 0 and radius == last.radius and version == last.version
+        and quarters == last.quarters and zoom == last.zoom and half and half > 0 and Minimap:GetWidth() / 2 == half then
+        local still = MINI.STILL * radius / half -- (in yards)
+        local ex, ey = wx - last.wx, wy - last.wy
+        local turned = facing ~= last.facing
+        if turned and facing and last.facing then
+            turned = abs((facing - last.facing + math.pi) % (2 * math.pi) - math.pi) * half >= MINI.STILL
+        end
+        if ex * ex + ey * ey < still * still and not turned then return end
+    end
+    last.wx, last.wy, last.radius, last.facing, last.version, last.quarters, last.zoom, last.map = wx, wy, radius, facing, version, quarters, zoom, map
+    last.indoors = indoors
+    miniUsed = 0
     local own, gm, x, y, width, height
-    if not issecretvalue(map) and type(map) == "number" then own, gm = Sources(map) end
+    if type(map) == "number" then own, gm = Sources(map) end
     if own or gm then x, y, width, height = MapPosition(map) end
     if x and facing and not issecretvalue(radius) and type(radius) == "number" and radius > 0 then
         local half = Minimap:GetWidth() / 2
@@ -2496,9 +2631,11 @@ local function Follow()
         local look
         local info = MapInfo(map, own, gm)
         local common = info.common
-        -- Areas at the minimap's two widest zooms; closer in, every spawn has its symbol.
+        -- Areas at the minimap's two widest zooms; closer in, every spawn has its symbol (and
+        -- indoors, where only the nearest show).
         local areas, inAreas
-        if type(zoom) == "number" and zoom <= 1 then areas, inAreas = info.areas, info.inAreas end
+        if type(zoom) == "number" and zoom <= 1 and not indoors then areas, inAreas = info.areas, info.inAreas end
+        kept.n = 0
         Near(nearMini, own, gm, x, y, width, height, reach, inAreas, common, info.spots)
         local keys, kindsOf, placesOf, seconds = nearMini.key, nearMini.kind, nearMini.place, nearMini.second
         for i = 1, nearMini.count do
@@ -2507,9 +2644,16 @@ local function Follow()
             local north = (y - place % PACK / UNITS) * height
             if east * east + north * north <= reach then
                 local dx, dy = (east * cos + north * sin) * scale, (north * cos - east * sin) * scale
-                if InShape(dx, dy, half, quarters, crop) then look = MiniSymbol(key, kind, dx, dy, nil, look, seconds[i] or nil) end
+                if InShape(dx, dy, half, quarters, crop) then
+                    if indoors then
+                        MINI.Keep(key, kind, dx, dy, east * east + north * north, seconds[i] or nil)
+                    else
+                        look = MiniSymbol(key, kind, dx, dy, nil, look, seconds[i] or nil)
+                    end
+                end
             end
         end
+        for j = 1, kept.n do look = MiniSymbol(kept.key[j], kept.kind[j], kept.x[j], kept.y[j], nil, look, kept.second[j]) end
         -- The areas' symbols in view, with their counts.
         for _, area in ipairs(areas or EMPTY) do
             if Shown(area.key, area.kind) and not (common and common[area.key]) then
@@ -2524,9 +2668,16 @@ local function Follow()
     miniShown = miniUsed
 end
 
+-- At most about 60 times a second: a faster frame rate skips frames (one a little short of
+-- a 60th still counts, so 60 fps draws every frame).
+local STEP = 1 / 60
+local miniWait = 0
 -- An error here would repeat every frame: reported once, then no minimap symbols until a reload.
 local miniBroken = false
-local function MiniUpdate()
+local function MiniUpdate(_, elapsed)
+    miniWait = miniWait + (elapsed or STEP)
+    if miniWait < STEP * 0.9 then return end
+    miniWait = math.min(miniWait - STEP, STEP)
     if not xpcall(Follow, geterrorhandler()) then
         miniBroken = true
         mini:Hide()
@@ -2696,7 +2847,11 @@ local function HookMap()
     hover = New("Frame", WorldMapFrame)
     hover:SetScript("OnUpdate", function() Run(Hover) end)
     hover:SetScript("OnHide", HoverGone)
-    WorldMapFrame:HookScript("OnShow", ns.RereadNodePins) -- (an import in GatherMate2 sends no message)
+    -- An import in GatherMate2 sends no message, so its places are read again as the map opens;
+    -- without it nothing changes unseen.
+    WorldMapFrame:HookScript("OnShow", function()
+        if ns.db.collectGatherMate then ns.RereadNodePins() else ns.RefreshNodePins() end
+    end)
     Regions.MapButton()
     if WorldMapFrame.OnMapChanged then hooksecurefunc(WorldMapFrame, "OnMapChanged", ns.RefreshNodePins) end
     if WorldMapFrame.OnCanvasScaleChanged then hooksecurefunc(WorldMapFrame, "OnCanvasScaleChanged", Rescale) end
@@ -2850,9 +3005,9 @@ ns.Collecting = {
     Version = function() return version end, PACK = PACK, UNITS = UNITS,
     SkillColor = SkillColor, FarmZones = FarmZones, FARM_LEVELS = FARM_LEVELS, DisplayName = DisplayName,
     AreasIn = AreasIn, ShowCount = ShowCount, Regions = Regions,
-    Shrink = Shrink, MiniShared = MINI.Shared, Common = Common, MiniFade = MINI.Fade,
+    Shrink = Shrink, MiniShared = MINI.Shared, Common = Common, MiniFade = MINI.Fade, Spots = Spots,
 }
-ns.COLLECT_PICTURES, ns.COLLECT_SHAPES, ns.COLLECT_SKILL_LOOKS = PICTURES, SHAPES, SKILL_LOOKS
+ns.COLLECT_SHAPES, ns.COLLECT_SKILL_LOOKS = SHAPES, SKILL_LOOKS
 ns.COLLECT_ZOOM_LOOKS = { "Symbols", false, false, "Hex tiles", "Mix rings", "One symbol a group", false, "Dots", "Regions" } -- (false: taken out, a saved one goes back to the default)
 ns.COLLECT_MINI_LOOKS = { "Whole symbol", "Hole in the middle", "See-through middle", "Pin" }
 ns.COLLECT_MINI_SHARED = { "The common one", "Split down the middle", "Second as a badge" }

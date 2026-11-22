@@ -75,6 +75,7 @@ local function ToggleSwitch()
     ns.db.switchFinders = not ns.db.switchFinders
     ns.SwitchReset()
     ns.UpdateSwitch()
+    ns.RefreshNodePins() -- (Only while tracking counts both kinds while it's on)
     Say(ns.db.switchFinders and "Herb/Ore Switch turned on." or "Herb/Ore Switch turned off.")
     ns.RefreshSettingsWindow()
 end

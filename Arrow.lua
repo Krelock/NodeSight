@@ -144,11 +144,13 @@ local function Draw()
     if not target or target.map ~= map or target.place ~= place then
         target = { map = map, place = place, key = key, kind = list.kind[i] }
         stamp = stamp + 1
+    end
+    if symbol.key ~= key or symbol.version ~= version then -- (a new place, look or skill level)
         local look = C.CurrentLook()
         look.size, look.alpha = SYMBOL, 1
         if symbol.shape ~= look.shape or symbol.size ~= look.size then C.ApplyShape(symbol, look) end
         C.ApplyLook(symbol, key, target.kind, look)
-        symbol.key = key
+        symbol.key, symbol.version = key, version
     end
     local distance = sqrt(east * east + north * north)
     -- The arrow goes around the symbol, pointing the way (radians as GetPlayerFacing: left is +).
@@ -164,6 +166,7 @@ local function OnUpdate()
     if not xpcall(Draw, geterrorhandler()) then
         broken = true
         frame:Hide()
+        target, stamp = nil, stamp + 1 -- (the compass's pointer goes too)
     end
 end
 

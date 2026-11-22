@@ -2353,3 +2353,10 @@ function ns.RefusedCVar()
 end
 -- Is the Interact Key off because you're in town (Interact Key off in towns)?
 ns.InteractPaused = InTown
+-- Blizzard's tip asking for an Interact Key binding comes back every login while the key
+-- is on. Sparkles need no binding, so mark it seen (called at PLAYER_LOGIN, before the tip).
+function ns.QuietInteractTip()
+    if SparklesOn() and not InCombatLockdown() and C_CVar.GetCVar("interactKeyWarningTutorial") == "0" then
+        C_CVar.SetCVar("interactKeyWarningTutorial", "1")
+    end
+end

@@ -164,7 +164,7 @@ local function RegisterSettings()
         local findersTip = "Switches between Find Herbs and Find Minerals as you travel. You need both trained and one active to start."
         -- Toggling the switch also ends a stop after failed switches; other settings keep it.
         local finders = Checkbox("switchFinders", "Switch between herbs and ore", findersTip,
-            function() SwitchReset() UpdateSwitch() end)
+            function() SwitchReset() UpdateSwitch() ns.RefreshNodePins() end)
         Checkbox("skillLine", "Required skill in tooltips",
             "Shows the skill a herb or ore needs in its tooltip when your mouse is on it in the world, and on herb and ore items.",
             function() end) -- (tooltips are built again each time they show)
@@ -235,10 +235,9 @@ local function RegisterSettings()
             "The same symbols on the minimap for the places near you. They let the mouse through to the game's own dots.",
             function() ns.RefreshNodePins() end)
         Checkbox("collectMiniFade", "Minimap: fade toward the edge", "Symbols farther from you fade, so the ones near you stand out.", function() ns.RefreshNodePins() end)
+        Checkbox("collectCaveNearest", "Minimap: in caves, the nearest only", "In a cave the minimap shows only the 5 nearest spawns, so a mine's tunnels and levels don't pile up.", function() ns.RefreshNodePins() end)
         local function MapChanged() ns.RefreshNodePins() end
         local size, opacity = ns.COLLECT_RANGES.collectSize, ns.COLLECT_RANGES.collectOpacity
-        Dropdown("collectPicture", "Map symbols' picture", ns.COLLECT_PICTURES,
-            "Each node's own item icon, or one plain icon for herbs and one for ore.", MapChanged)
         Dropdown("collectShape", "Map symbols' shape", ns.COLLECT_SHAPES, "The symbols' shape, on the world map and the minimap.", MapChanged)
         Slider("collectSize", "World map symbols' size", size[1], size[2], "How big the symbols are on the world map.", MapChanged, size[3])
         local mini = ns.COLLECT_RANGES.collectMiniSize
@@ -269,7 +268,7 @@ local function RegisterSettings()
         Slider("collectRarePercent", "Rare ones: or under (%)", rare[1], rare[2],
             "Herbs or ore that make up less than this share of a zone's count as rare there too. 0: only the list. The default is " .. defaults.collectRarePercent .. ".",
             function() ns.RereadNodePins() end, rare[3])
-        Checkbox("collectAreas", "Group close spawns", "Close spawns of one ore, like a mine, show as one symbol with a count.",
+        Checkbox("collectAreas", "Group close spawns", "Close spawns of one herb or ore, like a mine, show as one symbol with a count.",
             function() ns.RereadNodePins() end)
         Dropdown("collectZoomLook", "Zoomed-out look", ns.COLLECT_ZOOM_LOOKS, "How spawns show on the world map at its widest zoom, for example groups: one symbol with a count for each group of herbs or ore.", MapChanged)
         local function CompassChanged() ns.CompassChanged() end

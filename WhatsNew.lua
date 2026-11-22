@@ -1,6 +1,6 @@
 -- NodeSight's What's New dialog (the patch notes) and its notices.
 --
--- Sections: After the fight, What's new (and the notice), Minimap news.
+-- Sections: After the fight, What's new (and the notice), Collecting news.
 
 local ADDON_NAME, ns = ...
 
@@ -51,18 +51,25 @@ end
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
-        { version = "4.0.2",
+        { version = "4.0.3",
             { "New", {
                 { "Collecting (Beta), much bigger.", "Off by default. Every herb and ore spawn is built in and marked on your world map and minimap, with a map button to hide them, filters and a quick setup. Turn it on in General, on Collecting (Beta) or with Ctrl Left Click on the minimap button" },
                 { "Compass bar and next node arrow.", "Off by default. Find the herbs and ore around you from the top of the screen. On Collecting (Beta) > Compass and arrow" },
                 { "Where to farm.", "The best zones for skill-ups, on Collecting (Beta) > Where to farm" },
                 { "GatherMate2 support.", "Off by default. Shows GatherMate2's herbs and ore with NodeSight's symbols. On Collecting (Beta) > General" },
                 { "Sparkle Maker (Beta).", "Make your own sparkles from Blizzard's effects, in the sparkle window" },
+                { "Caves: nearest only.", "On by default. In a cave the minimap shows only the 5 nearest spawns, so a mine's tunnels and levels don't pile up. On Collecting (Beta) > General" },
             } },
             { "Changes", {
                 { "Cleaner settings.", "Each setting shows once, with live previews" },
                 { "Interact Key off in towns.", "Now on for everyone. You can turn it off in Sparkle settings" },
                 { "New Collecting look.", "If you tried Collecting before, its symbols move to the new look once. It stays on or off as you had it" },
+                { "Herbs grouped too.", "Close spawns of one herb now show as one symbol with a count, like mines" },
+                { "Own icons only.", "The symbols' Picture setting is gone: each herb and ore always shows its own icon" },
+                { "Lighter.", "Collecting's minimap symbols and the compass use far less CPU and memory" },
+            } },
+            { "Fixes", {
+                { "Interact Key pop-up at login.", "Blizzard's tip asking you to assign an Interact Key binding no longer shows every time you log in while sparkles are on. Sparkles don't need a key" },
             } },
         },
         { version = "3.2.3",
@@ -237,7 +244,7 @@ do
 
     -- Notice: one message in the same look, with an OK button.
     local notice
-    local function Show(title, body, once)
+    local function Show(title, body, once, action)
         if not notice then
             notice = NewFrame("Frame", UIParent)
             notice:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -264,41 +271,53 @@ do
             end)
             notice.never:SetWidth(math.max(128, notice.never:GetTextWidth() + 24))
             notice.never:SetPoint("BOTTOMLEFT", notice, "BOTTOM", 6, 16)
+            notice.action = DialogButton(notice, "", nil)
+            notice.action:SetPoint("BOTTOMRIGHT", notice, "BOTTOM", -6, 16)
         end
-        -- A message shown only once has no use for "Don't show this again".
+        -- A message shown only once has no use for "Don't show this again"; one with its own
+        -- button (only those) has it left of Okay.
         notice.okay:ClearAllPoints()
-        if once then
+        if action then
+            notice.okay:SetPoint("BOTTOMLEFT", notice, "BOTTOM", 6, 16)
+        elseif once then
             notice.okay:SetPoint("BOTTOM", 0, 16)
         else
             notice.okay:SetPoint("BOTTOMRIGHT", notice, "BOTTOM", -6, 16)
         end
         notice.never:SetShown(not once)
+        notice.action:SetShown(action ~= nil)
+        if action then
+            notice.action:SetText(action[1])
+            notice.action:SetScript("OnClick", function()
+                notice:Hide()
+                action[2]()
+            end)
+        end
         notice.text:SetText(NORMAL_FONT_COLOR:WrapTextInColorCode(title) .. "\n\n" .. body)
         notice:SetHeight(notice.text:GetStringHeight() + 73)
         notice:Show()
     end
-    function ShowNotice(title, body, once)
-        ns.AfterFight("notice", function() Show(title, body, once) end)
+    function ShowNotice(title, body, once, action)
+        ns.AfterFight("notice", function() Show(title, body, once, action) end)
     end
 end
 
 ns.ShowWhatsNew, ns.ShowNotice = ShowWhatsNew, ShowNotice
 
 ---------------------------------------------------------------------------
--- Minimap news
+-- Collecting news
 ---------------------------------------------------------------------------
--- The game no longer lets addons read the minimap's nodes: told once per account.
-local MINIMAP_NEWS = RED_FONT_COLOR:WrapTextInColorCode("Blizzard's latest update patched out every way for addons to read "
-    .. "the nodes on the minimap, so everything NodeSight did on your minimap no longer works.")
-    .. "\n\nWhat still works:"
-    .. "\n- Sparkles on herbs, ore, chests and other things near you"
-    .. "\n- Switching between Find Herbs and Find Minerals as you travel"
-    .. "\n- The required skill in a herb's or ore's tooltip when you hover it"
-    .. "\n\nFor now, NodeSight will just be those features."
-    .. "\n\nIf anyone has suggestions on what to turn this into, if anything, I would love to hear your thoughts. "
-    .. "It could be a GatherMate type addon with my style of icons, for example."
-    .. "\n\nIf you just want my sparkles, I have another addon called NodeSight Sparkles, it's just the sparkles from NodeSight."
+-- Collecting is off until a player turns it on, and its marks aren't live: told once per account.
+local COLLECT_NEWS = RED_FONT_COLOR:WrapTextInColorCode("Herbs and ore on your maps aren't live anymore: Blizzard's latest "
+    .. "update stopped addons from reading the nodes on the minimap.")
+    .. "\n\nCollecting (Beta) marks every place a herb or ore can spawn, and the places you gather, on your world map "
+    .. "and minimap. These are spawn points, not live nodes: one may already be picked or not up yet."
+local COLLECT_ON = "\n\nIt's off until you turn it on: %sthe Collecting (Beta) box on NodeSight's General page, "
+    .. "or Ctrl Left Click on the minimap button."
+    .. "\n\nThe sparkles on herbs and ore near you work as before."
 
-function ns.ShowMinimapNews()
-    ShowNotice("NodeSight", MINIMAP_NEWS, true)
+function ns.ShowCollectNews()
+    if ns.OptionsOnly() then return ShowNotice("NodeSight", COLLECT_NEWS .. COLLECT_ON:format(""), true) end
+    ShowNotice("NodeSight", COLLECT_NEWS .. COLLECT_ON:format("Set up below, "), true,
+        { "Set up", function() ns.ShowSparkleWindow("collect") end })
 end

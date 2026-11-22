@@ -1068,6 +1068,7 @@ local function Build()
         local page = New("Frame", window.Inset)
         page:SetPoint("TOPLEFT", LIST + 4, -4)
         page:SetPoint("BOTTOMRIGHT", -4, 4)
+        page:Hide() -- (shown by Refresh once built, so its OnShow runs)
         entry.page = page
         window.pages[i] = page
     end
@@ -1145,11 +1146,13 @@ local function Saved(clean, id)
     return sparkle
 end
 
+-- Never one a deleted sparkle had: another character's kinds may still name it.
 local function NextId()
-    local id = 0
+    local id = type(ns.db.madeTop) == "number" and ns.db.madeTop or 0
     for _, sparkle in ipairs(ns.MadeList()) do
         if type(sparkle) == "table" and type(sparkle.id) == "number" then id = max(id, sparkle.id) end
     end
+    ns.db.madeTop = id + 1
     return id + 1
 end
 
@@ -1281,6 +1284,9 @@ local function DeleteMade(id)
     local list = ns.MadeList()
     for i = #list, 1, -1 do
         if type(list[i]) == "table" and list[i].id == id then table.remove(list, i) end
+    end
+    for i = #undo, 1, -1 do
+        if undo[i].id == id then table.remove(undo, i) end
     end
     for _, kind in ipairs(ns.KINDS) do
         for _, key in ipairs({ ns.SPARKLE_KEYS[kind].made, ns.SPARKLE_KEYS[kind].made2 }) do
@@ -1892,7 +1898,7 @@ local function Dragging(handle)
     if not (drag and look) then return end
     local x, y = Cursor(handle)
     if x == drag.lastX and y == drag.lastY then return end
-    drag.lastX, drag.lastY = x, y
+    drag.lastX, drag.lastY, drag.moved = x, y, true
     if drag.mode == "move" then
         look.x = Limit("x", drag.x + x - drag.fromX)
         look.height = Limit("height", drag.height + y - drag.fromY)
@@ -1927,7 +1933,7 @@ local function StartDrag(handle, mode)
         end
     end
     Remember(Current(), true)
-    handle.drag = { mode = mode, fromX = x, fromY = y, centerX = centerX, centerY = centerY, style = not isEffect,
+    handle.drag = { mode = mode, fromX = x, fromY = y, lastX = x, lastY = y, centerX = centerX, centerY = centerY, style = not isEffect,
         x = tonumber(look.x) or 0, height = tonumber(look.height) or ns.MADE_DEFAULT.height,
         size = tonumber(look.size) or ns.MADE_DEFAULT.size, fromDist = sqrt((x - centerX) ^ 2 + (y - centerY) ^ 2) }
     GameTooltip:Hide()
@@ -1937,7 +1943,7 @@ end
 
 local function StopDrag(handle)
     if not handle.drag then return end
-    if not handle.drag.lastX then table.remove(undo) end -- (a click: nothing to take back)
+    if not handle.drag.moved then table.remove(undo) end -- (a click: nothing to take back)
     handle.drag, undo.at = nil, nil -- (the next change a step of its own)
     handle:SetScript("OnUpdate", nil)
     handle.readout:Hide()
@@ -2660,6 +2666,7 @@ function Refresh()
     end
     if tab.page then
         tab.refresh(tab.page)
+        WarnMaker(false)
         window.off:SetShown(false)
         if window.glow then window.glow:SetShown(false) end
         window.refreshing = nil
