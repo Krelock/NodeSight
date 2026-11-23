@@ -51,7 +51,7 @@ end
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
-        { version = "4.0.3.3",
+        { version = "4.0.3.4",
             { "New", {
                 { "Collecting (Beta), much bigger.", "Off by default. Every herb and ore spawn is built in and marked on your world map and minimap, with a map button to hide them, filters and a quick setup. Turn it on in General, on Collecting (Beta) or with Ctrl Left Click on the minimap button" },
                 { "Compass bar and next node arrow.", "Off by default. Find the herbs and ore around you from the top of the screen. On Collecting (Beta) > Compass and arrow" },
@@ -62,7 +62,7 @@ do
             } },
             { "Changes", {
                 { "Cleaner settings.", "Each setting shows once, with live previews" },
-                { "Interact Key off in towns.", "Now on for everyone. You can turn it off in Sparkle settings" },
+                { "Interact Key off in towns.", "Off by default again, and turned off once for everyone, so the Interact Key works in towns as before. You can turn it on in Sparkle settings" },
                 { "New Collecting look.", "If you tried Collecting before, its symbols move to the new look once. It stays on or off as you had it" },
                 { "Herbs grouped too.", "Close spawns of one herb now show as one symbol with a count, like mines" },
                 { "Own icons only.", "The symbols' Picture setting is gone: each herb and ore always shows its own icon" },

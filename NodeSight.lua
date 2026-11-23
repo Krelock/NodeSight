@@ -113,7 +113,7 @@ local defaults = {
     nodeArrowRange = 250, -- yards: the farthest place it points to
     nodeArrowSize = 100, -- its size (%)
     nodeArrowX = 0, nodeArrowY = -60, -- its top, from the screen's top middle
-    townInteractOff = true, -- Interact Key off while resting in a town or inn
+    townInteractOff = false, -- Interact Key off while resting in a town or inn
     stoneBackground = true, -- the settings window's stone texture under the logo's brown
 }
 local db = defaults -- NodeSightDB once it's loaded
@@ -416,10 +416,10 @@ local function OnAddonLoaded()
         settings.stoneOn = true
         if settings.stoneBackground == false then settings.stoneBackground = true end
     end
-    -- Interact Key off in towns on once for settings saved while it was off by default (townOn: done).
-    if settings.townOn == nil then
-        settings.townOn = true
-        settings.townInteractOff = true
+    -- Interact Key off in towns turned off once for every save, back to its default (townOff: done).
+    if settings.townOff == nil then
+        settings.townOff = true
+        settings.townInteractOff = false
     end
     for key, value in pairs(defaults) do
         if settings[key] == nil then settings[key] = value end
