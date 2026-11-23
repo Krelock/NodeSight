@@ -291,6 +291,22 @@ local function SetColors(one, two)
     Refresh()
 end
 
+-- The Color set menu, and the name its dropdown shows: the set two colors are, or Custom.
+local function IsSet(set)
+    local now, second = ns.SparkleColors(Shown())
+    return now == set[2] and second == set[3]
+end
+local function PickSet(set) SetColors(set[2], set[3]) end
+local function SetsMenu(_, root)
+    for _, set in ipairs(SETS) do root:CreateRadio(set[1], IsSet, PickSet, set) end
+end
+local function SetName(one, two)
+    for _, set in ipairs(SETS) do
+        if one == set[2] and two == set[3] then return set[1] end
+    end
+    return CUSTOM
+end
+
 -- what: "color" or "color2". Cancel puts back each kind's colors from before. The picker
 -- calls swatchFunc as it opens and on Okay too: nothing is saved until the color moves.
 local function PickColor(what)
@@ -695,20 +711,29 @@ local function Build()
     divider:SetColorTexture(70 / 255, 58 / 255, 40 / 255)
     window.listPanel, window.listDivider = panel, divider
     window.list, window.pages, window.Tabs = {}, {}, {}
-    local y = -6
-    for i, entry in ipairs(ns.WINDOW_PAGES or {}) do
-        entry.index = nil
-        window.list[i] = ListEntry(list, y, entry)
-        y = y - 24
-    end
-    if ns.WINDOW_PAGES then
-        local header = Label(list, "Sparkles", "GameFontNormalLarge")
-        header:SetPoint("TOPLEFT", 10, y - 8)
+    -- A heading in the list (Sparkles, and a page group's), with a gold line under it.
+    local function Heading(text, at)
+        local header = Label(list, text, "GameFontNormalLarge")
+        header:SetPoint("TOPLEFT", 10, at - 8)
         local line = list:CreateTexture(nil, "ARTWORK")
         Fade(line, 1, 0.82, 0, 0.67) -- (the logo's gold)
         line:SetHeight(1)
         line:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -3)
         line:SetPoint("RIGHT", list, "RIGHT", -8, 0)
+        return header
+    end
+    local y = -6
+    for i, entry in ipairs(ns.WINDOW_PAGES or {}) do
+        entry.index = nil
+        if entry.header then
+            entry.heading = Heading(entry.header, y)
+            y = y - 36
+        end
+        window.list[i] = ListEntry(list, y, entry)
+        y = y - 24
+    end
+    if ns.WINDOW_PAGES then
+        Heading("Sparkles", y)
         y = y - 36
     end
     for i, tab in ipairs(TABS) do
@@ -919,6 +944,13 @@ local function Build()
     sets:SetDefaultText(CUSTOM)
     Row(panel, -72, "Color set", sets, "Two colors that go well together.")
     window.sets = sets
+    -- Blizzard's template builds the whole menu each time a dropdown shows, and SetupMenu
+    -- builds it at once if shown, only to show the chosen option's name: here menus are
+    -- built when they open, and Refresh writes the names.
+    sets:SetScript("OnShow", nil)
+    sets:Hide()
+    sets:SetupMenu(SetsMenu)
+    sets:Show()
     window.size = Slider(panel, -108, "Area", "size", 30, 200, "How far around the node the sparkles go.", true)
     window.height = Slider(panel, -146, "Height", "height", -150, 100, "Moves the sparkles up or down.", true)
     window.count = Slider(panel, -184, "Count", "count", 1, 20,
@@ -971,6 +1003,17 @@ local function Build()
     Row(general, -164, "When gathered", harvest,
         "What the sparkles do when you loot it. Picking one plays it on the preview.")
     window.harvest = harvest
+    local function IsHarvest(i) return ns.db.harvest == i end
+    local function PickHarvest(i)
+        Set("harvest", i)
+        PlayHarvest()
+    end
+    harvest:SetScript("OnShow", nil)
+    harvest:Hide()
+    harvest:SetupMenu(function(_, root)
+        for i, each in ipairs(ns.HARVESTS) do root:CreateRadio(each.name, IsHarvest, PickHarvest, i) end
+    end)
+    harvest:Show()
     local show = New("Button", general, "UIPanelButtonTemplate")
     show:SetSize(90, 22)
     show:SetText(PREVIEW)
@@ -1019,13 +1062,13 @@ local function Build()
 
     BuildMaker(grid)
 
-    -- The addon's own pages, beside the list.
+    -- The addon's own pages, beside the list. Their controls are made the first time they
+    -- show (Refresh): frames are never freed, so a page never opened costs nothing.
     for i, entry in ipairs(ns.WINDOW_PAGES or {}) do
         local page = New("Frame", window.Inset)
         page:SetPoint("TOPLEFT", LIST + 4, -4)
         page:SetPoint("BOTTOMRIGHT", -4, 4)
         entry.page = page
-        entry.build(page)
         window.pages[i] = page
     end
 
@@ -2573,6 +2616,10 @@ function Refresh()
     local height = isMaker and max(402 + gridHeight, MAKER_HEIGHT) or 402 + gridHeight
     if window:GetHeight() ~= height then window:SetHeight(height) end
     window.selectedTab = tab.index
+    if tab.page and not tab.page.built then
+        tab.page.built = true
+        tab.build(tab.page) -- (before it shows: a page picked in the list gets its OnShow)
+    end
     for _, entry in ipairs(ns.WINDOW_PAGES or {}) do entry.page:SetShown(entry == tab) end
     local items = {}
     for i, entry in ipairs(ns.WINDOW_PAGES or {}) do items[#items + 1] = { window.list[i], entry } end
@@ -2640,14 +2687,8 @@ function Refresh()
     window.gatherDim:SetChecked(ns.db.gatherDim)
     window.grayTooHard:SetChecked(ns.db.grayTooHard)
     window.rareGlow:SetChecked(ns.db.rareGlow)
-    window.harvest:SetupMenu(function(_, root)
-        for i, harvest in ipairs(ns.HARVESTS) do
-            root:CreateRadio(harvest.name, function() return ns.db.harvest == i end, function()
-                Set("harvest", i)
-                PlayHarvest()
-            end)
-        end
-    end)
+    local harvest = ns.HARVESTS[ns.db.harvest]
+    window.harvest:SetText(harvest and harvest.name)
     local on = true
     for _, k in ipairs(Kinds()) do on = on and ns.db[k] end
     local anyOn = false
@@ -2668,14 +2709,7 @@ function Refresh()
     local one, two = ns.SparkleColors(kind)
     window.swatch:SetColorRGB(ns.SparkleRGB(one))
     window.swatch2:SetColorRGB(ns.SparkleRGB(two))
-    window.sets:SetupMenu(function(_, root)
-        for _, set in ipairs(SETS) do
-            root:CreateRadio(set[1], function()
-                local now, second = ns.SparkleColors(Shown())
-                return now == set[2] and second == set[3]
-            end, function() SetColors(set[2], set[3]) end)
-        end
-    end)
+    window.sets:SetText(SetName(one, two))
     window.size:SetValue(ns.SparkleLook(kind, "size"))
     window.height:SetValue(ns.SparkleLook(kind, "height"))
     window.count:SetValue(ns.SparkleLook(kind, "count"))

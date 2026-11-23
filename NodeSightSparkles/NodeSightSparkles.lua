@@ -54,7 +54,7 @@ local defaults = {
     rareGlow = false, -- a gold glow around rare herbs and ore
     harvest = 5, -- how a gathered node finishes (Sparkles.lua's HARVESTS: Fade away)
     minimapButton = true, -- the minimap button (its place: minimapIcon, LibDBIcon's)
-    townInteractOff = true, -- Interact Key off while resting in a town or inn
+    townInteractOff = false, -- Interact Key off while resting in a town or inn
     stoneBackground = true, -- the settings window's stone texture under the logo's brown
 }
 ns.db = defaults -- NodeSightSparklesCharDB from login on
@@ -121,10 +121,10 @@ local function LoadSaved()
         })
     end
     settings = db
-    -- Interact Key off in towns on once for settings saved while it was off by default (townOn: done).
-    if db.townOn == nil then
-        db.townOn = true
-        db.townInteractOff = true
+    -- Interact Key off in towns turned off once for every save, back to its default (townOff: done).
+    if db.townOff == nil then
+        db.townOff = true
+        db.townInteractOff = false
     end
     for key, value in pairs(defaults) do
         if db[key] == nil then db[key] = value end
@@ -230,6 +230,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
             return
         end
         ns.db = settings
+        ns.QuietInteractTip()
         ns.RegisterSettings()
         ns.MinimapButton()
     elseif event == "PLAYER_ENTERING_WORLD" then
