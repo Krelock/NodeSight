@@ -4,7 +4,7 @@
 -- nothing written into the game's Options list (rows changed from addon code there break
 -- its dropdowns in combat).
 --
--- Sections: Parts, The Switch line, The pages, In the window.
+-- Sections: Parts, The Switch line, The pages, In the window, Thanks.
 
 local _, ns = ...
 
@@ -338,6 +338,7 @@ local function SwitchColumns(column, right, page)
     Slider(column, "switchEnemyYards", "Enemy targeted within", 0, 60, 1,
         "Switching pauses while you target a living enemy this close, and for a second after you mouse over one. Distances are rough: the game doesn't give exact ones.", YardsOrOff)
     Checkbox(column, "switchPauseStealth", "While stealthed", "Switching pauses while you're stealthed.")
+    Checkbox(column, "switchPauseFalling", "While falling", "Switching pauses while you're in the air, jumping or falling.")
     Slider(column, "switchAfterCast", "After your own spells", 0, 10, 1,
         "Switching pauses this long after your own spells end, and after you dismount, so the switch's global cooldown doesn't get in your way.", SecondsOrOff)
     -- The line, twice a second while the page shows.
@@ -585,7 +586,7 @@ local function FillFarm(column, list, kind)
     if not ns.HasProfession(kind) then
         why = ("No %s on this character."):format(KIND_WORDS[kind][2])
     elseif not (ns.db.collect or ns.db.collectSpawns or ns.db.collectGatherMate) then
-        why = "Turn on Remember where I gather, Every known spawn or GatherMate2's places on the Collecting page."
+        why = "Turn on Places I gather, Every known spawn or GatherMate2's places on the Collecting page."
     elseif #list == 0 then
         why = "No marked places give you a skill-up yet."
     end
@@ -1363,6 +1364,105 @@ local function Refresh(page)
     refreshing = false
 end
 
+---------------------------------------------------------------------------
+-- Thanks
+---------------------------------------------------------------------------
+-- A page with the supporter's name, and a link to copy (addons can't open a browser).
+
+local COFFEE = "https://buymeacoffee.com/krelock"
+ns.SUPPORTERS = { "rp440" } -- the names on the page, in order
+local NAMES_TOP, NAMES_BOTTOM, NAMES_SIDE = 74, 104, 40 -- the names' area, inside the gold lines
+
+-- A gold line across the page (inside the names' sides), fading out both ways from the middle.
+local function GoldLine(page, point, y)
+    for _, side in ipairs({ -1, 1 }) do
+        local half = page:CreateTexture(nil, "ARTWORK")
+        half:SetColorTexture(1, 1, 1, 1)
+        half:SetHeight(1)
+        local edge = point .. (side < 0 and "LEFT" or "RIGHT")
+        half:SetPoint(side < 0 and "LEFT" or "RIGHT", page, edge, -side * NAMES_SIDE, y)
+        half:SetPoint(side < 0 and "RIGHT" or "LEFT", page, point, 0, y)
+        local strong, faint = CreateColor(1, 0.82, 0, 0.67), CreateColor(1, 0.82, 0, 0)
+        if side < 0 then half:SetGradient("HORIZONTAL", faint, strong) else half:SetGradient("HORIZONTAL", strong, faint) end
+    end
+end
+
+local function BuildThanks(page)
+    page.columns, page.parts = {}, {}
+    local coffee = New("Button", page)
+    coffee:SetPoint("BOTTOM", 0, 40)
+    local icon = coffee:CreateTexture(nil, "ARTWORK")
+    icon:SetTexture("Interface\\Icons\\INV_Misc_Coin_01")
+    icon:SetSize(16, 16)
+    icon:SetPoint("LEFT")
+    coffee.label = Label(coffee, "Buy me a coffee", "GameFontNormal")
+    coffee.label:SetPoint("LEFT", icon, "RIGHT", 5, 0)
+    coffee:SetSize(16 + 5 + coffee.label:GetStringWidth(), 20)
+    coffee:SetScript("OnEnter", function() coffee.label:SetFontObject("GameFontHighlight") end)
+    coffee:SetScript("OnLeave", function() coffee.label:SetFontObject("GameFontNormal") end)
+    local thanks = Label(page, #ns.SUPPORTERS == 1 and "Thanks to the supporter" or "Thanks to the supporters", "GameFontNormalHuge")
+    thanks:SetPoint("TOP", 0, -24)
+    GoldLine(page, "TOP", -(NAMES_TOP - 10))
+    GoldLine(page, "BOTTOM", NAMES_BOTTOM - 10)
+    local names = {}
+    for i, supporter in ipairs(ns.SUPPORTERS) do
+        names[i] = Label(page, supporter, "Fancy48Font")
+        names[i]:SetTextColor(1, 0.82, 0)
+    end
+    -- The names in a grid between the lines (one column for one name, two up to ten, then
+    -- three), all one size: as big as the longest fits its cell. Worked out each time it shows.
+    page:HookScript("OnShow", function()
+        local columns = #names == 1 and 1 or #names <= 10 and 2 or 3
+        local rows = math.ceil(#names / columns)
+        local cellWidth = (page:GetWidth() - 2 * NAMES_SIDE) / columns
+        local cellHeight = (page:GetHeight() - NAMES_TOP - NAMES_BOTTOM) / rows
+        local widest, tallest = 0, 0
+        for _, name in ipairs(names) do
+            name:SetTextScale(1)
+            widest, tallest = max(widest, name:GetStringWidth()), max(tallest, name:GetStringHeight())
+        end
+        if widest <= 0 or tallest <= 0 then return end
+        local scale = math.min(cellWidth * 0.85 / widest, cellHeight * 0.75 / tallest)
+        for i, name in ipairs(names) do
+            name:SetTextScale(scale)
+            local column, row = (i - 1) % columns, floor((i - 1) / columns)
+            name:ClearAllPoints()
+            name:SetPoint("CENTER", page, "TOPLEFT", NAMES_SIDE + (column + 0.5) * cellWidth, -(NAMES_TOP + (row + 0.5) * cellHeight))
+        end
+    end)
+    -- The link in the button's place, selected, until Escape, Enter or a click elsewhere.
+    local box = New("EditBox", page, "InputBoxTemplate")
+    box:SetAutoFocus(false)
+    box:SetSize(240, 20)
+    box:SetPoint("CENTER", coffee, "CENTER")
+    box:Hide()
+    local function Select()
+        box:SetText(COFFEE)
+        box:SetCursorPosition(0)
+        box:HighlightText()
+    end
+    box:SetScript("OnTextChanged", function(_, typed) if typed then Select() end end)
+    box:SetScript("OnMouseUp", Select)
+    box:SetScript("OnEscapePressed", box.ClearFocus)
+    box:SetScript("OnEnterPressed", box.ClearFocus)
+    box:SetScript("OnEditFocusLost", function()
+        box:Hide()
+        coffee:Show()
+        GameTooltip:Hide()
+    end)
+    coffee:SetScript("OnClick", function()
+        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        coffee:Hide()
+        box:Show()
+        box:SetFocus()
+        Select()
+        GameTooltip:SetOwner(box, "ANCHOR_TOP")
+        GameTooltip:SetText("Press Ctrl C to copy", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    page.thanks = { names = names, line = thanks, coffee = coffee, box = box }
+end
+
 ns.WINDOW_PAGES = {
     { key = "nodesight", name = GENERAL, build = BuildGeneral, refresh = Refresh },
     { key = "switch", name = "Herb/Ore Switch", build = BuildSwitch, refresh = Refresh },
@@ -1370,6 +1470,7 @@ ns.WINDOW_PAGES = {
     { key = "symbols", name = "Symbols", build = BuildSymbols, refresh = Refresh },
     { key = "compass", name = "Compass and arrow", build = BuildCompass, refresh = Refresh },
     { key = "farm", name = "Where to farm", build = BuildFarm, refresh = Refresh },
+    { key = "thanks", name = "Thank you", build = BuildThanks, refresh = Refresh, last = true }, -- (at the list's bottom)
 }
 ns.WindowSet = Set -- what the page's controls do, by key
 

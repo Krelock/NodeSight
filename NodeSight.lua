@@ -51,6 +51,7 @@ local defaults = {
     switchMounted = false, -- switch only while mounted
     switchPauseBusy = true, -- no switch while casting, looting or with something on the cursor
     switchPauseStealth = true, -- no switch while stealthed
+    switchPauseFalling = true, -- no switch while jumping or falling
     switchAfterCast = 3, -- seconds without a switch after your own spells (0 off)
     switchEnemyYards = 40, -- no switch with an enemy this close targeted (0 off)
     switchWorld = true, switchDungeons = true, switchRaids = true, -- where to switch

@@ -207,6 +207,7 @@ local function RegisterSettings()
             "Switching pauses while you target a living enemy this close, and for a second after you mouse over one. Distances are rough: the game doesn't give exact ones.",
             UpdateSwitch, 1, Off)
         Checkbox("switchPauseStealth", "Pause while stealthed", "Switching pauses while you're stealthed.", UpdateSwitch)
+        Checkbox("switchPauseFalling", "Pause while falling", "Switching pauses while you're in the air, jumping or falling.", UpdateSwitch)
         Slider("switchAfterCast", "Pause after your own spells (seconds)", 0, 10,
             "Switching pauses this long after your own spells end, and after you dismount, so the switch's global cooldown doesn't get in your way.",
             UpdateSwitch, 1, Off)

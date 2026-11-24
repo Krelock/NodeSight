@@ -64,8 +64,8 @@ local FLY = 166202
 local CORE = 0.45 -- core size relative to the body
 local CORE_LIGHT = 0.6 -- how much lighter the core's tint is
 local BEAM_FOOT = 0.1 -- the beam's alpha at its foot, where the node is
--- A rare node's glow: a soft round light centered on it, so it looks the same from
--- any camera angle (sizes and its middle's height in areas).
+-- A rare node's glow (and Glow around the node): a soft round light centered on it, so
+-- it looks the same from any camera angle (sizes and its middle's height in areas).
 local GLOW_WIDE, GLOW_TALL, GLOW_Y = 1.3, 1, -0.1
 
 -- Blizzard plates we hid (alpha 0), keyed by frame.
@@ -87,13 +87,14 @@ local looted = {} -- plate: a corpse whose loot window opened (its sparkles gone
 local KINDS = { "herbs", "ore", "chests", "quests", "others", "bobber", "skinning", "loot" }
 local KEYS = {
     herbs = { style = "herbStyle", color = "sparkleColor", color2 = "sparkleColor2", size = "size", height = "height", count = "count",
-        made = "herbMade", style2 = "herbStyle2", made2 = "herbMade2" },
+        made = "herbMade", style2 = "herbStyle2", made2 = "herbMade2", glow = "herbNodeGlow" },
 }
 -- made: the id of a Sparkle Maker sparkle used instead of the style; style2 or made2: a
--- second style or sparkle shown with it.
+-- second style or sparkle shown with it; glow: a soft glow around the node too (nil is off).
 for _, kind in ipairs({ "ore", "chests", "quests", "others", "bobber", "skinning", "loot" }) do
     KEYS[kind] = { style = kind .. "Style", color = kind .. "Color", color2 = kind .. "Color2", size = kind .. "Size", height = kind .. "Height",
-        count = kind .. "Count", made = kind .. "Made", style2 = kind .. "Style2", made2 = kind .. "Made2" }
+        count = kind .. "Count", made = kind .. "Made", style2 = kind .. "Style2", made2 = kind .. "Made2",
+        glow = kind .. "NodeGlow" }
 end
 
 local function Look(kind, what) return ns.db[KEYS[kind or "herbs"][what]] end
@@ -1579,9 +1580,11 @@ end
 
 local Recycle -- below
 
--- A rare node's gold glow, pulsing (soft: it lies over the node).
+-- A rare node's gold glow, pulsing, or the kind's own glow, breathing slower and fainter
+-- (soft: it lies over the node).
 local function PutGlow(frame, S)
-    Put(frame, frame.under, 0, GLOW_Y * S, GLOW_WIDE * S, GLOW_TALL * S, 0.3 + 0.15 * sin(frame.clock * 2.5))
+    local alpha = frame.rare and 0.3 + 0.15 * sin(frame.clock * 2.5) or 0.22 + 0.06 * sin(frame.clock * 1.5)
+    Put(frame, frame.under, 0, GLOW_Y * S, GLOW_WIDE * S, GLOW_TALL * S, alpha)
 end
 
 -- Runs while a frame has something to move: a drawn style, Dimmer out of reach,
@@ -1785,13 +1788,13 @@ local function ShowSparkles(namePlate, kind, unit, over)
         Made.Hide(frame)
         ShowStyle(frame, style, FrameLook(frame, "count"), S, color, color2)
     end
-    -- A rare node's gold glow.
-    frame.glowing = frame.rare
+    -- A rare node's gold glow, else the kind's own in its first color (gray too: see above),
+    -- not on a style's tile.
+    local glow = frame.rare and RARE_COLOR or not (over and (over.style or over.made)) and Look(kind, "glow") and color
+    frame.glowing = glow and true or nil
     if frame.glowing then
-        if not frame.under then
-            frame.under = Layer(frame, GLOW, -1)
-            frame.under:SetVertexColor(RGB(RARE_COLOR))
-        end
+        if not frame.under then frame.under = Layer(frame, GLOW, -1) end
+        frame.under:SetVertexColor(RGB(glow))
         PutGlow(frame, S)
     elseif frame.under then
         frame.under:Hide()

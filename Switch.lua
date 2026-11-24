@@ -383,6 +383,7 @@ function ns.SwitchReady(kind)
     local db = ns.db
     if db.switchPauseBusy and Busy() then return false end -- casting, looting or something on the cursor
     if db.switchPauseStealth and IsSet(IsStealthed()) then return false end -- stealthed
+    if db.switchPauseFalling and IsSet(IsFalling()) then return false end -- in the air
     -- Just after your own spell or dismounting.
     local after = db.switchAfterCast
     if after > 0 and switch.castAt and GetTime() - switch.castAt < after then return false end

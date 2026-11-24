@@ -51,6 +51,13 @@ end
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
+        { version = "4.0.4",
+            { "New", {
+                { "Glow around the node.", "Off by default. A soft glow around the node in the sparkles' first color, under any style. Turn it on for each kind in the sparkle window, under Count" },
+                { "Pause while falling.", "On by default. The Herb/Ore Switch doesn't switch while you're jumping or falling. On Herb/Ore Switch, under Pauses" },
+                { "Thank you page.", "A thanks to our supporter, with a Buy me a coffee link, at the bottom of the settings list" },
+            } },
+        },
         { version = "4.0.3.4",
             { "New", {
                 { "Collecting (Beta), much bigger.", "Off by default. Every herb and ore spawn is built in and marked on your world map and minimap, with a map button to hide them, filters and a quick setup. Turn it on in General, on Collecting (Beta) or with Ctrl Left Click on the minimap button" },
