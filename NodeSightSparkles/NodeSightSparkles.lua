@@ -99,7 +99,7 @@ end
 -- shared ones) or the ones shared by every character that has its own turned off
 -- (NodeSightSparklesDB). The CVars to put back are always shared, as the CVars are,
 -- and so are the Sparkle Maker's sparkles.
-local SHARED = { questObjects = true, saved = true, applied = true, made = true, makerWarned = true }
+local SHARED = { questObjects = true, saved = true, applied = true, made = true, madeTop = true, makerWarned = true }
 local settings -- the settings in use from login on
 
 local function LoadSaved()

@@ -729,8 +729,10 @@ local function Build()
             entry.heading = Heading(entry.header, y)
             y = y - 36
         end
-        window.list[i] = ListEntry(list, y, entry)
-        y = y - 24
+        if not entry.last then
+            window.list[i] = ListEntry(list, y, entry)
+            y = y - 24
+        end
     end
     if ns.WINDOW_PAGES then
         Heading("Sparkles", y)
@@ -740,6 +742,17 @@ local function Build()
         tab.index = i
         window.Tabs[i] = ListEntry(list, y, tab)
         y = y - 24
+    end
+    -- An addon's pages that go last, at the list's bottom (NodeSight's Thank you).
+    local pages, bottom = ns.WINDOW_PAGES or {}, 6
+    for i = #pages, 1, -1 do
+        if pages[i].last then
+            local item = ListEntry(list, 0, pages[i])
+            item:ClearAllPoints()
+            item:SetPoint("BOTTOMLEFT", 4, bottom)
+            window.list[i] = item
+            bottom = bottom + 24
+        end
     end
 
     -- The preview: the node turning slowly on Blizzard's mount journal background. It fills its
@@ -955,6 +968,8 @@ local function Build()
     window.height = Slider(panel, -146, "Height", "height", -150, 100, "Moves the sparkles up or down.", true)
     window.count = Slider(panel, -184, "Count", "count", 1, 20,
         "How many sparkles show at once. Some styles don't use it.", true)
+    window.nodeGlow = Checkbox(outer, -222, "Glow around the node", "glow",
+        "A soft glow around the node in the sparkles' first color, under any style.")
 
     -- The settings page: for all sparkles, under headers.
     window.look, window.preview = { grid, outer, window.kindTitle, window.kindAbout }, preview
@@ -1068,6 +1083,7 @@ local function Build()
         local page = New("Frame", window.Inset)
         page:SetPoint("TOPLEFT", LIST + 4, -4)
         page:SetPoint("BOTTOMRIGHT", -4, 4)
+        page:Hide() -- (shown by Refresh once built, so its OnShow runs)
         entry.page = page
         window.pages[i] = page
     end
@@ -1145,11 +1161,13 @@ local function Saved(clean, id)
     return sparkle
 end
 
+-- Never one a deleted sparkle had: another character's kinds may still name it.
 local function NextId()
-    local id = 0
+    local id = type(ns.db.madeTop) == "number" and ns.db.madeTop or 0
     for _, sparkle in ipairs(ns.MadeList()) do
         if type(sparkle) == "table" and type(sparkle.id) == "number" then id = max(id, sparkle.id) end
     end
+    ns.db.madeTop = id + 1
     return id + 1
 end
 
@@ -1281,6 +1299,9 @@ local function DeleteMade(id)
     local list = ns.MadeList()
     for i = #list, 1, -1 do
         if type(list[i]) == "table" and list[i].id == id then table.remove(list, i) end
+    end
+    for i = #undo, 1, -1 do
+        if undo[i].id == id then table.remove(undo, i) end
     end
     for _, kind in ipairs(ns.KINDS) do
         for _, key in ipairs({ ns.SPARKLE_KEYS[kind].made, ns.SPARKLE_KEYS[kind].made2 }) do
@@ -1892,7 +1913,7 @@ local function Dragging(handle)
     if not (drag and look) then return end
     local x, y = Cursor(handle)
     if x == drag.lastX and y == drag.lastY then return end
-    drag.lastX, drag.lastY = x, y
+    drag.lastX, drag.lastY, drag.moved = x, y, true
     if drag.mode == "move" then
         look.x = Limit("x", drag.x + x - drag.fromX)
         look.height = Limit("height", drag.height + y - drag.fromY)
@@ -1927,7 +1948,7 @@ local function StartDrag(handle, mode)
         end
     end
     Remember(Current(), true)
-    handle.drag = { mode = mode, fromX = x, fromY = y, centerX = centerX, centerY = centerY, style = not isEffect,
+    handle.drag = { mode = mode, fromX = x, fromY = y, lastX = x, lastY = y, centerX = centerX, centerY = centerY, style = not isEffect,
         x = tonumber(look.x) or 0, height = tonumber(look.height) or ns.MADE_DEFAULT.height,
         size = tonumber(look.size) or ns.MADE_DEFAULT.size, fromDist = sqrt((x - centerX) ^ 2 + (y - centerY) ^ 2) }
     GameTooltip:Hide()
@@ -1937,7 +1958,7 @@ end
 
 local function StopDrag(handle)
     if not handle.drag then return end
-    if not handle.drag.lastX then table.remove(undo) end -- (a click: nothing to take back)
+    if not handle.drag.moved then table.remove(undo) end -- (a click: nothing to take back)
     handle.drag, undo.at = nil, nil -- (the next change a step of its own)
     handle:SetScript("OnUpdate", nil)
     handle.readout:Hide()
@@ -2660,6 +2681,7 @@ function Refresh()
     end
     if tab.page then
         tab.refresh(tab.page)
+        WarnMaker(false)
         window.off:SetShown(false)
         if window.glow then window.glow:SetShown(false) end
         window.refreshing = nil
@@ -2713,6 +2735,7 @@ function Refresh()
     window.size:SetValue(ns.SparkleLook(kind, "size"))
     window.height:SetValue(ns.SparkleLook(kind, "height"))
     window.count:SetValue(ns.SparkleLook(kind, "count"))
+    window.nodeGlow:SetChecked(ns.SparkleLook(kind, "glow") == true)
     if isMaker then RefreshMaker() end
     WarnMaker(isMaker)
     window.refreshing = nil
