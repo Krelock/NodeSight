@@ -191,7 +191,12 @@ end
 
 -- The bobber has the plain interact icon. Its object ID (in its GUID) says
 -- what it is; without a readable GUID, an object while you fish is taken for it.
-local BOBBER = 35591
+-- Bobber toys (Crate of Bobbers, Oversized Bobber) swap it for objects of their own.
+local BOBBERS = { [35591] = true }
+for _, id in ipairs({ 241592, 241593, 241594, 241595, 241596, 245190, 251708, 266869, 353192, 355518,
+    520304, 520305, 520306, 520308, 520309, 520311 }) do BOBBERS[id] = true end
+for id = 268883, 268888 do BOBBERS[id] = true end
+for id = 385541, 385553 do BOBBERS[id] = true end -- the toys' bobbers made big
 local FISHING_ICON = 136245 -- the Fishing spell's icon, the same in every language
 
 local function Fishing()
@@ -207,7 +212,7 @@ end
 
 local function IsBobber(unit)
     local id = ObjectID(UnitGUID(unit))
-    if id then return id == BOBBER end
+    if id then return BOBBERS[id] == true end
     return Fishing()
 end
 
