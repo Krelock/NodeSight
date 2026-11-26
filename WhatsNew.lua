@@ -51,6 +51,21 @@ end
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
+        { version = "4.0.5",
+            { "New", {
+                { "OpenMap support.", "Herbs and Ore switches in OpenMap's map menu, under NodeSight, to show or hide each on your map. They work on Blizzard's map too" },
+            } },
+            { "Changes", {
+                { "Overlapping symbols.", "Symbols that touch on the minimap and world map share one outline and are cut where they meet, so the node dots under them stay visible" },
+                { "Minimap edge.", "Symbols fade out at the edge of the minimap instead of going over its border" },
+                { "Smaller in caves.", "Minimap symbols are smaller while you're inside" },
+                { "Lighter.", "Far less CPU on the minimap while you walk or stand still, and when you zoom the world map" },
+                { "Smoother on OpenMap.", "Much less lag zooming and panning: only the herbs and ore in view are drawn, and with both shown the symbols use plain rings" },
+            } },
+            { "Fixes", {
+                { "Bobber toys.", "With a bobber toy like the Oversized Bobber or a Crate of Bobbers, the bobber gets the bobber's sparkles, not Other objects'" },
+            } },
+        },
         { version = "4.0.4",
             { "New", {
                 { "Glow around the node.", "Off by default. A soft glow around the node in the sparkles' first color, under any style. Turn it on for each kind in the sparkle window, under Count" },

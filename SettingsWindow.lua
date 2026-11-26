@@ -958,15 +958,20 @@ local function AreaSymbol(preview, n, key, kind, dx, dy, count, look, size, seco
     if not symbol then
         symbol = C.NewSymbol(preview)
         symbol:SetFrameLevel(preview:GetFrameLevel() + 2)
+        C.Back(symbol) -- (its ring under every symbol's picture, as on the minimap)
+        symbol.back:SetFrameLevel(preview:GetFrameLevel() + 1)
         preview.symbols[n] = symbol
     end
     symbol.key, symbol.sampleLevel = key, areaLevels[key]
+    C.Uncut(symbol, 1) -- (its own masks first: three a texture)
     C.ApplyShape(symbol, look)
     C.ApplyLook(symbol, key, kind, look)
     C.MiniShared(symbol, second, kind, look)
     C.ShowCount(symbol, count)
     symbol:SetScale(size)
+    symbol.back:SetScale(size)
     symbol:SetPoint("CENTER", preview, "CENTER", dx / size, dy / size)
+    symbol.atX, symbol.atY = dx, dy
     symbol:Show()
 end
 
@@ -1026,6 +1031,7 @@ local function RefreshAreaPreview(preview)
             dot:SetPoint("CENTER", preview, "CENTER", sample[3] * perYard, -sample[4] * perYard)
         end
     end
+    C.Join(preview.symbols, n, size) -- (touching ones cut, as on the minimap)
     for i = n + 1, #preview.symbols do preview.symbols[i]:Hide() end
 end
 
