@@ -71,7 +71,7 @@ end
 
 -- The nearest place you can gather that isn't skipped: its list index and yards east and north.
 -- A place you are at is skipped here.
-local function Nearest(map, x, y, width, height, version, reach)
+local function Nearest(list, map, x, y, width, height, version, reach)
     local C = ns.Collecting
     local PACK, UNITS = C.PACK, C.UNITS
     local now = GetTime()
@@ -91,6 +91,7 @@ local function Nearest(map, x, y, width, height, version, reach)
     end
     return best, bestEast, bestNorth
 end
+ns.NearestNode = Nearest -- (the far away sparkles go where the arrow would point)
 
 ---------------------------------------------------------------------------
 -- Drawing
@@ -132,7 +133,7 @@ local function Draw()
     if not x then return Hide() end
     local reach = ns.db.nodeArrowRange * ns.db.nodeArrowRange -- (yards, set)
     C.Near(list, own, gm, x, y, width, height, reach)
-    local i, east, north = Nearest(map, x, y, width, height, version, reach)
+    local i, east, north = Nearest(list, map, x, y, width, height, version, reach)
     skipEnds = nil
     for _, spots in pairs(skipped) do
         for _, at in pairs(spots) do

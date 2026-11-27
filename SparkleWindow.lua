@@ -72,7 +72,7 @@ local SETS = {
 -- Settings for all sparkles (the General tab), saved under these keys.
 local GENERAL = { gameIcons = true, brightness = true, reachLook = true, combatHide = true, instanceHide = true,
     harvest = true, grayTooHard = true, myProfessions = true, cultivation = true, rareGlow = true, sparkleSound = true,
-    gatherDim = true, minimapButton = true, townInteractOff = true, stoneBackground = true }
+    gatherDim = true, minimapButton = true, townInteractOff = true, stoneBackground = true, skillColors = true }
 
 -- The list's sparkle entries: each kind (its name, what it sparkles on and its icon), then the settings.
 local TABS = {
@@ -125,12 +125,15 @@ function ns.RefusedText(cvar)
     return ("Something keeps turning off %s, which sparkles need. Another addon or a setting may be changing it.")
         :format(CVAR_NAMES[cvar] or cvar)
 end
+-- Corpses only get a plate to sparkle on with the game's enemy nameplates on.
+ns.PLATES_OFF = ("Corpse sparkles need %s (%s > %s)."):format(UNIT_NAMEPLATES_SHOW_ENEMIES, SETTINGS_TITLE, NAMEPLATES_LABEL)
 local function Problems()
     local list, any = {}, false
     for _, kind in ipairs(ns.KINDS) do any = any or ns.db[kind] == true end
     if not any then return list end
     local cvar = ns.RefusedCVar()
     if cvar then list[#list + 1] = { ns.RefusedText(cvar), true } end
+    if ns.CorpsePlatesOff() then list[#list + 1] = { ns.PLATES_OFF, true } end
     if ns.SetupPending() then list[#list + 1] = { "Sparkles turn on when this fight ends." } end
     if ns.InteractPaused() then
         list[#list + 1] = { "Nothing sparkles in town: Interact Key off in towns is ticked. Click to change it.", false, "townInteractOff" }
@@ -158,15 +161,18 @@ local function Hex(r, g, b)
     return format("ff%02x%02x%02x", floor(r * 255 + 0.5), floor(g * 255 + 0.5), floor(b * 255 + 0.5))
 end
 
-local Refresh, FrameNode, PlaceCamera, PickStyle, PlayHarvest, ShowExample
+local Refresh, FrameNode, PlaceCamera, PickStyle, PlayHarvest, ShowExample, TellPlates
 local BuildMaker, RefreshMaker, AskDelete, ShowCode, WarnMaker, TileMenu -- (Sparkle Maker)
 -- The settings the preview shows for a few seconds when they're ticked, and what it shows.
-local EXAMPLES = { rareGlow = "rare", reachLook = "far", grayTooHard = "tooHard" }
+local EXAMPLES = { rareGlow = "rare", reachLook = "far", grayTooHard = "tooHard", skillColors = "skill" }
+local EXAMPLE_SKILL = 2 -- the skill color the example shows: orange
 local EXAMPLE_TIME = 3
 
 -- The sparkles in the world after a change.
 local function Changed()
     ns.UpdateAll()
+    -- Corpse sparkles just turned on with enemy nameplates off: a dialog says so.
+    if window.platesOff == false and ns.CorpsePlatesOff() then TellPlates() end
 end
 
 -- Each kind keeps every style's look as it was last left (the settings' styleLooks[kind][style]),
@@ -1013,6 +1019,8 @@ local function Build()
         "A gold glow on rare herbs and ore like Black Lotus and Truesilver."), RIGHT_COLUMN)
     window.grayTooHard = At(Checkbox(general, -130, "Gray when your skill is too low", "grayTooHard",
         "Herbs and ore your skill is too low for sparkle gray."))
+    window.skillColors = At(Checkbox(general, -130, "Skill colors", "skillColors",
+        "Herbs and ore sparkle orange, yellow, green or gray by your chance of a skill-up, and red when your skill is too low."), RIGHT_COLUMN)
     local harvest = New("DropdownButton", general, "WowStyle1DropdownTemplate")
     harvest:SetWidth(180)
     Row(general, -164, "When gathered", harvest,
@@ -2662,6 +2670,7 @@ function Refresh()
     window.edge:SetShown(not tab.page)
     window.interactOff:SetShown(ns.InteractOff())
     window.turnOn:SetShown(window.interactOff:IsShown())
+    window.platesOff = ns.CorpsePlatesOff()
     local problems = window.interactOff:IsShown() and {} or Problems()
     window.problem.list = problems
     window.problem:SetShown(problems[1] ~= nil)
@@ -2708,6 +2717,7 @@ function Refresh()
     window.sparkleSound:SetChecked(ns.db.sparkleSound)
     window.gatherDim:SetChecked(ns.db.gatherDim)
     window.grayTooHard:SetChecked(ns.db.grayTooHard)
+    window.skillColors:SetChecked(ns.db.skillColors)
     window.rareGlow:SetChecked(ns.db.rareGlow)
     local harvest = ns.HARVESTS[ns.db.harvest]
     window.harvest:SetText(harvest and harvest.name)
@@ -2797,7 +2807,8 @@ function Refresh()
         PlaceHandle()
     elseif ns.db[kind] or example then -- (the preview's own kind: on Sparkle settings, the last one shown)
         ns.ShowSparkles(window.anchor, kind, nil, { lower = ns.SPARKLE_LOWER[node[1]:lower()], -- the saved look, as a preview
-            rare = example == "rare", far = example == "far", tooHard = example == "tooHard" })
+            rare = example == "rare", far = example == "far", tooHard = example == "tooHard",
+            skill = example == "skill" and EXAMPLE_SKILL or nil })
     elseif ns.SparklePreviews[window.anchor] then
         ns.SparklePreviews[window.anchor]:Hide() -- (off: the node alone, as it would be in the world)
     end
@@ -2894,7 +2905,8 @@ local function DialogButton(parent, text, onClick)
     return button
 end
 
-local function ShowNotice(message)
+-- plain: nothing for the Enable button to do, so only the other two.
+local function ShowNotice(message, plain)
     if not notice then
         notice = New("Frame", UIParent)
         notice:SetFrameStrata("FULLSCREEN_DIALOG") -- (over the settings window, which can open it)
@@ -2929,8 +2941,14 @@ local function ShowNotice(message)
         local row = 128 + 8 + 128 + 8 + notice.never:GetWidth()
         notice:SetWidth(math.max(420, row + 40))
         notice.enable:SetPoint("BOTTOMLEFT", notice, "BOTTOM", -row / 2, 16)
-        notice.close:SetPoint("LEFT", notice.enable, "RIGHT", 8, 0)
         notice.never:SetPoint("LEFT", notice.close, "RIGHT", 8, 0)
+    end
+    notice.enable:SetShown(not plain)
+    notice.close:ClearAllPoints()
+    if plain then
+        notice.close:SetPoint("BOTTOMLEFT", notice, "BOTTOM", -(128 + 8 + notice.never:GetWidth()) / 2, 16)
+    else
+        notice.close:SetPoint("LEFT", notice.enable, "RIGHT", 8, 0)
     end
     notice.text:SetText(NORMAL_FONT_COLOR:WrapTextInColorCode(C_AddOns.GetAddOnMetadata(ADDON_NAME, "Title") or ADDON_NAME)
         .. "\n\n" .. message)
@@ -3126,6 +3144,17 @@ local function TellRefused()
     end)
 end
 
+-- Corpse sparkles on with enemy nameplates off: said when they're turned on, and once
+-- (login) to a player who had them on already.
+function TellPlates(login)
+    if login and (ns.db.platesTold or notice and notice:IsShown()) then return end
+    ns.AfterFight("plates", function()
+        if not ns.CorpsePlatesOff() then return end
+        ns.db.platesTold = true
+        ShowNotice(ns.PLATES_OFF, true)
+    end)
+end
+
 local interactWatch = CreateFrame("Frame")
 interactWatch:RegisterEvent("CVAR_UPDATE")
 interactWatch:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -3135,9 +3164,13 @@ for _, event in ipairs({ "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "ZONE_
     interactWatch:RegisterEvent(event)
 end
 interactWatch:SetScript("OnEvent", function(_, event, name)
-    if not (ns.db and ns.RefusedCVar and ns.InteractOff) then return end -- (a file missing: the addon stays off)
+    if not (ns.db and ns.RefusedCVar and ns.InteractOff and ns.AfterFight) then return end -- (a file missing: the addon stays off)
     if window and window:IsShown() then Refresh() end
-    if event == "PLAYER_ENTERING_WORLD" then return TellRefused() end
+    if event == "PLAYER_ENTERING_WORLD" then
+        TellRefused()
+        return TellPlates(true)
+    end
+    if event == "SKILL_LINES_CHANGED" then TellPlates(true) end -- (Skinning may only be known now)
     if event ~= "CVAR_UPDATE" or issecretvalue(name) or type(name) ~= "string" then return end
     TellRefused()
     if name:lower() ~= "softtargetinteract" then return end

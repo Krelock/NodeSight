@@ -287,6 +287,9 @@ local function RegisterSettings()
             function() ns.ArrowChanged() end, arrowRange[3])
         local arrowSize = ns.COLLECT_RANGES.nodeArrowSize
         Slider("nodeArrowSize", "Next node arrow's size (%)", arrowSize[1], arrowSize[2], "How big the arrow is.", function() ns.ArrowChanged() end, arrowSize[3])
+        Checkbox("farSparkles", "Far away sparkles (Beta)",
+            "A column of sparkles in the world where the arrow would point, within its range. " .. RED_FONT_COLOR:WrapTextInColorCode(ns.FAR_WARNING),
+            function() ns.FarSparklesChanged() end)
         layout:AddInitializer(CreateSettingsButtonInitializer("Remembered places", "Forget all", function() ns.AskForget() end,
             "Forgets every place NodeSight remembered, for all your characters. It asks first.", false))
         Header("Collecting is new and will be improved in future updates.")
@@ -308,6 +311,8 @@ local function RegisterSettings()
         Checkbox("combatHide", "Hide in combat", "No sparkles while you're in combat.", LookChanged)
         Checkbox("instanceHide", "Hide in instances", "No sparkles in dungeons and raids.", LookChanged)
         Checkbox("grayTooHard", "Gray when your skill is too low", "Herbs and ore your skill is too low for sparkle gray.", LookChanged)
+        Checkbox("skillColors", "Skill colors",
+            "Herbs and ore sparkle orange, yellow, green or gray by your chance of a skill-up, and red when your skill is too low.", LookChanged)
         Checkbox("myProfessions", "Only for my professions",
             "Herbs sparkle only if you have Herbalism, ore only with Mining, and corpses only with Skinning.", LookChanged)
         Checkbox("cultivation", "Show when Cultivation is ready",

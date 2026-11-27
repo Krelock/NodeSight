@@ -53,6 +53,7 @@ end
 AFTER.nodeArrow = function() ns.ArrowChanged() end
 AFTER.nodeArrowSize = AFTER.nodeArrow
 AFTER.nodeArrowRange = AFTER.nodeArrow
+AFTER.farSparkles = function() ns.FarSparklesChanged() end
 AFTER.collectGatherMate = function() ns.RereadNodePins() end
 AFTER.collectSpawns = AFTER.collectGatherMate
 AFTER.collectHideGatherMate = AFTER.collectGatherMate
@@ -148,6 +149,19 @@ local function Header(column, text)
     line:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, 2)
     column[#column + 1] = header
     return header
+end
+
+-- A red line under a setting: what to know before turning it on.
+local function Warning(column, text)
+    local line = New("Frame", column.page)
+    line:SetSize(WIDE, 20)
+    line.height = 24
+    line.label, line.kind = Label(line, text, "GameFontRed"), "warning"
+    line.label:SetPoint("LEFT")
+    line.label:SetWidth(WIDE)
+    line.label:SetJustifyH("LEFT")
+    column[#column + 1] = line
+    return line
 end
 
 -- Places a column's shown parts top to bottom, each part's own gap above it.
@@ -508,9 +522,13 @@ local function CompassColumns(column, other, page)
     Checkbox(other, "nodeArrow", "Show", "Points to the nearest marked herb or ore you can gather.")
     local arrowRange = ns.COLLECT_RANGES.nodeArrowRange
     Needs(Slider(other, "nodeArrowRange", "Range", arrowRange[1], arrowRange[2], arrowRange[3], "How far away a place can be for the arrow to point to it.", Yards),
-        On("nodeArrow"), true)
+        function() return ns.db.nodeArrow or ns.db.farSparkles end, true)
     local arrowSize = ns.COLLECT_RANGES.nodeArrowSize
     Needs(Slider(other, "nodeArrowSize", "Size", arrowSize[1], arrowSize[2], arrowSize[3], "How big the arrow is.", Percent100), On("nodeArrow"), true)
+    Header(other, "Far away sparkles (Beta)")
+    Checkbox(other, "farSparkles", "Show", "A column of sparkles in the world where the arrow would point, within its range. "
+        .. RED_FONT_COLOR:WrapTextInColorCode(ns.FAR_WARNING))
+    Warning(other, ns.FAR_WARNING)
     page:HookScript("OnShow", function()
         ns.CompassMovable(true)
         ns.ArrowMovable(true)

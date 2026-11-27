@@ -74,6 +74,7 @@ local defaults = {
     sparkleSound = false, -- a sound when something near you starts sparkling
     gatherDim = true, -- sparkles fade back while you gather the node
     grayTooHard = false, -- gray sparkles on herbs and ore above your skill
+    skillColors = false, -- herb and ore sparkles in the color of your skill-up chance
     myProfessions = true, -- herb, ore and skinning sparkles only with Herbalism, Mining or Skinning
     cultivation = false, -- Cultivation's icon over a herb you can cultivate (Tauren)
     rareGlow = false, -- a gold glow around rare herbs and ore
@@ -114,6 +115,7 @@ local defaults = {
     nodeArrowRange = 250, -- yards: the farthest place it points to
     nodeArrowSize = 100, -- its size (%)
     nodeArrowX = 0, nodeArrowY = -60, -- its top, from the screen's top middle
+    farSparkles = false, -- a column of sparkles on the next place from far away (FarSparkles.lua)
     townInteractOff = false, -- Interact Key off while resting in a town or inn
     stoneBackground = true, -- the settings window's stone texture under the logo's brown
 }
@@ -374,7 +376,7 @@ NodeSightAPI = {
 -- (NodeSightDB). Quest objects, gathered places and the CVars to put back are always shared.
 local function LoadSettings()
     NodeSightDB = NodeSightDB or {}
-    local SHARED = { learned = true, questObjects = true, saved = true, applied = true, rareNames = true, report = true, nodes = true, made = true, madeTop = true, makerWarned = true, gatherMateShow = true } -- (made: the Sparkle Maker's sparkles)
+    local SHARED = { learned = true, questObjects = true, saved = true, applied = true, rareNames = true, report = true, nodes = true, made = true, madeTop = true, makerWarned = true, gatherMateShow = true, farNavWas = true } -- (made: the Sparkle Maker's sparkles; farNavWas: an account setting to put back)
     if type(NodeSightCharDB) ~= "table" then
         NodeSightCharDB = { own = true }
         for key, value in pairs(NodeSightDB) do
@@ -399,8 +401,10 @@ end
 
 local OBJECT_TOOLTIP = Enum.TooltipDataType.Object -- a herb's or ore's own tooltip
 local ITEM_TOOLTIP = Enum.TooltipDataType.Item
+local lookForIcons -- a first install: Keep the game's icons still to be worked out
 local function OnAddonLoaded()
     local firstInstall = NodeSightDB == nil
+    lookForIcons = firstInstall
     local settings = LoadSettings()
     NodeSightDB.report = nil -- (the old bug report's log)
     -- The old dot size setting: the game's own size back for whoever changed it.
@@ -488,6 +492,7 @@ local function OnAddonLoaded()
     ns.Collect()
     ns.Compass()
     ns.Arrow()
+    ns.FarSparkles()
     if OBJECT_TOOLTIP then TooltipDataProcessor.AddTooltipPostCall(OBJECT_TOOLTIP, OnObjectTooltip) end
     if ITEM_TOOLTIP then TooltipDataProcessor.AddTooltipPostCall(ITEM_TOOLTIP, OnItemTooltip) end
 end
@@ -507,7 +512,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
             events:UnregisterEvent("ADDON_LOADED")
             -- After an update, a /reload only loads the files the old .toc listed:
             -- stay off until the game is restarted.
-            if not (ns.Plain and ns.Mute and ns.Setup and ns.CanCultivate and ns.ShowSparkleWindow and ns.ShowWhatsNew and ns.ShowSettingsWindow and ns.MinimapButton and ns.RegisterSettings and ns.Collect and ns.Compass and ns.Arrow) then
+            if not (ns.Plain and ns.Mute and ns.Setup and ns.CanCultivate and ns.ShowSparkleWindow and ns.ShowWhatsNew and ns.ShowSettingsWindow and ns.MinimapButton and ns.RegisterSettings and ns.Collect and ns.Compass and ns.Arrow and ns.FarSparkles) then
                 events:UnregisterAllEvents()
                 if ns.ShowNotice then
                     pcall(ns.ShowNotice, "NodeSight needs a game restart", "NodeSight was updated while the game was running, "
@@ -522,6 +527,12 @@ events:SetScript("OnEvent", function(_, event, arg1)
     elseif event == "PLAYER_ENTERING_WORLD" then
         QuestAreasBack()
         PadHoverBack()
+        -- A first install: whoever had the game's icons on objects keeps them, on this
+        -- character and on the ones that start from the shared settings later.
+        if lookForIcons then
+            lookForIcons = false
+            if ns.OwnGameIcons() then db.gameIcons, NodeSightDB.gameIcons = true, true end
+        end
         -- Restores CVars left changed (e.g. a restore delayed by combat).
         ns.Setup() -- after every loading screen
         -- Once per account: Collecting, and why its marks aren't live (not for those already using it).

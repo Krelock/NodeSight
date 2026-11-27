@@ -51,6 +51,20 @@ end
 local ShowWhatsNew, ShowNotice
 do
     local WHATS_NEW = {
+        { version = "4.0.6",
+            { "New", {
+                { "Far away sparkles (Beta).", "Off by default. A column of sparkles in the world where the next node arrow would point, so you see the next herb or ore from far away. It takes over your map pin and quest tracking while on. Turn it on under Compass and arrow" },
+                { "Skill colors.", "Off by default. Herb and ore sparkles in the color of your skill-up chance: orange, yellow, green or gray, and red when your skill is too low. Turn it on in the sparkle window's General tab" },
+            } },
+            { "Changes", {
+                { "Keep the game's icons.", "On a new install it's ticked for you if you already had the game's icons on objects (Enable Interact Key on, with Interact Key Icons on Show All)" },
+            } },
+            { "Fixes", {
+                { "Corpse sparkles and enemy nameplates.", "Skinning and lootable corpse sparkles only show with the game's enemy nameplates on (Options > Nameplates > Enemy Unit Nameplate). The sparkle window and a popup now tell you when they're off" },
+                { "The game's icon with nameplate addons.", "With Keep the game's icons off, the game's icon no longer stays over a sparkling node when a nameplate addon has moved it off the nameplate" },
+                { "Quest objects.", "Fixed a lot of instances of quest sparkles appearing on unintended objects" },
+            } },
+        },
         { version = "4.0.5",
             { "New", {
                 { "OpenMap support.", "Herbs and Ore switches in OpenMap's map menu, under NodeSight, to show or hide each on your map. They work on Blizzard's map too" },
