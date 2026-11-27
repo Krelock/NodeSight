@@ -48,6 +48,7 @@ local defaults = {
     sparkleSound = false, -- a sound when something near you starts sparkling
     gatherDim = true, -- sparkles fade back while you gather the node
     grayTooHard = false, -- gray sparkles on herbs and ore above your skill
+    skillColors = false, -- herb and ore sparkles in the color of your skill-up chance
     myProfessions = true, -- herb, ore and skinning sparkles only with Herbalism, Mining or Skinning
     cultivation = false, -- Cultivation's icon over a herb you can cultivate (Tauren)
     popups = true, -- the Enable Interact Key popup
@@ -102,7 +103,9 @@ end
 local SHARED = { questObjects = true, saved = true, applied = true, made = true, madeTop = true, makerWarned = true }
 local settings -- the settings in use from login on
 
+local lookForIcons -- a first install: Keep the game's icons still to be worked out
 local function LoadSaved()
+    lookForIcons = NodeSightSparklesDB == nil
     NodeSightSparklesDB = NodeSightSparklesDB or {}
     local shared = NodeSightSparklesDB
     if type(NodeSightSparklesCharDB) ~= "table" then
@@ -234,6 +237,12 @@ events:SetScript("OnEvent", function(_, event, arg1)
         ns.RegisterSettings()
         ns.MinimapButton()
     elseif event == "PLAYER_ENTERING_WORLD" then
+        -- A first install: whoever had the game's icons on objects keeps them, on this
+        -- character and on the ones that start from the shared settings later.
+        if lookForIcons then
+            lookForIcons = false
+            if ns.OwnGameIcons() then ns.db.gameIcons, NodeSightSparklesDB.gameIcons = true, true end
+        end
         ns.Setup() -- after every loading screen
     elseif event == "NAME_PLATE_UNIT_REMOVED" then
         -- Free the plate's sparkle frame.

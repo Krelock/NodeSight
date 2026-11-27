@@ -37,6 +37,9 @@ local RING = "PowerSwirlAnimation-YellowRing"
 local STAR4 = 131010 -- Interface\Cooldown\star4, the cooldown's finish flash
 local SOFT_STAR = "GarrisonFX-StarBurst"
 local TOO_HARD_GRAY = "ff8c8c8c" -- herbs and ore above your skill, with Gray when your skill is too low
+-- With Skill colors: herbs and ore by Names.lua's SkillLevel (too hard, then the
+-- profession window's orange, yellow, green and gray).
+local SKILL_COLORS = { "ffff2020", "ffff8040", "ffffff00", "ff40bf40", TOO_HARD_GRAY }
 local RARE_COLOR = "ffffd100" -- a rare node's glow
 -- Rare herbs and ore (English names, as Names.lua keys them in every language).
 local RARE = {
@@ -1327,7 +1330,7 @@ local function PlaceLayer(layer, clock)
 end
 
 -- Effect i, made the first time a frame shows one (no parent in CreateFrame, as NewSparkles).
-local function ShowEffect(frame, i, look, k, base, gray)
+local function ShowEffect(frame, i, look, k, base, tint)
     local fx = frame.fxs[i]
     if not fx then
         fx = CreateFrame("ModelScene")
@@ -1353,6 +1356,7 @@ local function ShowEffect(frame, i, look, k, base, gray)
     actor:SetPitch(rad(look.tilt))
     actor:SetYaw(rad(look.turn))
     actor:SetParticleOverrideScale(look.particles / 100)
+    local gray = tint == TOO_HARD_GRAY -- (a model takes no color: only gray shows on it)
     if fx.gray ~= gray then
         fx.gray = gray
         actor:SetDesaturation(gray and 1 or 0)
@@ -1365,7 +1369,7 @@ local function ShowEffect(frame, i, look, k, base, gray)
 end
 
 -- Style layer i, above the effects.
-local function ShowStyleLayer(frame, i, look, kind, k, base, gray)
+local function ShowStyleLayer(frame, i, look, kind, k, base, tint)
     local child = frame.layers[i]
     if not child then
         child = NewSparkles()
@@ -1381,22 +1385,23 @@ local function ShowStyleLayer(frame, i, look, kind, k, base, gray)
     child:SetSize(S, S)
     PlaceLayer(child, frame.clock or 0)
     local one, two = look.color, look.color2
-    if gray then one, two = TOO_HARD_GRAY, TOO_HARD_GRAY end
+    if tint then one, two = tint, tint end
     ShowStyle(child, style, look.count, S, one, two)
     child.style = style
     child:Show()
 end
 
--- Shows a made sparkle's layers in a frame. gray: herbs or ore above your skill.
--- Returns whether something moves each frame (an animation, or a style with Draw).
-local function ShowMadeLayers(frame, clean, kind, k, gray)
+-- Shows a made sparkle's layers in a frame. tint: a color instead of their own (gray
+-- above your skill, or a skill color). Returns whether something moves each frame
+-- (an animation, or a style with Draw).
+local function ShowMadeLayers(frame, clean, kind, k, tint)
     local base = MadeBase(clean)
     frame.fxs, frame.layers = frame.fxs or {}, frame.layers or {}
     local moving = false
     for i = 1, MAX_PARTS do
         local look = clean.effects[i]
         if look then
-            ShowEffect(frame, i, look, k, base, gray)
+            ShowEffect(frame, i, look, k, base, tint)
             moving = moving or look.anim ~= "None"
         elseif frame.fxs[i] then
             frame.fxs[i]:Hide()
@@ -1405,7 +1410,7 @@ local function ShowMadeLayers(frame, clean, kind, k, gray)
     for i = 1, MAX_PARTS do
         local look, child = clean.layers[i], frame.layers[i]
         if look then
-            ShowStyleLayer(frame, i, look, kind, k, base, gray)
+            ShowStyleLayer(frame, i, look, kind, k, base, tint)
             moving = moving or look.anim ~= "None" or STYLES[look.style].Draw ~= nil
         elseif child then
             ShowTwinkles(child, 0)
@@ -1680,7 +1685,7 @@ end)
 -- A kind's second style or sparkle (shift-click in the sparkle window), on a frame of its
 -- own over the first; hidden when show is false, or when it is the first one again.
 -- Returns whether it moves each frame.
-local function ShowSecond(frame, kind, show, gray)
+local function ShowSecond(frame, kind, show, tint)
     local i, made = show and Look(kind, "style2"), show and Made.Find(Look(kind, "made2"))
     local first = Made.Find(Look(kind, "made"))
     made = made ~= first and made and Made.Clean(made) or nil
@@ -1710,13 +1715,13 @@ local function ShowSecond(frame, kind, show, gray)
             if type(key) == "string" then HideAll(parts) end
         end
         ShowTwinkles(second, 0)
-        second.style = Made.ShowLayers(second, made, kind, 1, gray) and Made.MOVING or Made.STILL
+        second.style = Made.ShowLayers(second, made, kind, 1, tint) and Made.MOVING or Made.STILL
     else
         local look = More.StyleLook(kind, i)
         second.over, second.madeLook = { style = i, size = look.size, height = look.height, count = look.count }, nil
         Made.Hide(second)
         local one, two = look.color, look.color2 or look.color
-        if gray then one, two = TOO_HARD_GRAY, TOO_HARD_GRAY end
+        if tint then one, two = tint, tint end
         second.style = STYLES[i]
         ShowStyle(second, STYLES[i], look.count, look.size, one, two)
     end
@@ -1730,7 +1735,8 @@ end
 
 -- Puts the sparkle area on a plate and shows the kind's style. over: a preview
 -- (on any frame), with a look to show instead of the saved one (style, size, height, count),
--- and an example of a setting: rare (the gold glow), far (out of reach), tooHard (gray).
+-- and an example of a setting: rare (the gold glow), far (out of reach), tooHard (gray),
+-- skill (a skill color, 1 to 5).
 local function ShowSparkles(namePlate, kind, unit, over)
     local frames = over and previews or sparkles
     local frame = frames[namePlate]
@@ -1782,18 +1788,21 @@ local function ShowSparkles(namePlate, kind, unit, over)
     local color, color2 = Colors(kind)
     if over and over.color then color, color2 = over.color, over.color2 or over.color end
     local gray = over and over.tooHard or name and ns.db.grayTooHard and (kind == "herbs" or kind == "ore") and ns.TooHard(name, kind)
-    if gray then color, color2 = TOO_HARD_GRAY, TOO_HARD_GRAY end
+    -- A skill color goes over the kind's own colors and over that gray (only herbs and ore have one).
+    local skill = over and over.skill or name and ns.db.skillColors and ns.SkillLevel(name, kind)
+    local tint = skill and SKILL_COLORS[skill] or gray and TOO_HARD_GRAY or nil
+    if tint then color, color2 = tint, tint end
     if made then
         for key, parts in pairs(frame.parts) do
             if type(key) == "string" then HideAll(parts) end
         end
         ShowTwinkles(frame, 0)
-        style = Made.ShowLayers(frame, made, kind, k, gray == true) and Made.MOVING or Made.STILL
+        style = Made.ShowLayers(frame, made, kind, k, tint) and Made.MOVING or Made.STILL
     else
         Made.Hide(frame)
         ShowStyle(frame, style, FrameLook(frame, "count"), S, color, color2)
     end
-    -- A rare node's gold glow, else the kind's own in its first color (gray too: see above),
+    -- A rare node's gold glow, else the kind's own in its first color (a tint too: see above),
     -- not on a style's tile.
     local glow = frame.rare and RARE_COLOR or not (over and (over.style or over.made)) and Look(kind, "glow") and color
     frame.glowing = glow and true or nil
@@ -1805,7 +1814,7 @@ local function ShowSparkles(namePlate, kind, unit, over)
         frame.under:Hide()
     end
     if frame.burst and not frame.burstAge then frame.burst:Hide() end
-    ShowSecond(frame, kind, not (over and (over.style or over.made)), gray == true) -- (not on a tile, which shows one)
+    ShowSecond(frame, kind, not (over and (over.style or over.made)), tint) -- (not on a tile, which shows one)
     frame.style = style
     frame:SetScript("OnUpdate", Animate) -- it stops itself when there is nothing to move
     frame:SetAlpha(FrameAlpha(frame))
@@ -1937,8 +1946,12 @@ end)
 -- Nameplates
 ---------------------------------------------------------------------------
 
+-- Nameplate addons move the game's interact icon off the unit frame to keep it in
+-- view, so the icon's own frame is faded too (Blizzard never sets its alpha).
 local function SetHidden(unitFrame, hide)
     unitFrame:SetAlpha(hide and 0 or 1)
+    local soft = unitFrame.SoftTargetFrame
+    if soft then soft:SetAlpha(hide and 0 or 1) end
     hidden[unitFrame] = hide or nil
 end
 
@@ -1975,13 +1988,20 @@ end
 -- (ns.QUEST_OBJECTS) and by the objects you got a quest's item from before.
 local questNames, questWords, openQuests, questsRead = {}, {}, {}, false
 
+-- Short common words, which would match books and chairs ("The Story of ..." for "Horn of the Beast").
+local COMMON = {}
+for _, word in ipairs({ "the", "and", "for", "with", "from", "into", "your", "this", "that",
+    "der", "die", "das", "des", "den", "dem", "und", "von", "mit", "ein", "eine", "einer", "eines",
+    "les", "une", "aux", "pour", "avec", "sur", "dans", "los", "las", "del", "una", "con", "para", "por",
+    "dos", "uma", "com" }) do COMMON[word] = true end
+
 -- Words of 3 letters or more, each also without a plural's ending. An object
 -- often shares one with the item it gives (Naxxramas Crystal Fragment for
 -- Necrotic Crystal Fragment, Cattail for Handful of Cattails).
 local function Words(text)
     local words = {}
     for word in text:lower():gmatch("[%a\128-\255]+") do
-        if #word >= 3 then
+        if #word >= 3 and not COMMON[word] then
             words[#words + 1] = word
             if #word > 4 and word:sub(-3) == "ies" then
                 words[#words + 1] = word:sub(1, -4) .. "y" -- berries: berry
@@ -2254,6 +2274,11 @@ local function CorpseTargeted()
     return (Mine("skinning") or Mine("loot")) and UnitExists("softinteract") and Corpse("softinteract") or false
 end
 
+-- Corpse sparkles on, but the game gives a corpse no plate with enemy nameplates off.
+function ns.CorpsePlatesOff()
+    return (Mine("skinning") or Mine("loot")) and not GetCVarBool("nameplateShowEnemies")
+end
+
 -- Interact Key off in towns: there the game would pick NPCs you can talk to rather than objects.
 local function InTown() return ns.db.townInteractOff == true and (IsResting() == true or ns.InTownArea()) end
 local townShown -- the Interact Key is off for a town
@@ -2351,6 +2376,7 @@ ns.SPARKLE_EFFECTS, ns.MADE_ANIMS, ns.MADE_LIMITS, ns.MADE_DEFAULT = Made.EFFECT
 ns.MADE_MAX, ns.MADE_MAX_PARTS = Made.MAX, Made.MAX_PARTS
 ns.MadeList, ns.FindMade, ns.CleanMade = Made.List, Made.Find, Made.Clean
 ns.CarryOverLooks, ns.SparkleLook, ns.SparkleRGB, ns.SparkleColors, ns.SPARKLE_LOWER = CarryOverLooks, Look, RGB, Colors, LOWER
+ns.SKILL_COLORS = SKILL_COLORS
 -- Is a Setup waiting for the end of combat?
 function ns.SetupPending() return pendingSetup end
 -- The first CVar sparkles need that the game refused, or nil.
@@ -2361,6 +2387,15 @@ function ns.RefusedCVar()
 end
 -- Is the Interact Key off because you're in town (Interact Key off in towns)?
 ns.InteractPaused = InTown
+-- Did you have the game's icon on objects yourself: Enable Interact Key on, with Interact
+-- Key Icons on Show All? (Your own values: the ones kept to put back, else the CVars.)
+-- Show All turns on all four icon settings; sparkles only ever set the object one, so
+-- what an earlier install left on isn't taken for your choice.
+function ns.OwnGameIcons()
+    local function Own(cvar) return tonumber(ns.db.saved[cvar] or C_CVar.GetCVar(cvar)) or 0 end
+    return Own("softTargetInteract") >= 2 and Own("SoftTargetIconEnemy") == 1 and Own("SoftTargetIconInteract") == 1
+        and Own("SoftTargetIconGameObject") == 1 and Own("SoftTargetLowPriorityIcons") == 1
+end
 -- Blizzard's tip asking for an Interact Key binding comes back every login while the key
 -- is on. Sparkles need no binding, so mark it seen (called at PLAYER_LOGIN, before the tip).
 function ns.QuietInteractTip()

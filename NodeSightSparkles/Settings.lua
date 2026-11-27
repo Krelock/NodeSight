@@ -88,6 +88,8 @@ local function RegisterSettings(nodeSightOn)
         Checkbox("combatHide", "Hide in combat", "No sparkles while you're in combat.", LookChanged)
         Checkbox("instanceHide", "Hide in instances", "No sparkles in dungeons and raids.", LookChanged)
         Checkbox("grayTooHard", "Gray when your skill is too low", "Herbs and ore your skill is too low for sparkle gray.", LookChanged)
+        Checkbox("skillColors", "Skill colors",
+            "Herbs and ore sparkle orange, yellow, green or gray by your chance of a skill-up, and red when your skill is too low.", LookChanged)
         Checkbox("myProfessions", "Only for my professions",
             "Herbs sparkle only if you have Herbalism, ore only with Mining, and corpses only with Skinning.", LookChanged)
         Checkbox("cultivation", "Show when Cultivation is ready",
